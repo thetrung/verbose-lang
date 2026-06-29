@@ -1,0 +1,4 @@
+(executable
+ (public_name verbose-lang)
+ (name main)
+ (libraries verbose_lang llvm))
