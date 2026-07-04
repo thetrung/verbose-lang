@@ -1,4 +1,5 @@
 (executable
  (public_name verbose-lang)
  (name main)
- (libraries VerboseLang))
+ (libraries 
+   VerboseLang))

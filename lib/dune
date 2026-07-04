@@ -1,2 +1,8 @@
+
+(menhir (modules parser))
+
+(ocamllex lexer)
+
 (library
- (name VerboseLang))
+ (name VerboseLang)
+ (modules lexer parser ast codegen))
