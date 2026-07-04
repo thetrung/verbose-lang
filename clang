@@ -1,0 +1,168 @@
+; --- GENERATED LLVM IR CODE ---
+@.str_3 = private unnamed_addr constant [11 x i8] c"lib/ast.ml\00", align 1
+@.str_4 = private unnamed_addr constant [2 x i8] c"r\00", align 1
+@.str_18 = private unnamed_addr constant [34 x i8] c"--- VERBOSE LANGUAGE RUNTIME ---
+\00", align 1
+@.str_20 = private unnamed_addr constant [32 x i8] c"Initial Calculation Result: %d
+\00", align 1
+@.str_23 = private unnamed_addr constant [31 x i8] c"Initial Flag Byte Pattern: %d
+\00", align 1
+@.str_33 = private unnamed_addr constant [37 x i8] c"Loop: calculation = %d -- flag = %d
+\00", align 1
+@.str_45 = private unnamed_addr constant [12 x i8] c"#32: Norm.
+\00", align 1
+@.str_52 = private unnamed_addr constant [26 x i8] c"#73, #78 => JackPot bro 
+\00", align 1
+@.str_60 = private unnamed_addr constant [25 x i8] c"#114, #111, #112 : Nah.
+\00", align 1
+@.str_62 = private unnamed_addr constant [10 x i8] c"%d-%c:%d \00", align 1
+
+declare ptr @malloc(i32)
+declare void @free(ptr)
+declare ptr @fopen(ptr, ptr)
+declare i32 @getc(ptr)
+declare i32 @putc(i32, ptr)
+
+define i32 @CompileKernel() {
+  %1 = call ptr @malloc(i32 512)
+  %2 = alloca ptr, align 8
+  store ptr %1, ptr %2, align 8
+  %5 = call ptr @fopen(ptr @.str_3, ptr @.str_4)
+  %6 = alloca ptr, align 8
+  store ptr %5, ptr %6, align 8
+  %7 = mul nsw i32 20, 3
+  %8 = add nsw i32 10, %7
+  %9 = sdiv i32 %8, 2
+  %10 = srem i32 %9, 4
+  %11 = alloca i32, align 8
+  store i32 %10, ptr %11, align 8
+  %12 = shl i32 1, 4
+  %13 = lshr i32 2, 1
+  %14 = or i32 %12, %13
+  %15 = xor i32 0, -1
+  %16 = xor i32 %14, %15
+  %17 = alloca i32, align 8
+  store i32 %16, ptr %17, align 8
+  %19 = call i32 (ptr, ...) @printf(ptr @.str_18)
+  %21 = load i32, ptr %11, align 4
+  %22 = call i32 (ptr, ...) @printf(ptr @.str_20, i32 %21)
+  %24 = load i32, ptr %17, align 4
+  %25 = call i32 (ptr, ...) @printf(ptr @.str_23, i32 %24)
+  br label %while_cond_1
+
+while_cond_1:
+  %26 = load i32, ptr %11, align 4
+  %27 = load i32, ptr %17, align 4
+  %28 = icmp sgt i32 %26, %27
+  br i1 %28, label %while_body_2, label %while_end_3
+
+while_body_2:
+  %29 = load i32, ptr %11, align 4
+  %30 = add nsw i32 %29, 1
+  store i32 %30, ptr %11, align 4
+  %31 = load i32, ptr %17, align 4
+  %32 = add nsw i32 %31, 2
+  store i32 %32, ptr %17, align 4
+  %34 = load i32, ptr %11, align 4
+  %35 = load i32, ptr %17, align 4
+  %36 = call i32 (ptr, ...) @printf(ptr @.str_33, i32 %34, i32 %35)
+  br label %while_cond_1
+
+while_end_3:
+  %37 = alloca i32, align 4
+  store i32 0, ptr %37, align 4
+  br label %for_cond_4
+
+for_cond_4:
+  %38 = load i32, ptr %37, align 4
+  %39 = icmp sle i32 %38, 100
+  br i1 %39, label %for_body_5, label %for_end_7
+
+for_body_5:
+  %40 = load ptr, ptr %6, align 4
+  %41 = call i32 @getc(ptr %40)
+  %42 = alloca i32, align 8
+  store i32 %41, ptr %42, align 8
+  %43 = load i32, ptr %42, align 4
+  %44 = icmp eq i32 %43, 32
+  br i1 %44, label %then_8, label %else_9
+
+then_8:
+  %46 = call i32 (ptr, ...) @printf(ptr @.str_45)
+  br label %ifcont_10
+
+else_9:
+  %47 = load i32, ptr %42, align 4
+  %48 = icmp eq i32 %47, 73
+  %49 = icmp eq i32 %47, 78
+  %50 = or i1 %48, %49
+  br i1 %50, label %case_match_13, label %case_next_14
+
+case_match_13:
+  %51 = alloca i32, align 8
+  store i32 1, ptr %51, align 8
+  %53 = call i32 (ptr, ...) @printf(ptr @.str_52)
+  br label %select_exit_11
+
+case_next_14:
+  %54 = icmp eq i32 %47, 114
+  %55 = icmp eq i32 %47, 111
+  %56 = icmp eq i32 %47, 112
+  %57 = or i1 %55, %56
+  %58 = or i1 %54, %57
+  br i1 %58, label %case_match_15, label %case_next_16
+
+case_match_15:
+  %59 = alloca i32, align 8
+  store i32 1, ptr %59, align 8
+  %61 = call i32 (ptr, ...) @printf(ptr @.str_60)
+  br label %select_exit_11
+
+case_next_16:
+  br label %case_default_12
+
+case_default_12:
+  %63 = load i32, ptr %37, align 4
+  %64 = load i32, ptr %42, align 4
+  %65 = load i32, ptr %42, align 4
+  %66 = call i32 (ptr, ...) @printf(ptr @.str_62, i32 %63, i32 %64, i32 %65)
+  br label %select_exit_11
+
+select_exit_11:
+  br label %ifcont_10
+
+ifcont_10:
+  br label %for_inc_6
+
+for_inc_6:
+  %67 = load i32, ptr %37, align 4
+  %68 = add nsw i32 %67, 1
+  store i32 %68, ptr %37, align 4
+  br label %for_cond_4
+
+for_end_7:
+  %69 = load ptr, ptr %2, align 4
+  call void @free(ptr %69)
+  %71 = load i32, ptr %17, align 4
+  %72 = load i32, ptr %11, align 4
+  %73 = icmp sgt i32 %71, %72
+  br i1 %73, label %then_17, label %else_18
+
+then_17:
+  %74 = load i32, ptr %11, align 4
+  ret i32 %74
+
+else_18:
+  ret i32 0
+}
+
+define i32 @main() {
+  %75 = call i32 @CompileKernel()
+  %76 = alloca i32, align 8
+  store i32 %75, ptr %76, align 8
+  %77 = load i32, ptr %76, align 4
+  ret i32 %77
+}
+
+declare i32 @printf(ptr, ...)
+
