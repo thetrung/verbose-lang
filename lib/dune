@@ -1,2 +1,2 @@
 (library
- (name verbose_lang))
+ (name VerboseLang))
