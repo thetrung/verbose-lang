@@ -90,23 +90,40 @@ code_stmt:
   
   | IF cond=expr THEN mandatory_newlines body=block els=if_else_block END IF
     { Ast.If(cond, body, els) }
-  | SELECT CASE target=expr mandatory_newlines cases=list(case_block) END SELECT
-    { Ast.SelectCase(target, cases) }
-    
+
+  (* | SELECT CASE target=expr mandatory_newlines cases=list(case_block) def=option(case_else_block) END SELECT *)
+  (*   { Ast.SelectCase(target, cases, def) } *)
+
   | WHILE cond=expr DO mandatory_newlines body=block END WHILE
     { Ast.While(cond, body) }
+
   | FOR var=ID EQUALS start=expr TO finish=expr mandatory_newlines body=block END FOR
     { Ast.For(var, start, finish, body) }
-;
 
+  (* Fix: Select Case now parses a unified list of case branches *)
+  | SELECT CASE target=expr mandatory_newlines branches=case_branches END SELECT
+    { 
+      let explicit_cases, default_case = branches in
+      Ast.SelectCase(target, explicit_cases, default_case) 
+    }
+;
+(* This rule parses the entire inner body of the Select Case statement deterministically *)
+case_branches:
+  | /* empty */ 
+    { ([], None) }
+    
+  | CASE ELSE mandatory_newlines body=block 
+    { ([], Some(body)) }
+    
+  | CASE exprs=separated_nonempty_list(COMMA, expr) mandatory_newlines body=block rest=case_branches 
+    { 
+      let explicit_rest, default_opt = rest in
+      ((exprs, body) :: explicit_rest, default_opt) 
+    }
+;
 if_else_block:
   | /* empty */                         { [] }
   | ELSE mandatory_newlines body=block  { body }
-;
-
-case_block:
-  | CASE exprs=separated_nonempty_list(COMMA, expr) mandatory_newlines body=block
-    { (exprs, body) }
 ;
 
 expr:

@@ -30,7 +30,8 @@ type stmt =
   | Return of expr option
   (* Conditions *)
   | If of expr * stmt list * stmt list (* If condition Then body Else body *)
-  | SelectCase of expr * (expr list * stmt list) list (* Case evaluation values -> statements *)
+  (* Case evaluation values -> statements *)
+  | SelectCase of expr * (expr list * stmt list) list * stmt list option
   (* Loops *)
   | While of expr * stmt list
   | For of string * expr * expr * stmt list (* For var = start To end *)
@@ -72,13 +73,19 @@ let rec string_of_stmt indent = function
   | If (c, t, e) -> 
       let els_str = if e = [] then "" else indent ^ "Else\n" ^ string_of_block (indent ^ "  ") e in
       indent ^ "If " ^ string_of_expr c ^ " Then\n" ^ string_of_block (indent ^ "  ") t ^ els_str ^ indent ^ "End If\n"
-  | SelectCase (e, cases) ->
+  (* --- UPDATED: Select Case with Case Else Fallback Printing --- *)
+  | SelectCase (e, cases, default_opt) ->
       let print_case (el, b) = 
         indent ^ "  Case " ^ String.concat ", " (List.map string_of_expr el) ^ "\n" ^ string_of_block (indent ^ "    ") b 
       in
-      indent ^ "Select Case " ^ string_of_expr e ^ "\n" ^ String.concat "" (List.map print_case cases) ^ indent ^ "End Select\n"
-
-and string_of_block indent stmts = String.concat "" (List.map (string_of_stmt indent) stmts)
+      let default_str = match default_opt with
+        | Some b -> indent ^ "  Case Else\n" ^ string_of_block (indent ^ "    ") b
+        | None -> ""
+      in
+      indent ^ "Select Case " ^ string_of_expr e ^ "\n" ^ 
+      String.concat "" (List.map print_case cases) ^ 
+      default_str ^ 
+      indent ^ "End Select\n"and string_of_block indent stmts = String.concat "" (List.map (string_of_stmt indent) stmts)
 
 let string_of_def = function
   | Structure (is_public, name, fields) ->

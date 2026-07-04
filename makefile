@@ -1,4 +1,4 @@
-default: build run clean
+default: clean build run
 
 build: 
 	dune build

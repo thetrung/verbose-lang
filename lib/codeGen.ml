@@ -227,46 +227,84 @@ let rec codegen_stmt ctx = function
       
       emit ctx (Printf.sprintf "\n%s:" label_end)
 
-  | SelectCase (target_exp, cases) ->
+  | SelectCase (target_exp, cases, default_stmts_opt) ->
       let target_val, t = codegen_expr ctx target_exp in
       let label_exit = next_label ctx "select_exit" in
       
+      (* Determine where to branch if ALL explicit checks fail *)
+      let label_default = match default_stmts_opt with
+        | Some _ -> next_label ctx "case_default"
+        | None -> label_exit
+      in
+
       let rec emit_cases = function
-        | [] -> emit ctx (Printf.sprintf "  br label %%%s" label_exit)
+        | [] -> emit ctx (Printf.sprintf "  br label %%%s" label_default)
         | (expr_list, stmts) :: next_cases ->
             let label_match = next_label ctx "case_match" in
             let label_next = next_label ctx "case_next" in
-            
-            (* Check all comma-separated options in the Case line *)
             let rec build_or_chain = function
-              | [] -> "i1 false" (* Fallback marker *)
-              | [e] -> 
-                  let v, _ = codegen_expr ctx e in
-                  let reg = next_reg ctx in
-                  emit ctx (Printf.sprintf "  %s = icmp eq %s %s, %s" reg t target_val v);
-                  reg
-              | e :: es ->
-                  let v, _ = codegen_expr ctx e in
-                  let eq_reg = next_reg ctx in
-                  emit ctx (Printf.sprintf "  %s = icmp eq %s %s, %s" eq_reg t target_val v);
-                  let rest_reg = build_or_chain es in
-                  let or_reg = next_reg ctx in
-                  emit ctx (Printf.sprintf "  %s = or i1 %s, %s" or_reg eq_reg rest_reg);
-                  or_reg
+              | [] -> "i1 false"
+              | [e] -> let v, _ = codegen_expr ctx e in let reg = next_reg ctx in emit ctx (Printf.sprintf "  %s = icmp eq %s %s, %s" reg t target_val v); reg
+              | e :: es -> let v, _ = codegen_expr ctx e in let eq_reg = next_reg ctx in emit ctx (Printf.sprintf "  %s = icmp eq %s %s, %s" eq_reg t target_val v);
+                           let rest_reg = build_or_chain es in let or_reg = next_reg ctx in emit ctx (Printf.sprintf "  %s = or i1 %s, %s" or_reg eq_reg rest_reg); or_reg
             in
             let cond_reg = build_or_chain expr_list in
             emit ctx (Printf.sprintf "  br i1 %s, label %%%s, label %%%s" cond_reg label_match label_next);
-            
-            (* Write Case body code lines *)
-            emit ctx (Printf.sprintf "\n%s:" label_match);
-            List.iter (codegen_stmt ctx) stmts;
+            emit ctx (Printf.sprintf "\n%s:" label_match); List.iter (codegen_stmt ctx) stmts;
             emit ctx (Printf.sprintf "  br label %%%s" label_exit);
-            
-            emit ctx (Printf.sprintf "\n%s:" label_next);
-            emit_cases next_cases
-      in
+            emit ctx (Printf.sprintf "\n%s:" label_next); emit_cases next_cases
+      in 
       emit_cases cases;
+
+      (* NEW: Generate the 'Case Else' body if it was declared in the script *)
+      (match default_stmts_opt with
+       | Some stmts ->
+           emit ctx (Printf.sprintf "\n%s:" label_default);
+           List.iter (codegen_stmt ctx) stmts;
+           emit ctx (Printf.sprintf "  br label %%%s" label_exit)
+       | None -> ());
+
       emit ctx (Printf.sprintf "\n%s:" label_exit)
+  (* | SelectCase (target_exp, cases) -> *)
+  (*     let target_val, t = codegen_expr ctx target_exp in *)
+  (*     let label_exit = next_label ctx "select_exit" in *)
+  (**)
+  (*     let rec emit_cases = function *)
+  (*       | [] -> emit ctx (Printf.sprintf "  br label %%%s" label_exit) *)
+  (*       | (expr_list, stmts) :: next_cases -> *)
+  (*           let label_match = next_label ctx "case_match" in *)
+  (*           let label_next = next_label ctx "case_next" in *)
+  (**)
+  (*           (* Check all comma-separated options in the Case line *) *)
+  (*           let rec build_or_chain = function *)
+  (*             | [] -> "i1 false" (* Fallback marker *) *)
+  (*             | [e] ->  *)
+  (*                 let v, _ = codegen_expr ctx e in *)
+  (*                 let reg = next_reg ctx in *)
+  (*                 emit ctx (Printf.sprintf "  %s = icmp eq %s %s, %s" reg t target_val v); *)
+  (*                 reg *)
+  (*             | e :: es -> *)
+  (*                 let v, _ = codegen_expr ctx e in *)
+  (*                 let eq_reg = next_reg ctx in *)
+  (*                 emit ctx (Printf.sprintf "  %s = icmp eq %s %s, %s" eq_reg t target_val v); *)
+  (*                 let rest_reg = build_or_chain es in *)
+  (*                 let or_reg = next_reg ctx in *)
+  (*                 emit ctx (Printf.sprintf "  %s = or i1 %s, %s" or_reg eq_reg rest_reg); *)
+  (*                 or_reg *)
+  (*           in *)
+  (*           let cond_reg = build_or_chain expr_list in *)
+  (*           emit ctx (Printf.sprintf "  br i1 %s, label %%%s, label %%%s" cond_reg label_match label_next); *)
+  (**)
+  (*           (* Write Case body code lines *) *)
+  (*           emit ctx (Printf.sprintf "\n%s:" label_match); *)
+  (*           List.iter (codegen_stmt ctx) stmts; *)
+  (*           emit ctx (Printf.sprintf "  br label %%%s" label_exit); *)
+  (**)
+  (*           emit ctx (Printf.sprintf "\n%s:" label_next); *)
+  (*           emit_cases next_cases *)
+  (*     in *)
+  (*     emit_cases cases; *)
+  (*     emit ctx (Printf.sprintf "\n%s:" label_exit) *)
 
   | For (var_name, start_exp, finish_exp, body_stmts) ->
       let label_cond = next_label ctx "for_cond" in

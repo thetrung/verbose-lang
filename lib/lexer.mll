@@ -33,6 +33,7 @@ rule tokenize = parse
   | "Else"           { ELSE }
   | "Select"         { SELECT }
   | "Case"           { CASE }
+  (* | "Else"           { ELSE } *)
   | "While"          { WHILE }
   | "Do"             { DO }
   | "For"            { FOR }

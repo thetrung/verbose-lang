@@ -31,15 +31,21 @@ Function CompileKernel() As Integer
         ' 4. Condition blocks testing
         If charCode = 32 Then
             ' Skip spaces
+            printf("#32: Norm.\n")
         Else
             ' Check structure using Select Case
             Select Case charCode
-                Case 43, 45
+                Case 73, 78
                     Dim isOp As Integer = 1
-                Case 48, 49, 50
+                    printf("#73, #78 => JackPot bro \n")
+                Case 114, 111, 112
                     Dim isNum As Integer = 1
+                    printf("#114, #111, #112 : Nah.\n")
+                Case Else
+                    printf("%d-%c:%d ", i, charCode, charCode)
             End Select
         End If
+
     End For
 
     free(buffer)
