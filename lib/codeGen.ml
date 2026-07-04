@@ -117,6 +117,16 @@ let rec codegen_expr ctx = function
       in
       (res_reg, ret_type)
 
+  | Call ("printf", args) ->
+      let evaluated_args = List.map (codegen_expr ctx) args in
+      (* Format parameters array *)
+      let arg_strs = List.map (fun (v, t) -> t ^ " " ^ v) evaluated_args in
+      let args_joined = String.concat ", " arg_strs in
+      let res_reg = next_reg ctx in
+      
+      (* FIX: Emit the correct variadic call format containing parameters *)
+      emit ctx (Printf.sprintf "  %s = call i32 (ptr, ...) @printf(%s)" res_reg args_joined);
+      (res_reg, "i32")
   | Call (name, args) ->
       let evaluated_args = List.map (codegen_expr ctx) args in
       let arg_strs = List.map (fun (v, t) -> 
@@ -140,6 +150,7 @@ let rec codegen_expr ctx = function
         emit ctx (Printf.sprintf "  %s = call %s @%s(%s)" res_reg ret_type name args_joined);
         (res_reg, ret_type)
       end
+
 
 let rec codegen_stmt ctx = function
   | Dim (name, dt, exp) ->
@@ -339,15 +350,16 @@ let generate_program prog =
   let header_buf = Buffer.create 512 in
   let emit_header str = Buffer.add_string header_buf (str ^ "\n") in
   
-  emit_header "target datalayout = \"e-m:o-i64:64-i128:128-n32:64-S128-Fn32\"";
-  emit_header "target triple = \"arm64-apple-macosx\"";
-  emit_header "";
+  (* emit_header "target datalayout = \"e-m:o-i64:64-i128:128-n32:64-S128-Fn32\""; *)
+  (* emit_header "target triple = \"arm64-apple-macosx\""; *)
+  (* emit_header ""; *)
   
   (* Prepend all dynamically gathered global string literals *)
   List.iter (fun g -> emit_header g) (List.rev ctx.globals);
   if ctx.globals <> [] then emit_header "";
   
   (* Include your external runtime C headers *)
+  emit ctx "declare i32 @printf(ptr, ...)";
   emit_header "declare ptr @malloc(i32)";
   emit_header "declare void @free(ptr)";
   emit_header "declare ptr @fopen(ptr, ptr)";
