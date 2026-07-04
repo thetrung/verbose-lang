@@ -6,34 +6,56 @@ Something like VB6.0/NET but will be compiled without GC 😄
 Just my prototype WIP on top of LLVM for quick-play, nothing serious yet :
 
 ```VB
-' This is a native code comment.
-
-' Example Struct :
-Public Structure Player
-  Public ID As Integer
-  Public FixedName(31) As Byte
+Public Structure Token
+    Public Kind As Integer
+    Public Value As Pointer
 End Structure
-  
-' Function that modify Structure 
-Function UpdatePlayer(p As Player) As Integer
-  p.ID = 777
-  Return p.ID
+
+Function CompileKernel() As Integer
+    ' 1. Memory and I/O initialization via C hooks
+    Dim buffer As Pointer = malloc(512)
+    Dim fileHandle As Pointer = fopen("lib/ast.ml", "r")
+    
+    ' 2. Numeric and Bitwise testing
+    Dim calculation As Integer = (10 + 20 * 3) / 2 Mod 4
+    Dim flag As Integer = (1 Shl 4) Or (2 Shr 1) Xor Not 0
+    ' 3. Loop statements and Comparison operators
+    While calculation > flag Do
+        calculation = calculation + 1
+        flag = flag + 2
+    End While
+   
+    For i = 0 To 100
+      Dim charCode As Integer = getc(fileHandle)
+
+        ' 4. Condition blocks testing
+        If charCode = 32 Then
+            ' Skip spaces
+        Else
+            ' Check structure using Select Case
+            Select Case charCode
+                Case 43, 45
+                    Dim isOp As Integer = 1
+                Case 48, 49, 50
+                    Dim isNum As Integer = 1
+            End Select
+        End If
+    End For
+
+    free(buffer)
+
+    If flag > calculation Then
+      Return calculation
+    Else
+      Return 0
+    End If
 End Function
 
-' Function Call, field access, Printf..
-Function InitializeMainEngine() As Integer
-  Dim localPlayer As Player = New
-  localPlayer.ID = 100
-  UpdatePlayer (localPlayer)
-  Printf ("Updated ID: {localPlayer.ID}")
-  Return localPlayer.ID
+Function main () As Integer
+  Dim result As Integer = CompileKernel()
+  Return result
 End Function
 
-' EntryPoint 
-Function Main () As Nothing
-  Dim result As Integer = InitializeMainEngine()
-  Printf ("Result: {result}")
-End Function
 ```
 ### GOAL 
 - Can have fun coding again.

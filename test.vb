@@ -36,6 +36,7 @@ Function CompileKernel() As Integer
     End For
 
     free(buffer)
+
     If flag > calculation Then
       Return calculation
     Else
