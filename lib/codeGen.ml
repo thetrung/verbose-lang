@@ -174,20 +174,30 @@ let rec codegen_stmt ctx = function
       let label_else = next_label ctx "else" in
       let label_merge = next_label ctx "ifcont" in
       
+      (* Helper to check if a block definitely ends with a return *)
+      let ends_with_return stmts = 
+        List.exists (function Return _ -> true | _ -> false) stmts 
+      in
+      let then_terminates = ends_with_return then_stmts in
+      let else_terminates = ends_with_return else_stmts in
+      
       emit ctx (Printf.sprintf "  br i1 %s, label %%%s, label %%%s" cond_val label_then label_else);
       
-      (* Process Then block *)
+      (* Generate 'Then' block *)
       emit ctx (Printf.sprintf "\n%s:" label_then);
       List.iter (codegen_stmt ctx) then_stmts;
-      emit ctx (Printf.sprintf "  br label %%%s" label_merge);
+      if not then_terminates then
+        emit ctx (Printf.sprintf "  br label %%%s" label_merge);
       
-      (* Process Else block *)
+      (* Generate 'Else' block *)
       emit ctx (Printf.sprintf "\n%s:" label_else);
       List.iter (codegen_stmt ctx) else_stmts;
-      emit ctx (Printf.sprintf "  br label %%%s" label_merge);
+      if not else_terminates then
+        emit ctx (Printf.sprintf "  br label %%%s" label_merge);
       
-      (* Close boundary *)
-      emit ctx (Printf.sprintf "\n%s:" label_merge)
+      (* FIX: Only append the merge label if at least one branch leaks out *)
+      if not (then_terminates && else_terminates) then
+        emit ctx (Printf.sprintf "\n%s:" label_merge)
 
   | While (cond_exp, body_stmts) ->
       let label_cond = next_label ctx "while_cond" in
@@ -247,7 +257,51 @@ let rec codegen_stmt ctx = function
       emit_cases cases;
       emit ctx (Printf.sprintf "\n%s:" label_exit)
 
-  | For (_, _, _, _) -> ()
+  | For (var_name, start_exp, finish_exp, body_stmts) ->
+      let label_cond = next_label ctx "for_cond" in
+      let label_body = next_label ctx "for_body" in
+      let label_inc  = next_label ctx "for_inc" in
+      let label_end  = next_label ctx "for_end" in
+      
+      (* 1. INITIALIZE: Create loop variable if it doesn't exist, and assign start value *)
+      let v_start, _ = codegen_expr ctx start_exp in
+      let alloca_reg = 
+        if Hashtbl.mem ctx.variables var_name then
+          Hashtbl.find ctx.variables var_name
+        else
+          let r = next_reg ctx in
+          emit ctx (Printf.sprintf "  %s = alloca i32, align 4" r);
+          Hashtbl.add ctx.variables var_name r;
+          r
+      in
+      emit ctx (Printf.sprintf "  store i32 %s, ptr %s, align 4" v_start alloca_reg);
+      emit ctx (Printf.sprintf "  br label %%%s" label_cond);
+      
+      (* 2. CHECK CONDITION: Compare iterator <= finish *)
+      emit ctx (Printf.sprintf "\n%s:" label_cond);
+      let current_val = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = load i32, ptr %s, align 4" current_val alloca_reg);
+      let v_finish, _ = codegen_expr ctx finish_exp in
+      let cond_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = icmp sle i32 %s, %s" cond_reg current_val v_finish);
+      emit ctx (Printf.sprintf "  br i1 %s, label %%%s, label %%%s" cond_reg label_body label_end);
+      
+      (* 3. EXECUTE BODY: Process everything inside the loop (including your hidden IF statement!) *)
+      emit ctx (Printf.sprintf "\n%s:" label_body);
+      List.iter (codegen_stmt ctx) body_stmts;
+      emit ctx (Printf.sprintf "  br label %%%s" label_inc);
+      
+      (* 4. INCREMENT: Add 1 to loop variable, then branch back to condition check *)
+      emit ctx (Printf.sprintf "\n%s:" label_inc);
+      let reload_val = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = load i32, ptr %s, align 4" reload_val alloca_reg);
+      let inc_val = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = add nsw i32 %s, 1" inc_val reload_val);
+      emit ctx (Printf.sprintf "  store i32 %s, ptr %s, align 4" inc_val alloca_reg);
+      emit ctx (Printf.sprintf "  br label %%%s" label_cond);
+      
+      (* 5. LOOP EXIT BOUNDARY *)
+      emit ctx (Printf.sprintf "\n%s:" label_end)
 
 let codegen_def ctx = function
   | Structure (_, _, _) -> () (* Handled in standard type tables layout *)

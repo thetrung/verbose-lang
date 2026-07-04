@@ -36,9 +36,11 @@ Function CompileKernel() As Integer
     End For
 
     free(buffer)
-    ' Return 0
-    ' Return flag 
-    Return calculation
+    If flag > calculation Then
+      Return calculation
+    Else
+      Return 0
+    End If
 End Function
 
 Function main () As Integer
