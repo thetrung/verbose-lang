@@ -1,14 +1,11 @@
+TARGET=prototype.vb
 default: clean build run
 
 build: 
 	dune build
 
 run:
-	./_build/default/bin/main.exe
-
-# test:
-# 	dune exec bin/main.exe -- test.vb > res.ll && llc res.ll && clang res.s -o res && ./res
-# 	echo $?
+	dune exec bin/main.exe -- ${TARGET} > res.ll && llc res.ll && clang res.s -o res && ./res
 
 clean:
-	rm -rf _build
+	rm -rf _build res*
