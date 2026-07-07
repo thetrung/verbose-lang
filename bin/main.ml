@@ -13,7 +13,7 @@ let () =
       
       (* Safely close the input file pointer immediately after a successful parse *)
       close_in in_channel;
-      
+      print_endline (Printer.print_program ast);
       print_endline "; --- GENERATED LLVM IR CODE ---";
       
       (* Generate and print our clean text patching string output *)

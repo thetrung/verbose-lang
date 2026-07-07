@@ -5,4 +5,4 @@
 
 (library
  (name VerboseLang)
- (modules lexer parser ast codegen))
+ (modules lexer parser ast printer codegen))
