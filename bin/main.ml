@@ -14,12 +14,24 @@ let () =
       (* Safely close the input file pointer immediately after a successful parse *)
       close_in in_channel;
       print_endline (Printer.print_program ast);
-      print_endline "; --- GENERATED LLVM IR CODE ---";
       
       (* Generate and print our clean text patching string output *)
       let ir_output = Codegen.generate_program ast in
-      print_endline ir_output
-      
+      (* print_endline "; --- GENERATED LLVM IR CODE ---"; *)
+      (* print_endline ir_output *)
+     
+      let binary = (List.nth (String.split_on_char '.' filename) 0) in 
+      let f_output = binary ^ ".ll" in
+      Out_channel.with_open_text f_output (fun channel -> 
+      Out_channel.output_string channel ir_output );
+      let llc   = Sys.command (Printf.sprintf "llc %s.ll" binary) in
+      let clang = Sys.command (Printf.sprintf "clang %s.s -o %s" binary binary) in
+      let exec  = Sys.command (Printf.sprintf "./%s" binary) in
+      if llc + clang + exec != 0 then 
+        Printf.printf "Status: llc/clang/exec = %d %d %d\n" llc clang exec
+      else 
+        ignore ()
+
     with
     | Lexer.SyntaxError msg ->
         (* Use a try-catch pattern to prevent double-closing descriptors *)
