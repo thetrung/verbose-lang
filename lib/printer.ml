@@ -3,7 +3,14 @@ open Ast
 
 let rec string_of_dt = function
 
-  | Int -> "Integer" | Byte -> "Byte" | Nothing -> "Nothing" | Pointer -> "Pointer"
+  | Int -> "Integer" 
+  | Byte -> "Byte" 
+  | Short -> "Short"   (* 🆕 Added *)
+  | Long -> "Long"     (* 🆕 Added *)
+  | Single -> "Single" (* 🆕 Added *)
+  | Double -> "Double" (* 🆕 Added *)
+  | Nothing -> "Nothing" 
+  | Pointer -> "Pointer"
 
 let string_of_op = function
 
@@ -14,6 +21,7 @@ let string_of_op = function
 let rec string_of_expr = function
   | Id id -> id
   | IntLit i -> string_of_int i
+  | FloatLit f -> string_of_float f 
   | StringLit s -> (Printf.sprintf "%S" s)
   | UnaryOp (op, e) -> "(" ^ op ^ " " ^ string_of_expr e ^ ")"
   | BinOp (e1, op, e2) -> "(" ^ string_of_expr e1 ^ " " ^ string_of_op op ^ " " ^ string_of_expr e2 ^ ")"

@@ -43,13 +43,17 @@ let next_label ctx prefix =
 let string_of_dt = function
   | Int -> "i32"
   | Byte -> "i8"
+  | Short -> "i16"   (* 🆕 Added *)
+  | Long -> "i64"     (* 🆕 Added *)
+  | Single -> "float"  (* 🆕 Added *)
+  | Double -> "double" (* 🆕 Added *) 
   | Nothing -> "void"
   | Pointer -> "ptr"
 
 (* Returns (result_register_name, type_string) *)
 let rec codegen_expr ctx = function
-  | IntLit i -> (string_of_int i, "i32")
-  
+  | IntLit i -> (string_of_int i, "i32") 
+  | FloatLit f -> (string_of_float f, "double") (* 🆕 Default to 64-bit double literal mapping *)
   | StringLit s ->
       let global_reg = "@.str_" ^ string_of_int (ctx.reg_counter) in
       ctx.reg_counter <- ctx.reg_counter + 1;
@@ -110,46 +114,87 @@ let rec codegen_expr ctx = function
       (res_reg, t)
   | UnaryOp (_, _) -> raise (Error "Unsupported unary operation")
 
+ 
   | BinOp (e1, op, e2) ->
       let v1, t1 = codegen_expr ctx e1 in
-      let v2, _  = codegen_expr ctx e2 in
+      let v2, t2 = codegen_expr ctx e2 in
+      
+      (* ⚠️ No hidden casting: types must align exactly *)
+      if t1 <> t2 then raise (Error ("Type mismatch in binary operation: " ^ t1 ^ " vs " ^ t2));
+      
       let res_reg = next_reg ctx in
-      let op_str = match op with
-        | Add -> "add nsw i32"
-        | Sub -> "sub nsw i32"
-        | Mul -> "mul nsw i32"
-        | Div -> "sdiv i32"
-        | Mod -> "srem i32"
-        | And -> "and i32"
-        | Or  -> "or i32"
-        | Xor -> "xor i32"
-        | Shl -> "shl i32"
-        | Shr -> "lshr i32"
-        (* Comparison operations emit an i1 (boolean) condition *)
-        | Equal        -> "icmp eq i32"
-        | Greater      -> "icmp sgt i32"
-        | Less         -> "icmp slt i32"
-        | GreaterEqual -> "icmp sge i32"
-        | LessEqual    -> "icmp sle i32"
-        | NotEqual     -> "icmp ne i32"
-      in
-      emit ctx (Printf.sprintf "  %s = %s %s, %s" res_reg op_str v1 v2);
-      (* Comparisons result in an i1 type, math results in the input type *)
-      let ret_type = match op with
+      let is_fp = (t1 = "float" || t1 = "double") in
+      
+      if is_fp then begin
+        (* --- FLOATING POINT OPERATIONS --- *)
+        let op_str = match op with
+          | Add -> "fadd"
+          | Sub -> "fsub"
+          | Mul -> "fmul"
+          | Div -> "fdiv"
+          | Mod -> "frem"
+          (* FP Comparisons *)
+          | Equal        -> "fcmp oeq"
+          | Greater      -> "fcmp ogt"
+          | Less         -> "fcmp olt"
+          | GreaterEqual -> "fcmp oge"
+          | LessEqual    -> "fcmp ole"
+          | NotEqual     -> "fcmp one"
+          | _ -> raise (Error "Unsupported operation on floating point values")
+        in
+        emit ctx (Printf.sprintf "  %s = %s %s %s, %s" res_reg op_str t1 v1 v2);
+        let ret_type = match op with
 
-        | Equal | Greater | Less | GreaterEqual | LessEqual | NotEqual -> "i1"
-        | _ -> t1
-      in
-      (res_reg, ret_type)
+          | Equal | Greater | Less | GreaterEqual | LessEqual | NotEqual -> "i1"
+          | _ -> t1
+        in
+        (res_reg, ret_type)
+      end else begin
+        (* --- STANDARD INTEGER OPERATIONS --- *)
+        let op_str = match op with
+          | Add -> "add nsw i32" (* Or match t1 for i8/i16/i64 configurations *)
+          | Sub -> "sub nsw i32"
+          | Mul -> "mul nsw i32"
+          | Div -> "sdiv i32"
+          | Mod -> "srem i32"
+          | And -> "and i32"
+          | Or  -> "or i32"
+          | Xor -> "xor i32"
+          | Shl -> "shl i32"
+          | Shr -> "lshr i32"
+          | Equal        -> "icmp eq i32"
+          | Greater      -> "icmp sgt i32"
+          | Less         -> "icmp slt i32"
+          | GreaterEqual -> "icmp sge i32"
+          | LessEqual    -> "icmp sle i32"
+          | NotEqual     -> "icmp ne i32"
+        in
+        emit ctx (Printf.sprintf "  %s = %s %s, %s" res_reg op_str v1 v2);
+        let ret_type = match op with
 
+          | Equal | Greater | Less | GreaterEqual | LessEqual | NotEqual -> "i1"
+          | _ -> t1
+        in
+        (res_reg, ret_type)
+      end
+ 
   | Call ("printf", args) ->
       let evaluated_args = List.map (codegen_expr ctx) args in
-      (* Format parameters array *)
-      let arg_strs = List.map (fun (v, t) -> t ^ " " ^ v) evaluated_args in
+      
+      (* 🆕 Fix: Promote any 'float' argument to 'double' to respect C Variadic ABI requirements *)
+      let promoted_args = List.map (fun (v, t) ->
+        if t = "float" then begin
+          let cast_reg = next_reg ctx in
+          emit ctx (Printf.sprintf "  %s = fpext float %s to double" cast_reg v);
+          (cast_reg, "double")
+        end else
+          (v, t)
+      ) evaluated_args in
+      
+      let arg_strs = List.map (fun (v, t) -> t ^ " " ^ v) promoted_args in
       let args_joined = String.concat ", " arg_strs in
       let res_reg = next_reg ctx in
       
-      (* FIX: Emit the correct variadic call format containing parameters *)
       emit ctx (Printf.sprintf "  %s = call i32 (ptr, ...) @printf(%s)" res_reg args_joined);
       (res_reg, "i32")
  

@@ -5,11 +5,12 @@ open Ast
 
 %token <int> INT_LIT
 %token <string> STRING_LIT
+%token <float> FLOAT_LIT
 %token <string> ID
 
 /* Core structural tokens */
 %token PUBLIC STRUCTURE FUNCTION SUB END AS DIM RETURN NOTHING POINTER_TYPE
-%token INT_TYPE BYTE_TYPE EOF LPAREN RPAREN COMMA NEWLINE DOT
+%token INT_TYPE BYTE_TYPE SHORT_TYPE LONG_TYPE SINGLE_TYPE DOUBLE_TYPE EOF LPAREN RPAREN COMMA NEWLINE DOT
 
 /* Operators and Control Flow */
 %token IF THEN ELSE SELECT CASE WHILE DO FOR TO
@@ -67,7 +68,11 @@ data_type:
   | INT_TYPE     { Ast.Int }
   | BYTE_TYPE    { Ast.Byte }
   | NOTHING      { Ast.Nothing }
-  | POINTER_TYPE { Ast.Pointer }
+  | POINTER_TYPE { Ast.Pointer }  
+  | SHORT_TYPE   { Ast.Short }  /* 🆕 Added */
+  | LONG_TYPE    { Ast.Long }   /* 🆕 Added */
+  | SINGLE_TYPE  { Ast.Single } /* 🆕 Added */
+  | DOUBLE_TYPE  { Ast.Double } /* 🆕 Added */
 ;
 
 block:
@@ -139,6 +144,7 @@ if_else_block:
 expr:
   | id=ID                                                   { Ast.Id(id) }
   | i=INT_LIT                                               { Ast.IntLit(i) }
+  | f=FLOAT_LIT                                             { Ast.FloatLit(f) } 
   | s=STRING_LIT                                            { Ast.StringLit(s) }
   | LPAREN e=expr RPAREN                                    { e }
   | NOT e=expr                                              { Ast.UnaryOp("Not", e) }
