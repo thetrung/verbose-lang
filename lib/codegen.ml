@@ -52,22 +52,38 @@ let string_of_dt = function
   | Double -> "double" (* 🆕 Added *) 
   | Nothing -> "void"
   | Pointer -> "ptr"
+  | Custom name ->
+      (* If it's a registered Enum, lower it natively to a plain integer *)
+      if Hashtbl.mem enum_values (name ^ "._is_enum") then "i32"
+      else Printf.sprintf "%%struct.%s" name
 
-(* 🆕 Calculates the padded byte size of a structure layout based on its fields *)
-let get_struct_size struct_name =
+
+let rec get_struct_size struct_name =
   if Hashtbl.mem struct_field_types struct_name then
     let fields = Hashtbl.find struct_field_types struct_name in
     let raw_size = List.fold_left (fun acc (_, dt) ->
       acc + (match dt with
        | Byte -> 1
        | Short -> 2
+
        | Int | Single -> 4
        | Long | Double | Pointer -> 8
-       | Nothing -> 0)
-    ) 0 fields in
-    (* Pad up to the nearest multiple of 8 to prevent struct clipping *)
-    ((raw_size + 7) / 8) * 8
-  else 16 (* Fallback safe default *)
+       | Nothing -> 0
+       (* Inside get_struct_size *)
+       | Custom name ->
+          if Hashtbl.mem enum_values (name ^ "._is_enum") then 4
+          else get_struct_size name (* Calculates size of nested fields recursively *)
+          )
+        ) 0 fields in
+        ((raw_size + 7) / 8) * 8
+  else 16
+
+(* Inside your main compilation driver function tracking definitions *)
+let compile_enum_definition enum_name members =
+  Hashtbl.add enum_values (enum_name ^ "._is_enum") 1; (* 👈 Anchor tag for identification *)
+  List.iter (fun (member_name, value) ->
+    Hashtbl.add enum_values (enum_name ^ "." ^ member_name) value
+  ) members
 
 (* Returns (result_register_name, type_string) *)
 let rec codegen_expr ctx = function
@@ -107,33 +123,27 @@ let rec codegen_expr ctx = function
  
   | FieldAccess (base_expr, field_name) ->
       (match base_expr with
+       (* Case A: Static Enum Name Constants (e.g., NodeType.Literal) *)
        | Id name when Hashtbl.mem enum_values (name ^ "." ^ field_name) ->
-           (* 🆕 Case A: It is a compile-time Enum definition constant! *)
            let lookup_key = name ^ "." ^ field_name in
            let value_int = Hashtbl.find enum_values lookup_key in
            (string_of_int value_int, "i32")
            
-       | Id name ->
-           (* Case B: Standard Structure layout instance path lookup *)
-           let base_ptr, _ = codegen_expr ctx base_expr in
-           let struct_name = Hashtbl.find var_types name in
-           let fields = Hashtbl.find struct_fields struct_name in
-           let field_index = List.assoc field_name fields in
-           let field_types = Hashtbl.find struct_field_types struct_name in
-           let actual_dt = List.assoc field_name field_types in
-           let dt_str = string_of_dt actual_dt in
+       (* Case B: Deep Dynamic Property Fields Paths Lookup *)
+       | _ ->
+           (* 1. Use the helper to compute the exact inner element memory pointer *)
+           let field_ptr, final_type = get_field_pointer ctx (FieldAccess(base_expr, field_name)) in
            
-           let field_ptr = next_reg ctx in
-           let struct_type_str = Printf.sprintf "%%struct.%s" struct_name in
-           emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d" 
-                      field_ptr struct_type_str base_ptr field_index);
-           
-           let res_reg = next_reg ctx in
-           emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align 8" res_reg dt_str field_ptr);
-           (res_reg, dt_str)
-           
-       | _ -> 
-           raise (Error "Property lookups require an explicit variable identifier or Enum name"))
+           (* 2. Check if the final path points to an entire embedded sub-struct block *)
+           if Hashtbl.mem struct_fields final_type then
+             (field_ptr, "ptr")
+           else begin
+             (* 3. If it's a primitive scalar (like float, double, or i64), load the data *)
+             let res_reg = next_reg ctx in
+             emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align 8" res_reg final_type field_ptr);
+             (res_reg, final_type)
+           end)
+
 
   | UnaryOp ("Not", e) ->
       let v, t = codegen_expr ctx e in
@@ -239,23 +249,30 @@ let rec codegen_expr ctx = function
         List.iteri (fun idx arg_expr ->
           let (field_name, _) = List.find (fun (_, i) -> i = idx) fields in
           let actual_dt = List.assoc field_name field_types in
-          let expected_dt_str = string_of_dt actual_dt in (* e.g., "ptr" or "i32" *)
+          let expected_dt_str = string_of_dt actual_dt in 
           
-          let v, dt_str = codegen_expr ctx arg_expr in (* For 0x12345678, dt_str is "i32" *)
+          let v, dt_str = codegen_expr ctx arg_expr in 
           let field_ptr = next_reg ctx in
           emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d" 
                      field_ptr struct_type_str alloca_reg idx);
                      
-          (* ⚠️ FIX: Safely check and cast raw literals passed directly into unmanaged structural fields *)
-          if expected_dt_str = "ptr" && dt_str = "i32" then begin
-            let cast_reg = next_reg ctx in
-            emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
-            emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 4" cast_reg field_ptr)
-          end else
-            emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" expected_dt_str v field_ptr)
+          (* ✅ FIXED: If this field is a nested sub-struct, copy it via memcpy *)
+          match actual_dt with
+          | Custom child_struct_name when Hashtbl.mem struct_fields child_struct_name ->
+              let byte_size = get_struct_size child_struct_name in
+              emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)" 
+                         field_ptr v byte_size)
+          | _ ->
+              if expected_dt_str = "ptr" && dt_str = "i32" then begin
+                let cast_reg = next_reg ctx in
+                emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
+                emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 4" cast_reg field_ptr)
+              end else
+                emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" expected_dt_str v field_ptr)
         ) args;
         (alloca_reg, "ptr")
       end else begin
+        (* Keep your standard external runtime fallback function calls logic exactly the same *)
         let evaluated_args = List.map (codegen_expr ctx) args in
         let arg_strs = List.map (fun (v, t) -> 
           let checked_type = if name = "free" then "ptr" else t in
@@ -277,8 +294,39 @@ let rec codegen_expr ctx = function
         end
       end
 
+and get_field_pointer ctx = function
+  | Id name ->
+      if Hashtbl.mem ctx.variables name then
+        let base_ptr = Hashtbl.find ctx.variables name in
+        let struct_name = Hashtbl.find var_types name in
+        (base_ptr, struct_name)
+      else
+        raise (Error ("Undefined variable base identifier: " ^ name))
 
+  | FieldAccess (sub_expr, field_name) ->
+      (* 1. Recursively bubble up the pointer and the custom layout type of the parent layer *)
+      let parent_ptr, parent_struct = get_field_pointer ctx sub_expr in
+      
+      (* 2. Look up field index within the parent struct blueprint *)
+      let fields = Hashtbl.find struct_fields parent_struct in
+      let field_index = List.assoc field_name fields in
+      
+      (* 3. Fetch the metadata type of this subfield *)
+      let field_types = Hashtbl.find struct_field_types parent_struct in
+      let actual_dt = List.assoc field_name field_types in
+      
+      (* 4. Shift pointer offset using getelementptr *)
+      let field_ptr = next_reg ctx in
+      let struct_type_str = Printf.sprintf "%%struct.%s" parent_struct in
+      emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d" 
+                 field_ptr struct_type_str parent_ptr field_index);
+      
+      (* 5. Crucial step: Return the child structure name string as the type identifier *)
+      (match actual_dt with
+       | Custom child_struct -> (field_ptr, child_struct)
+       | _ -> (field_ptr, string_of_dt actual_dt))
 
+  | _ -> raise (Error "LHS evaluation expects an explicit identifier or nested property pathway")
 
 let rec codegen_stmt ctx = function
 
@@ -338,9 +386,8 @@ let rec codegen_stmt ctx = function
       else
         raise (Error ("Assignment target undefined: " ^ name))
 
-
   | FieldAssign (base_expr, field_name, value_expr) ->
-      let v, dt_str = codegen_expr ctx value_expr in (* If hex/int, dt_str is "i32" *)
+      let v, dt_str = codegen_expr ctx value_expr in 
       let base_ptr, _ = codegen_expr ctx base_expr in
       
       let struct_name = match base_expr with
@@ -351,20 +398,40 @@ let rec codegen_stmt ctx = function
       let field_index = List.assoc field_name fields in
       let field_types = Hashtbl.find struct_field_types struct_name in
       let actual_dt = List.assoc field_name field_types in
-      let expected_dt_str = string_of_dt actual_dt in (* e.g., "ptr" *)
       
       let field_ptr = next_reg ctx in
       let struct_type_str = Printf.sprintf "%%struct.%s" struct_name in
       emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d" 
                  field_ptr struct_type_str base_ptr field_index);
       
-      (* 👇 FIXED: Strict literal comparison logic forces instruction generation *)
-      if expected_dt_str = "ptr" && dt_str = "i32" then begin
-        let cast_reg = next_reg ctx in
-        emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
-        emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 4" cast_reg field_ptr)
-      end else
-        emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" dt_str v field_ptr)
+      (* ✅ FIXED: If the destination field is an embedded struct, issue a block memory copy *)
+      (match actual_dt with
+       | Custom child_struct_name when Hashtbl.mem struct_fields child_struct_name ->
+           let byte_size = get_struct_size child_struct_name in
+           emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)" 
+                      field_ptr v byte_size)
+       | _ ->
+           let expected_dt_str = string_of_dt actual_dt in
+           if expected_dt_str = "ptr" && dt_str = "i32" then begin
+             let cast_reg = next_reg ctx in
+             emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
+             emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 4" cast_reg field_ptr)
+           end else
+             emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" expected_dt_str v field_ptr))
+
+  | AssignExpr (lhs_expr, rhs_expr) ->
+      let rhs_val, rhs_type = codegen_expr ctx rhs_expr in
+      let target_ptr, target_type = get_field_pointer ctx lhs_expr in
+      
+      (* ✅ FIXED: Match target type mappings against global structure blueprints *)
+      if Hashtbl.mem struct_fields target_type then begin
+        let byte_size = get_struct_size target_type in
+        emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)" 
+                   target_ptr rhs_val byte_size)
+      end else begin
+        emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 8" rhs_type rhs_val target_ptr)
+      end
+
 
 
   | ExprStatement exp -> 
@@ -511,83 +578,95 @@ let rec codegen_stmt ctx = function
       emit ctx (Printf.sprintf "\n%s:" label_end)
 
 let codegen_def ctx = function
-  
   | FuncDef (_, name, params, ret_type, body) ->
+      (* Clear local registers and variable tables before processing each unique function body *)
+      Hashtbl.clear ctx.variables;
+      Hashtbl.clear local_types;
+      ctx.reg_counter <- 1;
+
       let param_strs = List.map (fun (n, t) -> string_of_dt t ^ " %" ^ n) params in
       let params_joined = String.concat ", " param_strs in
       let ret_str = string_of_dt ret_type in
       
       emit ctx (Printf.sprintf "define %s @%s(%s) {" ret_str name params_joined);
       
-      (* Map structural function inputs onto standard virtual variables lookup pointers *)
+      (* Map function parameters to local stack variables *)
       List.iter (fun (n, dt) ->
         let t_str = string_of_dt dt in
         let alloca_reg = next_reg ctx in
-        emit ctx (Printf.sprintf "  %s = alloca %s, align 4" alloca_reg t_str);
-        emit ctx (Printf.sprintf "  store %s %%%s, ptr %s, align 4" t_str n alloca_reg);
-        Hashtbl.add ctx.variables n alloca_reg
+        emit ctx (Printf.sprintf "  %s = alloca %s, align 8" alloca_reg t_str);
+        emit ctx (Printf.sprintf "  store %s %%%s, ptr %s, align 8" t_str n alloca_reg);
+        Hashtbl.add ctx.variables n alloca_reg;
+        Hashtbl.add local_types n t_str;
+        
+        (* Track underlying structural metadata types for parameters *)
+        (match dt with
+         | Custom struct_name -> Hashtbl.add var_types n struct_name
+         | _ -> ())
       ) params;
       
       List.iter (codegen_stmt ctx) body;
       
-      (* Auto Void fallback return protection layer *)
+      (* Fallback protection for empty or branching void blocks *)
       if ret_type = Nothing then emit ctx "  ret void";
       emit ctx "}\n"
   
-  | Structure (_, _, _) -> () (* Handled in standard type tables layout *)
-
+  | Structure (_, _, _) -> ()
   | EnumDef (_, _, _) -> () 
-      
-(* 🆕 Global Registrar function to define layouts on the initial parser iteration pass *)
+
+(* Global Pass Registrar to define metadata structures cleanly *)
 let register_definition ctx = function
   | Structure (_, name, fields) ->
       let indexed_fields = List.mapi (fun idx (fname, _) -> (fname, idx)) fields in
       Hashtbl.add struct_fields name indexed_fields;
       Hashtbl.add struct_field_types name fields;
       
-      let field_types_joined = String.concat ", " (List.map (fun (_, dt) -> string_of_dt dt) fields) in
-      let struct_decl = Printf.sprintf "%%struct.%s = type { %s }" name field_types_joined in
-      ctx.globals <- struct_decl :: ctx.globals
+      (* Delay LLVM generation of the type signature until generate_program to ensure nested types are resolved *)
+      ()
 
   | EnumDef (_, enum_name, members) ->
-      (* 🆕 Populates global compile-time translation lookup definitions *)
+      Hashtbl.add enum_values (enum_name ^ "._is_enum") 1;
       List.iter (fun (member_name, value) ->
         let lookup_key = enum_name ^ "." ^ member_name in
         Hashtbl.add enum_values lookup_key value
       ) members
       
   | FuncDef (_, _, _, _, _) -> ()
+
 let generate_program prog =
   let ctx = create_context () in
   
-  (* 🆕 Step 0: Pre-pass step to map and populate structure metadata types globally first *)
+  (* Step 0: Populate structural metadata indices first *)
   List.iter (register_definition ctx) prog;
   
-  (* 1. Process and generate the main bodies of all function declarations first *)
+  (* Step 1: Generate dynamic LLVM struct type layout strings (safe for nested models) *)
+  List.iter (function
+    | Structure (_, name, fields) ->
+        let field_types_joined = String.concat ", " (List.map (fun (_, dt) -> string_of_dt dt) fields) in
+        let struct_decl = Printf.sprintf "%%struct.%s = type { %s }" name field_types_joined in
+        ctx.globals <- struct_decl :: ctx.globals
+    | _ -> ()
+  ) prog;
+  
+  (* Step 2: Compile all functions *)
   List.iter (codegen_def ctx) prog;
   
-  (* 2. Build the final output string starting with target data layout configurations *)
+  (* Step 3: Emit final header layouts *)
   let header_buf = Buffer.create 512 in
   let emit_header str = Buffer.add_string header_buf (str ^ "\n") in
   
-  (* emit_header "target datalayout = \"e-m:o-i64:64-i128:128-n32:64-S128-Fn32\""; *)
-  (* emit_header "target triple = \"arm64-apple-macosx\""; *)
-  (* emit_header ""; *)
-  
-  (* Prepend all dynamically gathered global definitions and struct layout blocks *)
+  (* Add dynamic type definitions *)
   List.iter (fun g -> emit_header g) (List.rev ctx.globals);
   if ctx.globals <> [] then emit_header "";
   
-  (* Include your external runtime C headers *)
-  emit ctx "declare i32 @printf(ptr, ...)";
+  (* Standard C Library declarations *)
+  emit_header "declare i32 @printf(ptr, ...)";
   emit_header "declare ptr @malloc(i32)";
   emit_header "declare void @free(ptr)";
   emit_header "declare ptr @fopen(ptr, ptr)";
   emit_header "declare i32 @getc(ptr)";
   emit_header "declare i32 @putc(i32, ptr)";
-  (* 🆕 Required by LLVM backends to copy structures cleanly via standard stack allocations *)
   emit_header "declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)";
   emit_header "";
   
-  (* Combine headers and function bodies into one final cohesive program string *)
   Buffer.contents header_buf ^ Buffer.contents ctx.buf

@@ -78,11 +78,13 @@ data_type:
   | BYTE_TYPE    { Ast.Byte }
   | NOTHING      { Ast.Nothing }
   | POINTER_TYPE { Ast.Pointer }  
-  | SHORT_TYPE   { Ast.Short }  /* 🆕 Added */
-  | LONG_TYPE    { Ast.Long }   /* 🆕 Added */
-  | SINGLE_TYPE  { Ast.Single } /* 🆕 Added */
-  | DOUBLE_TYPE  { Ast.Double } /* 🆕 Added */
+  | SHORT_TYPE   { Ast.Short }  
+  | LONG_TYPE    { Ast.Long }   
+  | SINGLE_TYPE  { Ast.Single } 
+  | DOUBLE_TYPE  { Ast.Double }
+  | id=ID        { Ast.Custom(id)}
 ;
+
 
 block:
   | body=stmt_list { body }

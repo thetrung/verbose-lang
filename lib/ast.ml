@@ -7,6 +7,7 @@ type data_type =
   | Double (* 🆕 Added *)
   | Nothing
   | Pointer
+  | Custom of string
 
 type op = 
   (* Numeric *)
@@ -32,6 +33,7 @@ type expr =
 type stmt =
   | Dim of string * data_type * expr
   | Assign of string * expr
+  | AssignExpr of expr * expr 
   | FieldAssign of expr * string * expr (* 🆕 Added for field assignment: e.g., t.Kind = 5 *)
   | ExprStatement of expr
   | Return of expr option
