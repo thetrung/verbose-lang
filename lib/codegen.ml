@@ -1,4 +1,3 @@
-
 open Ast
 
 exception Error of string
@@ -20,6 +19,10 @@ let create_context () = {
   variables = Hashtbl.create 50;
   globals = [];
 }
+(* ✅ Added metadata environments *)
+let struct_fields = Hashtbl.create 10
+let struct_field_types = Hashtbl.create 10
+let var_types = Hashtbl.create 50
 
 let emit ctx str = Buffer.add_string ctx.buf (str ^ "\n")
 
@@ -55,27 +58,46 @@ let rec codegen_expr ctx = function
       ctx.globals <- decl :: ctx.globals;
       (global_reg, "ptr")
 
-      
-      
-  (* Update 'Id' match inside codegen_expr *)
-  | Id name ->
+   | Id name ->
     if Hashtbl.mem ctx.variables name then
       let alloca_reg = Hashtbl.find ctx.variables name in
       let res_reg = next_reg ctx in
-      (* Map context checks dynamically based on variable signatures *)
-      let t_str = if name = "buffer" || name = "fileHandle" then "ptr" else "i32" in
-      emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align 4" res_reg t_str alloca_reg);
-      (res_reg, t_str)
+      
+      let t_str = 
+        if Hashtbl.mem var_types name then Printf.sprintf "%%struct.%s" (Hashtbl.find var_types name)
+        else if name = "buffer" || name = "fileHandle" then "ptr" 
+        else "i32" 
+      in
+      
+      if Hashtbl.mem var_types name then
+        (alloca_reg, "ptr")
+      else begin
+        emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align 4" res_reg t_str alloca_reg);
+        (res_reg, t_str)
+      end
+    else
+      raise (Error ("Undefined variable reference: " ^ name))
 
-  (* | Id name -> *)
-  (*     if Hashtbl.mem ctx.variables name then *)
-  (*       let alloca_reg = Hashtbl.find ctx.variables name in *)
-  (*       let res_reg = next_reg ctx in *)
-  (*       (* In modern LLVM, loads require the explicit value type *) *)
-  (*       emit ctx (Printf.sprintf "  %s = load i32, ptr %s, align 4" res_reg alloca_reg); *)
-  (*       (res_reg, "i32") *)
-      else
-        raise (Error ("Undefined variable reference: " ^ name))
+  | FieldAccess (base_expr, field_name) ->
+      let base_ptr, _ = codegen_expr ctx base_expr in
+      let struct_name = match base_expr with
+        | Id name -> Hashtbl.find var_types name
+        | _ -> raise (Error "Property lookups require an explicit instance identifier")
+      in
+      let fields = Hashtbl.find struct_fields struct_name in
+      let field_index = List.assoc field_name fields in
+      let field_types = Hashtbl.find struct_field_types struct_name in
+      let actual_dt = List.assoc field_name field_types in
+      let dt_str = string_of_dt actual_dt in
+      
+      let field_ptr = next_reg ctx in
+      let struct_type_str = Printf.sprintf "%%struct.%s" struct_name in
+      emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d" 
+                 field_ptr struct_type_str base_ptr field_index);
+      
+      let res_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align 4" res_reg dt_str field_ptr);
+      (res_reg, dt_str)
 
   | UnaryOp ("Not", e) ->
       let v, t = codegen_expr ctx e in
@@ -128,46 +150,85 @@ let rec codegen_expr ctx = function
       emit ctx (Printf.sprintf "  %s = call i32 (ptr, ...) @printf(%s)" res_reg args_joined);
       (res_reg, "i32")
   | Call (name, args) ->
-      let evaluated_args = List.map (codegen_expr ctx) args in
-      let arg_strs = List.map (fun (v, t) -> 
-        let checked_type = if name = "free" then "ptr" else t in
-            checked_type ^ " " ^ v) evaluated_args in
-      let args_joined = String.concat ", " arg_strs in
-      let res_reg = next_reg ctx in
-      
-      (* Map expected C runtimes to standard function signifiers *)
-      let ret_type = match name with
-
-        | "malloc" | "fopen" -> "ptr"
-        | "free" -> "void"
-        | _ -> "i32"
-      in
-      
-      if ret_type = "void" then begin
-        emit ctx (Printf.sprintf "  call void @%s(%s)" name args_joined);
-        ("", "void")
+      if Hashtbl.mem struct_fields name then begin
+        let struct_type_str = Printf.sprintf "%%struct.%s" name in
+        let alloca_reg = next_reg ctx in
+        emit ctx (Printf.sprintf "  %s = alloca %s, align 8" alloca_reg struct_type_str);
+        
+        let fields = Hashtbl.find struct_fields name in
+        let field_types = Hashtbl.find struct_field_types name in
+        
+        List.iteri (fun idx arg_expr ->
+          let (field_name, _) = List.find (fun (_, i) -> i = idx) fields in
+          let actual_dt = List.assoc field_name field_types in
+          let dt_str = string_of_dt actual_dt in
+          
+          let v, _ = codegen_expr ctx arg_expr in
+          let field_ptr = next_reg ctx in
+          emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d" 
+                     field_ptr struct_type_str alloca_reg idx);
+          emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" dt_str v field_ptr)
+        ) args;
+        (alloca_reg, "ptr")
       end else begin
-        emit ctx (Printf.sprintf "  %s = call %s @%s(%s)" res_reg ret_type name args_joined);
-        (res_reg, ret_type)
+        let evaluated_args = List.map (codegen_expr ctx) args in
+        let arg_strs = List.map (fun (v, t) -> 
+          let checked_type = if name = "free" then "ptr" else t in
+          checked_type ^ " " ^ v) evaluated_args in
+        let args_joined = String.concat ", " arg_strs in
+        let res_reg = next_reg ctx in
+        let ret_type = match name with
+
+          | "malloc" | "fopen" -> "ptr"
+          | "free" -> "void"
+          | _ -> "i32"
+        in
+        if ret_type = "void" then begin
+          emit ctx (Printf.sprintf "  call void @%s(%s)" name args_joined);
+          ("", "void")
+        end else begin
+          emit ctx (Printf.sprintf "  %s = call %s @%s(%s)" res_reg ret_type name args_joined);
+          (res_reg, ret_type)
+        end
       end
+
 
 
 let rec codegen_stmt ctx = function
   | Dim (name, dt, exp) ->
+      (match exp with
+       | Call (struct_name, _) when Hashtbl.mem struct_fields struct_name ->
+           Hashtbl.add var_types name struct_name
+       | _ -> ());
+       
       let v, _ = codegen_expr ctx exp in
       let alloca_reg = next_reg ctx in
-      let typ_str = string_of_dt dt in
+      
+      let typ_str = 
+        if Hashtbl.mem var_types name then Printf.sprintf "%%struct.%s" (Hashtbl.find var_types name)
+        else string_of_dt dt 
+      in
       emit ctx (Printf.sprintf "  %s = alloca %s, align 8" alloca_reg typ_str);
-      emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 8" typ_str v alloca_reg);
+      
+      if Hashtbl.mem var_types name then
+        emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 16, i1 false)" alloca_reg v)
+      else
+        emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 8" typ_str v alloca_reg);
+        
       Hashtbl.add ctx.variables name alloca_reg
 
   | Assign (name, exp) ->
       if Hashtbl.mem ctx.variables name then
         let alloca_reg = Hashtbl.find ctx.variables name in
         let v, t = codegen_expr ctx exp in
-        emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" t v alloca_reg)
+        
+        if Hashtbl.mem var_types name then
+          emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 16, i1 false)" alloca_reg v)
+        else
+          emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" t v alloca_reg)
       else
         raise (Error ("Assignment target undefined: " ^ name))
+
 
   | ExprStatement exp -> 
       ignore (codegen_expr ctx exp)
@@ -265,47 +326,7 @@ let rec codegen_stmt ctx = function
        | None -> ());
 
       emit ctx (Printf.sprintf "\n%s:" label_exit)
-  (* | SelectCase (target_exp, cases) -> *)
-  (*     let target_val, t = codegen_expr ctx target_exp in *)
-  (*     let label_exit = next_label ctx "select_exit" in *)
-  (**)
-  (*     let rec emit_cases = function *)
-  (*       | [] -> emit ctx (Printf.sprintf "  br label %%%s" label_exit) *)
-  (*       | (expr_list, stmts) :: next_cases -> *)
-  (*           let label_match = next_label ctx "case_match" in *)
-  (*           let label_next = next_label ctx "case_next" in *)
-  (**)
-  (*           (* Check all comma-separated options in the Case line *) *)
-  (*           let rec build_or_chain = function *)
-  (*             | [] -> "i1 false" (* Fallback marker *) *)
-  (*             | [e] ->  *)
-  (*                 let v, _ = codegen_expr ctx e in *)
-  (*                 let reg = next_reg ctx in *)
-  (*                 emit ctx (Printf.sprintf "  %s = icmp eq %s %s, %s" reg t target_val v); *)
-  (*                 reg *)
-  (*             | e :: es -> *)
-  (*                 let v, _ = codegen_expr ctx e in *)
-  (*                 let eq_reg = next_reg ctx in *)
-  (*                 emit ctx (Printf.sprintf "  %s = icmp eq %s %s, %s" eq_reg t target_val v); *)
-  (*                 let rest_reg = build_or_chain es in *)
-  (*                 let or_reg = next_reg ctx in *)
-  (*                 emit ctx (Printf.sprintf "  %s = or i1 %s, %s" or_reg eq_reg rest_reg); *)
-  (*                 or_reg *)
-  (*           in *)
-  (*           let cond_reg = build_or_chain expr_list in *)
-  (*           emit ctx (Printf.sprintf "  br i1 %s, label %%%s, label %%%s" cond_reg label_match label_next); *)
-  (**)
-  (*           (* Write Case body code lines *) *)
-  (*           emit ctx (Printf.sprintf "\n%s:" label_match); *)
-  (*           List.iter (codegen_stmt ctx) stmts; *)
-  (*           emit ctx (Printf.sprintf "  br label %%%s" label_exit); *)
-  (**)
-  (*           emit ctx (Printf.sprintf "\n%s:" label_next); *)
-  (*           emit_cases next_cases *)
-  (*     in *)
-  (*     emit_cases cases; *)
-  (*     emit ctx (Printf.sprintf "\n%s:" label_exit) *)
-
+ 
   | For (var_name, start_exp, finish_exp, body_stmts) ->
       let label_cond = next_label ctx "for_cond" in
       let label_body = next_label ctx "for_body" in
@@ -376,10 +397,23 @@ let codegen_def ctx = function
       (* Auto Void fallback return protection layer *)
       if ret_type = Nothing then emit ctx "  ret void";
       emit ctx "}\n"
-
-
+      
+(* 🆕 Global Registrar function to define layouts on the initial parser iteration pass *)
+let register_definition ctx = function
+  | Structure (_, name, fields) ->
+      let indexed_fields = List.mapi (fun idx (fname, _) -> (fname, idx)) fields in
+      Hashtbl.add struct_fields name indexed_fields;
+      Hashtbl.add struct_field_types name fields;
+      
+      let field_types_joined = String.concat ", " (List.map (fun (_, dt) -> string_of_dt dt) fields) in
+      let struct_decl = Printf.sprintf "%%struct.%s = type { %s }" name field_types_joined in
+      ctx.globals <- struct_decl :: ctx.globals
+  | FuncDef (_, _, _, _, _) -> ()
 let generate_program prog =
   let ctx = create_context () in
+  
+  (* 🆕 Step 0: Pre-pass step to map and populate structure metadata types globally first *)
+  List.iter (register_definition ctx) prog;
   
   (* 1. Process and generate the main bodies of all function declarations first *)
   List.iter (codegen_def ctx) prog;
@@ -392,7 +426,7 @@ let generate_program prog =
   (* emit_header "target triple = \"arm64-apple-macosx\""; *)
   (* emit_header ""; *)
   
-  (* Prepend all dynamically gathered global string literals *)
+  (* Prepend all dynamically gathered global definitions and struct layout blocks *)
   List.iter (fun g -> emit_header g) (List.rev ctx.globals);
   if ctx.globals <> [] then emit_header "";
   
@@ -403,8 +437,9 @@ let generate_program prog =
   emit_header "declare ptr @fopen(ptr, ptr)";
   emit_header "declare i32 @getc(ptr)";
   emit_header "declare i32 @putc(i32, ptr)";
+  (* 🆕 Required by LLVM backends to copy structures cleanly via standard stack allocations *)
+  emit_header "declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)";
   emit_header "";
   
   (* Combine headers and function bodies into one final cohesive program string *)
   Buffer.contents header_buf ^ Buffer.contents ctx.buf
-

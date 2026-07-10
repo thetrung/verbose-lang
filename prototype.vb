@@ -1,8 +1,17 @@
 
 Public Structure Token
     Public Kind As Integer
-    Public Value As Pointer
+    Public Value As Integer
 End Structure
+
+Sub TestToken ()
+  Dim t As Token(1,0)
+  Dim kind As Integer = t.Kind
+  If kind = t.Kind Then 
+    printf("TestToken()\n  t.Kind = %d\nEnd\n\n",t.Kind)
+  End If 
+End Sub
+
 
 Function CompileKernel() As Integer
     ' 1. Memory and I/O initialization via C hooks
@@ -58,6 +67,7 @@ Function CompileKernel() As Integer
 End Function
 
 Function main () As Integer
+  TestToken()
   Dim result As Integer = CompileKernel()
   Return result
 End Function

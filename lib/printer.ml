@@ -18,6 +18,7 @@ let rec string_of_expr = function
   | UnaryOp (op, e) -> "(" ^ op ^ " " ^ string_of_expr e ^ ")"
   | BinOp (e1, op, e2) -> "(" ^ string_of_expr e1 ^ " " ^ string_of_op op ^ " " ^ string_of_expr e2 ^ ")"
   | Call (f, args) -> f ^ "(" ^ String.concat ", " (List.map string_of_expr args) ^ ")"
+  | FieldAccess (e, field) -> string_of_expr e ^ "." ^ field
 
 let rec string_of_stmt indent = function
   | Dim (v, dt, e) -> indent ^ "Dim " ^ v ^ " As " ^ string_of_dt dt ^ " = " ^ string_of_expr e ^ "\n"

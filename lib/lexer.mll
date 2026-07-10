@@ -62,6 +62,7 @@ rule tokenize = parse
   | "("              { LPAREN }
   | ")"              { RPAREN }
   | ","              { COMMA }
+  | "."              { DOT }
 
   (* Value Literals *)
   | int as lxm       { INT_LIT(int_of_string lxm) }

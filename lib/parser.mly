@@ -9,7 +9,7 @@ open Ast
 
 /* Core structural tokens */
 %token PUBLIC STRUCTURE FUNCTION SUB END AS DIM RETURN NOTHING POINTER_TYPE
-%token INT_TYPE BYTE_TYPE EOF LPAREN RPAREN COMMA NEWLINE
+%token INT_TYPE BYTE_TYPE EOF LPAREN RPAREN COMMA NEWLINE DOT
 
 /* Operators and Control Flow */
 %token IF THEN ELSE SELECT CASE WHILE DO FOR TO
@@ -24,6 +24,7 @@ open Ast
 %left SHL SHR
 %left PLUS MINUS
 %left TIMES DIVIDE MOD
+%left DOT
 
 /* Program Entry Point */
 %start <Ast.program> program
@@ -84,6 +85,11 @@ stmt:
 
 code_stmt:
   | DIM name=ID AS t=data_type EQUALS e=expr { Ast.Dim(name, t, e) }
+  | DIM name=ID AS struct_name=ID 
+    LPAREN args=separated_list(COMMA, expr) RPAREN
+    { 
+      Ast.Dim(name, Ast.Pointer, Ast.Call(struct_name, args)) 
+    }
   | name=ID EQUALS e=expr                    { Ast.Assign(name, e) }
   | e=expr                                   { Ast.ExprStatement(e) }
   | RETURN e=option(expr)                    { Ast.Return(e) }
@@ -134,6 +140,8 @@ expr:
   | NOT e=expr                                              { Ast.UnaryOp("Not", e) }
   | name=ID LPAREN args=separated_list(COMMA, expr) RPAREN  { Ast.Call(name, args) }
   
+  /* FieldAccess */
+  | e1=expr DOT field=ID           { Ast.FieldAccess(e1, field) }
   | e1=expr PLUS e2=expr           { Ast.BinOp(e1, Ast.Add, e2) }
   | e1=expr MINUS e2=expr          { Ast.BinOp(e1, Ast.Sub, e2) }
   | e1=expr TIMES e2=expr          { Ast.BinOp(e1, Ast.Mul, e2) }

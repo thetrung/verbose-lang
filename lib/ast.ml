@@ -22,16 +22,20 @@ type expr =
   | UnaryOp of string * expr (* For "Not" or negative numbers *)
   | BinOp of expr * op * expr
   | Call of string * expr list
+  | FieldAccess of expr * string    (* variable.Kind *)
 
 type stmt =
   | Dim of string * data_type * expr
   | Assign of string * expr
   | ExprStatement of expr
   | Return of expr option
+
   (* Conditions *)
   | If of expr * stmt list * stmt list (* If condition Then body Else body *)
+
   (* Case evaluation values -> statements *)
   | SelectCase of expr * (expr list * stmt list) list * stmt list option
+
   (* Loops *)
   | While of expr * stmt list
   | For of string * expr * expr * stmt list (* For var = start To end *)
