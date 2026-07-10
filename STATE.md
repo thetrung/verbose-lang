@@ -10,11 +10,15 @@ Here is our current state:
 3. Codegen: Emits raw string-concatenated LLVM assembly text with modern opaque pointers (ptr). Handles proper 8-byte boundaries for pointers, dynamically records global string constants (e.g. for printf and file paths like fopen), manages unique basic block label counters, and calculates direct struct field memory byte offsets via getelementptr i8. It compiles cleanly with llc + clang and executes with 0 segmentation faults.
 
 4. Features List (Just DONE):
-- FieldAccess + FieldAssign DOT notation,
+- FieldAccess + FieldAssign DOT notation
+- Negative/Hex Short, Long, Single, Double Number Support.
+- Structure Size Compute
 
 5. TODO :
 - Enums 
 - Arrays
+- Public/Private
+- Declare/Include
 - Example with Raylib
 - Arena Allocator : As built-in memory management
 - Analyzer : Type Checking & Semantic Analysis
