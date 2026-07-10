@@ -48,6 +48,7 @@ type stmt =
 
 type definition =
   | Structure of bool * string * (string * data_type) list (* added bool flag *)
+  | EnumDef of bool * string * (string * int) list
   | FuncDef of bool * string * (string * data_type) list * data_type * stmt list
 
 type program = definition list

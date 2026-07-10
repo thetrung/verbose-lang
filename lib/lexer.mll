@@ -18,6 +18,7 @@ rule tokenize = parse
   (* System Block Keywords *)
   | "Public"         { PUBLIC }
   | "Structure"      { STRUCTURE }
+  | "Enum"           { ENUM }
   | "Function"       { FUNCTION }
   | "Sub"            { SUB }
   | "End"            { END }

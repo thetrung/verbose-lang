@@ -59,7 +59,11 @@ let string_of_def = function
       let prefix = if is_public then "Public " else "" in
       let fl = String.concat "" (List.map (fun (n, t) -> "  Public " ^ n ^ " As " ^ string_of_dt t ^ "\n") fields) in
       prefix ^ "Structure " ^ name ^ "\n" ^ fl ^ "End Structure\n"
-  | FuncDef (is_public, name, params, rt, body) ->
+    | EnumDef (is_public, name, members) ->
+      let prefix = if is_public then "Public " else "" in
+      let ml = String.concat "" (List.map (fun (n, v) -> "  " ^ n ^ " = " ^ string_of_int v ^ "\n") members) in
+      prefix ^ "Enum " ^ name ^ "\n" ^ ml ^ "End Enum\n"
+    | FuncDef (is_public, name, params, rt, body) ->
       let prefix = if is_public then "Public " else "" in
       let keyword = if rt = Nothing then "Sub " else "Function " in
       let as_clause = if rt = Nothing then "" else " As " ^ string_of_dt rt in

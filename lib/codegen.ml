@@ -24,6 +24,9 @@ let struct_fields = Hashtbl.create 10
 let struct_field_types = Hashtbl.create 10
 let var_types = Hashtbl.create 50
 
+(* 🆕 Map tracking "EnumName.MemberName" -> int value constant *)
+let enum_values = Hashtbl.create 50
+
 (* 🆕 Keeps track of the literal LLVM type string for every allocated variable *)
 let local_types = Hashtbl.create 50
 
@@ -101,26 +104,36 @@ let rec codegen_expr ctx = function
     else
       raise (Error ("Undefined variable reference: " ^ name))
 
+ 
   | FieldAccess (base_expr, field_name) ->
-      let base_ptr, _ = codegen_expr ctx base_expr in
-      let struct_name = match base_expr with
-        | Id name -> Hashtbl.find var_types name
-        | _ -> raise (Error "Property lookups require an explicit instance identifier")
-      in
-      let fields = Hashtbl.find struct_fields struct_name in
-      let field_index = List.assoc field_name fields in
-      let field_types = Hashtbl.find struct_field_types struct_name in
-      let actual_dt = List.assoc field_name field_types in
-      let dt_str = string_of_dt actual_dt in
-      
-      let field_ptr = next_reg ctx in
-      let struct_type_str = Printf.sprintf "%%struct.%s" struct_name in
-      emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d" 
-                 field_ptr struct_type_str base_ptr field_index);
-      
-      let res_reg = next_reg ctx in
-      emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align 4" res_reg dt_str field_ptr);
-      (res_reg, dt_str)
+      (match base_expr with
+       | Id name when Hashtbl.mem enum_values (name ^ "." ^ field_name) ->
+           (* 🆕 Case A: It is a compile-time Enum definition constant! *)
+           let lookup_key = name ^ "." ^ field_name in
+           let value_int = Hashtbl.find enum_values lookup_key in
+           (string_of_int value_int, "i32")
+           
+       | Id name ->
+           (* Case B: Standard Structure layout instance path lookup *)
+           let base_ptr, _ = codegen_expr ctx base_expr in
+           let struct_name = Hashtbl.find var_types name in
+           let fields = Hashtbl.find struct_fields struct_name in
+           let field_index = List.assoc field_name fields in
+           let field_types = Hashtbl.find struct_field_types struct_name in
+           let actual_dt = List.assoc field_name field_types in
+           let dt_str = string_of_dt actual_dt in
+           
+           let field_ptr = next_reg ctx in
+           let struct_type_str = Printf.sprintf "%%struct.%s" struct_name in
+           emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d" 
+                      field_ptr struct_type_str base_ptr field_index);
+           
+           let res_reg = next_reg ctx in
+           emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align 8" res_reg dt_str field_ptr);
+           (res_reg, dt_str)
+           
+       | _ -> 
+           raise (Error "Property lookups require an explicit variable identifier or Enum name"))
 
   | UnaryOp ("Not", e) ->
       let v, t = codegen_expr ctx e in
@@ -498,7 +511,6 @@ let rec codegen_stmt ctx = function
       emit ctx (Printf.sprintf "\n%s:" label_end)
 
 let codegen_def ctx = function
-  | Structure (_, _, _) -> () (* Handled in standard type tables layout *)
   
   | FuncDef (_, name, params, ret_type, body) ->
       let param_strs = List.map (fun (n, t) -> string_of_dt t ^ " %" ^ n) params in
@@ -521,6 +533,10 @@ let codegen_def ctx = function
       (* Auto Void fallback return protection layer *)
       if ret_type = Nothing then emit ctx "  ret void";
       emit ctx "}\n"
+  
+  | Structure (_, _, _) -> () (* Handled in standard type tables layout *)
+
+  | EnumDef (_, _, _) -> () 
       
 (* 🆕 Global Registrar function to define layouts on the initial parser iteration pass *)
 let register_definition ctx = function
@@ -532,6 +548,14 @@ let register_definition ctx = function
       let field_types_joined = String.concat ", " (List.map (fun (_, dt) -> string_of_dt dt) fields) in
       let struct_decl = Printf.sprintf "%%struct.%s = type { %s }" name field_types_joined in
       ctx.globals <- struct_decl :: ctx.globals
+
+  | EnumDef (_, enum_name, members) ->
+      (* 🆕 Populates global compile-time translation lookup definitions *)
+      List.iter (fun (member_name, value) ->
+        let lookup_key = enum_name ^ "." ^ member_name in
+        Hashtbl.add enum_values lookup_key value
+      ) members
+      
   | FuncDef (_, _, _, _, _) -> ()
 let generate_program prog =
   let ctx = create_context () in

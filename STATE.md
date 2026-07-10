@@ -13,9 +13,9 @@ Here is our current state:
 - FieldAccess + FieldAssign DOT notation
 - Negative/Hex Short, Long, Single, Double Number Support.
 - Structure Size Compute
+- Enum (Work but can't yet mixed-in Struct)
 
 5. TODO :
-- Enums 
 - Arrays
 - Public/Private
 - Declare/Include
