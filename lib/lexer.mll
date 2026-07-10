@@ -66,8 +66,8 @@ rule tokenize = parse
   | "."              { DOT }
 
   (* Value Literals *)
-  | hex as lxm       { INT_LIT(int_of_string lxm) } (* Converts "0x1234" to decimal int token *)
-  | int as lxm       { INT_LIT(int_of_string lxm) }
+  | '-'? hex as lxm  { INT_LIT(int_of_string lxm) } (* 🆕 Optional minus sign added *)
+  | '-'? int as lxm  { INT_LIT(int_of_string lxm) } (* 🆕 Optional minus sign added *) 
   | '"'              { string_literal (Buffer.create 16) lexbuf }
   | id as lxm        { ID(lxm) }
   | eof              { EOF }
