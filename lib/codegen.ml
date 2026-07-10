@@ -24,6 +24,9 @@ let struct_fields = Hashtbl.create 10
 let struct_field_types = Hashtbl.create 10
 let var_types = Hashtbl.create 50
 
+(* 🆕 Keeps track of the literal LLVM type string for every allocated variable *)
+let local_types = Hashtbl.create 50
+
 let emit ctx str = Buffer.add_string ctx.buf (str ^ "\n")
 
 let next_reg ctx =
@@ -149,6 +152,7 @@ let rec codegen_expr ctx = function
       (* FIX: Emit the correct variadic call format containing parameters *)
       emit ctx (Printf.sprintf "  %s = call i32 (ptr, ...) @printf(%s)" res_reg args_joined);
       (res_reg, "i32")
+ 
   | Call (name, args) ->
       if Hashtbl.mem struct_fields name then begin
         let struct_type_str = Printf.sprintf "%%struct.%s" name in
@@ -161,13 +165,20 @@ let rec codegen_expr ctx = function
         List.iteri (fun idx arg_expr ->
           let (field_name, _) = List.find (fun (_, i) -> i = idx) fields in
           let actual_dt = List.assoc field_name field_types in
-          let dt_str = string_of_dt actual_dt in
+          let expected_dt_str = string_of_dt actual_dt in (* e.g., "ptr" or "i32" *)
           
-          let v, _ = codegen_expr ctx arg_expr in
+          let v, dt_str = codegen_expr ctx arg_expr in (* For 0x12345678, dt_str is "i32" *)
           let field_ptr = next_reg ctx in
           emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d" 
                      field_ptr struct_type_str alloca_reg idx);
-          emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" dt_str v field_ptr)
+                     
+          (* ⚠️ FIX: Safely check and cast raw literals passed directly into unmanaged structural fields *)
+          if expected_dt_str = "ptr" && dt_str = "i32" then begin
+            let cast_reg = next_reg ctx in
+            emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
+            emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 4" cast_reg field_ptr)
+          end else
+            emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" expected_dt_str v field_ptr)
         ) args;
         (alloca_reg, "ptr")
       end else begin
@@ -194,14 +205,16 @@ let rec codegen_expr ctx = function
 
 
 
+
 let rec codegen_stmt ctx = function
+
   | Dim (name, dt, exp) ->
       (match exp with
        | Call (struct_name, _) when Hashtbl.mem struct_fields struct_name ->
            Hashtbl.add var_types name struct_name
        | _ -> ());
        
-      let v, _ = codegen_expr ctx exp in
+      let v, t = codegen_expr ctx exp in
       let alloca_reg = next_reg ctx in
       
       let typ_str = 
@@ -210,9 +223,16 @@ let rec codegen_stmt ctx = function
       in
       emit ctx (Printf.sprintf "  %s = alloca %s, align 8" alloca_reg typ_str);
       
+      (* 🆕 Save the structural or primitive type format for assignment passes *)
+      Hashtbl.add local_types name typ_str;
+      
       if Hashtbl.mem var_types name then
         emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 16, i1 false)" alloca_reg v)
-      else
+      else if typ_str = "ptr" && t = "i32" then begin
+        let cast_reg = next_reg ctx in
+        emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
+        emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 8" cast_reg alloca_reg)
+      end else
         emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 8" typ_str v alloca_reg);
         
       Hashtbl.add ctx.variables name alloca_reg
@@ -224,35 +244,49 @@ let rec codegen_stmt ctx = function
         
         if Hashtbl.mem var_types name then
           emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 16, i1 false)" alloca_reg v)
-        else
-          emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" t v alloca_reg)
+        else begin
+          (* 🆕 Retrieve the target variable's true underlying type *)
+          let expected_type = try Hashtbl.find local_types name with _ -> "i32" in
+          
+          if expected_type = "ptr" && t = "i32" then begin
+            let cast_reg = next_reg ctx in
+            emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
+            emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 4" cast_reg alloca_reg)
+          end else
+            emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" t v alloca_reg)
+        end
       else
         raise (Error ("Assignment target undefined: " ^ name))
 
 
   | FieldAssign (base_expr, field_name, value_expr) ->
-      (* 1. Evaluate the value expression that will be written *)
-      let v, dt_str = codegen_expr ctx value_expr in
-      
-      (* 2. Code-gen the base structure object to find its layout pointer address *)
+      let v, dt_str = codegen_expr ctx value_expr in (* If hex/int, dt_str is "i32" *)
       let base_ptr, _ = codegen_expr ctx base_expr in
       
-      (* 3. Look up metadata layouts using the base instance variable tracker *)
       let struct_name = match base_expr with
         | Id name -> Hashtbl.find var_types name
         | _ -> raise (Error "Field adjustments require an explicit instance identifier")
       in
       let fields = Hashtbl.find struct_fields struct_name in
       let field_index = List.assoc field_name fields in
+      let field_types = Hashtbl.find struct_field_types struct_name in
+      let actual_dt = List.assoc field_name field_types in
+      let expected_dt_str = string_of_dt actual_dt in (* e.g., "ptr" *)
       
-      (* 4. Compute field address offset boundaries using 'getelementptr' *)
       let field_ptr = next_reg ctx in
       let struct_type_str = Printf.sprintf "%%struct.%s" struct_name in
       emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d" 
                  field_ptr struct_type_str base_ptr field_index);
       
-      (* 5. Store the value safely into that field memory address *)
-      emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" dt_str v field_ptr)
+      (* 👇 FIXED: Strict literal comparison logic forces instruction generation *)
+      if expected_dt_str = "ptr" && dt_str = "i32" then begin
+        let cast_reg = next_reg ctx in
+        emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
+        emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 4" cast_reg field_ptr)
+      end else
+        emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" dt_str v field_ptr)
+
+
   | ExprStatement exp -> 
       ignore (codegen_expr ctx exp)
 

@@ -7,6 +7,7 @@ let whitespace = [' ' '\t' '\r']+
 let newline = '\n'
 let id = ['a'-'z' 'A'-'Z' '_'] ['a'-'z' 'A'-'Z' '0'-'9' '_']*
 let int = ['0'-'9']+
+let hex = "0x" ['0'-'9' 'a'-'f' 'A'-'Z']+ (* 🆕 Matches hex format like 0x1234 *)
 
 rule tokenize = parse
   | whitespace { tokenize lexbuf }
@@ -65,6 +66,7 @@ rule tokenize = parse
   | "."              { DOT }
 
   (* Value Literals *)
+  | hex as lxm       { INT_LIT(int_of_string lxm) } (* Converts "0x1234" to decimal int token *)
   | int as lxm       { INT_LIT(int_of_string lxm) }
   | '"'              { string_literal (Buffer.create 16) lexbuf }
   | id as lxm        { ID(lxm) }
