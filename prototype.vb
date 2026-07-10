@@ -7,9 +7,12 @@ End Structure
 Sub TestToken ()
   Dim t As Token(1,0)
   Dim kind As Integer = t.Kind
-  If kind = t.Kind Then 
-    printf("TestToken()\n  t.Kind = %d\nEnd\n\n",t.Kind)
-  End If 
+  kind = 2
+  t.Kind = 4
+  printf("TestToken()\n")
+  printf("  kind = %d (correct=2)\n", kind)
+  printf("  t.Kind = %d (correct=4)\n",t.Kind)
+  printf("End\n\n")
 End Sub
 
 

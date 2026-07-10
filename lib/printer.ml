@@ -23,6 +23,7 @@ let rec string_of_expr = function
 let rec string_of_stmt indent = function
   | Dim (v, dt, e) -> indent ^ "Dim " ^ v ^ " As " ^ string_of_dt dt ^ " = " ^ string_of_expr e ^ "\n"
   | Assign (v, e) -> indent ^ v ^ " = " ^ string_of_expr e ^ "\n"
+  | FieldAssign (obj, field, e) -> indent ^ string_of_expr obj ^ "." ^ field ^ " = " ^ string_of_expr e ^ "\n"
   | ExprStatement e -> indent ^ string_of_expr e ^ "\n"
   | Return None -> indent ^ "Return\n"
   | Return (Some e) -> indent ^ "Return " ^ string_of_expr e ^ "\n"

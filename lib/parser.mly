@@ -90,6 +90,10 @@ code_stmt:
     { 
       Ast.Dim(name, Ast.Pointer, Ast.Call(struct_name, args)) 
     }
+  /* 🆕 Added rule for Approach B field assignments: e.g., t.Kind = 5 */
+  | obj=expr; DOT; field=ID; EQUALS; e=expr 
+      { Ast.FieldAssign(obj, field, e) }
+
   | name=ID EQUALS e=expr                    { Ast.Assign(name, e) }
   | e=expr                                   { Ast.ExprStatement(e) }
   | RETURN e=option(expr)                    { Ast.Return(e) }
