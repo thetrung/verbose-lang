@@ -8,7 +8,7 @@ build:
 run:
 	./verbose.exe ${TARGET}.vb
 
-example:
+demo: build
 	# ./verbose.exe examples/*.vb
 	./verbose.exe examples/enum.vb
 	./verbose.exe examples/compute.vb
@@ -16,6 +16,7 @@ example:
 	./verbose.exe examples/numberic.vb
 	./verbose.exe examples/read_file.vb
 	./verbose.exe examples/structure.vb
+	rm -rf examples && git checkout examples
 
 clean:
 	rm -rf _build verbose.exe \
