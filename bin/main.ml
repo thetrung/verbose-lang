@@ -10,7 +10,9 @@ let () =
     (* 1. Perform ALL operations that read the file inside the try block *)
     try
       let ast = Parser.program Lexer.tokenize lexbuf in
-      
+      (* print_endline " --------------------------------------"; *)
+      print_endline " --------- Parsed Source Code ---------";
+      (* print_endline " --------------------------------------"; *)
       (* Safely close the input file pointer immediately after a successful parse *)
       close_in in_channel;
       print_endline (Printer.print_program ast);
@@ -20,6 +22,9 @@ let () =
       (* print_endline "; --- GENERATED LLVM IR CODE ---"; *)
       (* print_endline ir_output *)
      
+      (* print_endline " --------------------------------------"; *)
+      print_endline " -------- Executed Code Result --------";
+      (* print_endline " --------------------------------------"; *)
       let binary = (List.nth (String.split_on_char '.' filename) 0) in 
       let f_output = binary ^ ".ll" in
       Out_channel.with_open_text f_output (fun channel -> 
@@ -27,6 +32,7 @@ let () =
       let llc   = Sys.command (Printf.sprintf "llc %s.ll" binary) in
       let clang = Sys.command (Printf.sprintf "clang %s.s -o %s" binary binary) in
       let exec  = Sys.command (Printf.sprintf "./%s" binary) in
+      print_endline "\n ------- End of Verbose Compiler -------";
       if llc + clang + exec != 0 then 
         Printf.printf "Status: llc/clang/exec = %d %d %d\n" llc clang exec
       else 
