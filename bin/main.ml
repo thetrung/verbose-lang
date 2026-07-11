@@ -17,6 +17,9 @@ let () =
       close_in in_channel;
       print_endline (Printer.print_program ast);
       
+      (* 2. Run the newly integrated Type Analyzer pass first! *)
+      Type_analyzer.analyze_program ast;
+    
       (* Generate and print our clean text patching string output *)
       let ir_output = Codegen.generate_program ast in
       (* print_endline "; --- GENERATED LLVM IR CODE ---"; *)
@@ -52,6 +55,14 @@ let () =
           pos.pos_lnum (pos.pos_cnum - pos.pos_bol);
         exit 1
         
+    | Type_analyzer.TypeError msg ->
+        Printf.eprintf "Semantic Type Error: %s\n" msg;
+        exit 1
+  
+    | Codegen.Error msg ->
+        Printf.eprintf "Backend Codegen Error: %s\n" msg;
+        exit 1
+    
     | e ->
         (try close_in in_channel with _ -> ());
         Printf.eprintf "Unexpected Error: %s\n" (Printexc.to_string e);

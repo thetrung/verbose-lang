@@ -23,8 +23,8 @@ Function main() As Integer
   printf("nodeType = %d\n", nodeType)
 
   Dim mix As Mix(vec1, 1)
-  ' mix.vec = Vector(1.0, 1.0, 999)
-  mix.vec = vec1 
+  mix.vec = Vector(1.0, 1.0, 999)
+  ' mix.vec = vec1 
   mix.node = NodeType.Literal
   printf("mix:\n mix.vec = @%d -- vec1 = @%d\n", mix.vec, vec1)
   printf(" mix.vec.x = %f\n", mix.vec.x)

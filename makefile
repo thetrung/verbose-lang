@@ -8,6 +8,15 @@ build:
 run:
 	./verbose.exe ${TARGET}.vb
 
+example:
+	# ./verbose.exe examples/*.vb
+	./verbose.exe examples/enum.vb
+	./verbose.exe examples/compute.vb
+	./verbose.exe examples/loop_while.vb
+	./verbose.exe examples/numberic.vb
+	./verbose.exe examples/read_file.vb
+	./verbose.exe examples/structure.vb
+
 clean:
 	rm -rf _build verbose.exe \
 		${TARGET}.ll ${TARGET}.s ${TARGET}

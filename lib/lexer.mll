@@ -7,7 +7,7 @@ let whitespace = [' ' '\t' '\r']+
 let newline = '\n'
 let id = ['a'-'z' 'A'-'Z' '_'] ['a'-'z' 'A'-'Z' '0'-'9' '_']*
 let int = ['0'-'9']+
-let hex = "0x" ['0'-'9' 'a'-'f' 'A'-'Z']+ (* 🆕 Matches hex format like 0x1234 *)
+let hex = '0' ['x' 'X'] ['0'-'9' 'a'-'f' 'A'-'Z']+ (* 🆕 Matches hex format like 0x1234 *)
 let float_num = ['0'-'9']+ '.' ['0'-'9']* (* 🆕 Matches float formats like 3.14 or -0.5 *)
 
 rule tokenize = parse
