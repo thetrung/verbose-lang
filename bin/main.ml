@@ -11,7 +11,7 @@ let () =
     try
       let ast = Parser.program Lexer.tokenize lexbuf in
       (* print_endline " --------------------------------------"; *)
-      print_endline " --------- Parsed Source Code ---------";
+      print_endline "\n --------- Parsed Source Code ---------";
       (* print_endline " --------------------------------------"; *)
       (* Safely close the input file pointer immediately after a successful parse *)
       close_in in_channel;
@@ -35,7 +35,8 @@ let () =
       let llc   = Sys.command (Printf.sprintf "llc %s.ll" binary) in
       let clang = Sys.command (Printf.sprintf "clang %s.s -o %s" binary binary) in
       let exec  = Sys.command (Printf.sprintf "./%s" binary) in
-      print_endline "\n ------- End of Verbose Compiler -------";
+      print_endline " ---------------------------------------";
+      print_endline "";
       if llc + clang + exec != 0 then 
         Printf.printf "Status: llc/clang/exec = %d %d %d\n" llc clang exec
       else 

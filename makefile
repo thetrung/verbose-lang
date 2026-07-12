@@ -16,6 +16,7 @@ demo: build
 	./verbose.exe examples/numberic.vb
 	./verbose.exe examples/read_file.vb
 	./verbose.exe examples/structure.vb
+	./verbose.exe examples/nested_struct.vb
 	rm -rf examples && git checkout examples
 
 clean:
