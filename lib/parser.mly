@@ -66,7 +66,7 @@ enum_member:
 ;
 
 struct_field:
-  | PUBLIC name=ID AS t=data_type mandatory_newlines { (name, t) }
+  | DIM name=ID AS t=data_type mandatory_newlines { (name, t) }
 ;
 
 param:
@@ -117,16 +117,12 @@ code_stmt:
   | IF cond=expr THEN mandatory_newlines body=block els=if_else_block END IF
     { Ast.If(cond, body, els) }
 
-  (* | SELECT CASE target=expr mandatory_newlines cases=list(case_block) def=option(case_else_block) END SELECT *)
-  (*   { Ast.SelectCase(target, cases, def) } *)
-
   | WHILE cond=expr DO mandatory_newlines body=block END WHILE
     { Ast.While(cond, body) }
 
   | FOR var=ID EQUALS start=expr TO finish=expr mandatory_newlines body=block END FOR
     { Ast.For(var, start, finish, body) }
 
-  (* Fix: Select Case now parses a unified list of case branches *)
   | SELECT CASE target=expr mandatory_newlines branches=case_branches END SELECT
     { 
       let explicit_cases, default_case = branches in

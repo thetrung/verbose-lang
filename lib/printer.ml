@@ -59,7 +59,7 @@ let rec string_of_stmt indent = function
 let string_of_def = function
   | Structure (is_public, name, fields) ->
       let prefix = if is_public then "Public " else "" in
-      let fl = String.concat "" (List.map (fun (n, t) -> "  Public " ^ n ^ " As " ^ string_of_dt t ^ "\n") fields) in
+      let fl = String.concat "" (List.map (fun (n, t) -> "  Dim " ^ n ^ " As " ^ string_of_dt t ^ "\n") fields) in
       prefix ^ "Structure " ^ name ^ "\n" ^ fl ^ "End Structure\n"
     | EnumDef (is_public, name, members) ->
       let prefix = if is_public then "Public " else "" in
