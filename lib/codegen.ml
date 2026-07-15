@@ -46,10 +46,11 @@ let next_label ctx prefix =
 let string_of_dt = function
   | Int -> "i32"
   | Byte -> "i8"
-  | Short -> "i16"   (* 🆕 Added *)
-  | Long -> "i64"     (* 🆕 Added *)
-  | Single -> "float"  (* 🆕 Added *)
-  | Double -> "double" (* 🆕 Added *) 
+  | Short -> "i16"   
+  | Long -> "i64"    
+  | Single -> "float" 
+  | Double -> "double"
+  | Boolean -> "i1"
   | Nothing -> "void"
   | Pointer -> "ptr"
   | Custom name ->
@@ -65,9 +66,9 @@ let rec get_struct_size struct_name =
       acc + (match dt with
        | Byte -> 1
        | Short -> 2
-
        | Int | Single -> 4
        | Long | Double | Pointer -> 8
+       | Boolean -> 1
        | Nothing -> 0
        (* Inside get_struct_size *)
        | Custom name ->
@@ -89,6 +90,9 @@ let compile_enum_definition enum_name members =
 let rec codegen_expr ctx = function
   | IntLit i -> (string_of_int i, "i32") 
   | FloatLit f -> (string_of_float f, "double") (* 🆕 Default to 64-bit double literal mapping *)
+  | BooleanLit b -> 
+      let bool_value = if b then "1" else "0" 
+      in (bool_value, "i1")
   | StringLit s ->
       let global_reg = "@.str_" ^ string_of_int (ctx.reg_counter) in
       ctx.reg_counter <- ctx.reg_counter + 1;

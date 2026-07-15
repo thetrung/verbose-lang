@@ -6,18 +6,20 @@ open Ast
 %token <int> INT_LIT
 %token <string> STRING_LIT
 %token <float> FLOAT_LIT
+%token <bool> BOOLEAN_LIT
 %token <string> ID
 
-/* Core structural tokens */
+(* Core structural tokens *)
 %token PUBLIC STRUCTURE FUNCTION SUB END AS DIM RETURN NOTHING POINTER_TYPE ENUM
-%token INT_TYPE BYTE_TYPE SHORT_TYPE LONG_TYPE SINGLE_TYPE DOUBLE_TYPE EOF LPAREN RPAREN COMMA NEWLINE DOT
+%token INT_TYPE BYTE_TYPE SHORT_TYPE LONG_TYPE SINGLE_TYPE DOUBLE_TYPE BOOLEAN_TYPE 
+%token EOF LPAREN RPAREN COMMA NEWLINE DOT
 
-/* Operators and Control Flow */
+(* Operators and Control Flow *)
 %token IF THEN ELSE SELECT CASE WHILE DO FOR TO
 %token PLUS MINUS TIMES DIVIDE MOD AND OR NOT XOR SHL SHR
 %token EQUALS NOT_EQUALS LESS GREATER LESS_EQUALS GREATER_EQUALS
 
-/* Define Math Precedence Layer (Lowest to Highest) */
+(* Define Math Precedence Layer (Lowest to Highest) *)
 %left OR XOR
 %left AND
 %nonassoc NOT
@@ -27,11 +29,11 @@ open Ast
 %left TIMES DIVIDE MOD
 %left DOT
 
-/* Program Entry Point */
+(* Program Entry Point *)
 %start <Ast.program> program
 %%
 
-/* Fixes line 2: The program can start, finish, or separate items with blank rows */
+(* The program can start, finish, or separate items with blank rows *)
 program:
   | optional_newlines defs = definition_list EOF { defs }
 ;
@@ -82,6 +84,7 @@ data_type:
   | LONG_TYPE    { Ast.Long }   
   | SINGLE_TYPE  { Ast.Single } 
   | DOUBLE_TYPE  { Ast.Double }
+  | BOOLEAN_TYPE { Ast.Boolean }
   | id=ID        { Ast.Custom(id)}
 ;
 
@@ -151,7 +154,8 @@ if_else_block:
 expr:
   | id=ID                                                   { Ast.Id(id) }
   | i=INT_LIT                                               { Ast.IntLit(i) }
-  | f=FLOAT_LIT                                             { Ast.FloatLit(f) } 
+  | f=FLOAT_LIT                                             { Ast.FloatLit(f) }
+  | b=BOOLEAN_LIT                                           { Ast.BooleanLit(b) }
   | s=STRING_LIT                                            { Ast.StringLit(s) }
   | LPAREN e=expr RPAREN                                    { e }
   | NOT e=expr                                              { Ast.UnaryOp("Not", e) }

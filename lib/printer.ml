@@ -5,10 +5,11 @@ let rec string_of_dt = function
 
   | Int -> "Integer" 
   | Byte -> "Byte" 
-  | Short -> "Short"   (* 🆕 Added *)
-  | Long -> "Long"     (* 🆕 Added *)
-  | Single -> "Single" (* 🆕 Added *)
-  | Double -> "Double" (* 🆕 Added *)
+  | Short -> "Short"   
+  | Long -> "Long"
+  | Single -> "Single"
+  | Double -> "Double"
+  | Boolean -> "Boolean"
   | Nothing -> "Nothing" 
   | Pointer -> "Pointer"
   | Custom s -> s
@@ -23,6 +24,7 @@ let rec string_of_expr = function
   | Id id -> id
   | IntLit i -> string_of_int i
   | FloatLit f -> string_of_float f 
+  | BooleanLit b -> string_of_bool b 
   | StringLit s -> (Printf.sprintf "%S" s)
   | UnaryOp (op, e) -> "(" ^ op ^ " " ^ string_of_expr e ^ ")"
   | BinOp (e1, op, e2) -> "(" ^ string_of_expr e1 ^ " " ^ string_of_op op ^ " " ^ string_of_expr e2 ^ ")"

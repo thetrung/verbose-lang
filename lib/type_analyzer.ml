@@ -40,6 +40,7 @@ let rec type_of_expr env = function
         
   | IntLit _ -> Int
   | FloatLit _ -> Double
+  | BooleanLit _ -> Boolean
   | StringLit _ -> Pointer
 
   | UnaryOp (op, e) ->

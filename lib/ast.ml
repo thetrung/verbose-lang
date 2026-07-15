@@ -1,10 +1,11 @@
 type data_type =
   | Int
   | Byte
-  | Short  (* 🆕 Added *)
-  | Long   (* 🆕 Added *)
-  | Single (* 🆕 Added *)
-  | Double (* 🆕 Added *)
+  | Short  
+  | Long   
+  | Single 
+  | Double
+  | Boolean
   | Nothing
   | Pointer
   | Custom of string
@@ -24,6 +25,7 @@ type expr =
   | Id of string
   | IntLit of int
   | FloatLit of float
+  | BooleanLit of bool
   | StringLit of string
   | UnaryOp of string * expr (* For "Not" or negative numbers *)
   | BinOp of expr * op * expr
