@@ -1,8 +1,17 @@
 open VerboseLang
 let () =
+  let usage = "Usage: dune exec bin/main.exe -- <filename>.vb\n" ^ 
+              " --ast: show AST.\n" ^ 
+              " --ir:  show generated LLVM-IR.\n" ^ 
+              " --ta: enable type-analyzer.\n" 
+  in  
   if Array.length Sys.argv < 2 then
-    print_endline "Usage: dune exec bin/main.exe -- <filename>.vb"
+    print_endline usage
   else
+    let options = 
+      if Array.length Sys.argv > 2 
+      then Sys.argv.(2) else "" 
+    in
     let filename = Sys.argv.(1) in
     let in_channel = open_in filename in
     let lexbuf = Lexing.from_channel in_channel in
@@ -10,21 +19,27 @@ let () =
     (* 1. Perform ALL operations that read the file inside the try block *)
     try
       let ast = Parser.program Lexer.tokenize lexbuf in
-      (* print_endline " --------------------------------------"; *)
-      print_endline "\n --------- Parsed Source Code ---------";
-      (* print_endline " --------------------------------------"; *)
       (* Safely close the input file pointer immediately after a successful parse *)
       close_in in_channel;
-      print_endline (Printer.print_program ast);
       
       (* 2. Run the newly integrated Type Analyzer pass first! *)
-      (* Type_analyzer.analyze_program ast; *)
     
       (* Generate and print our clean text patching string output *)
       let ir_output = Codegen.generate_program ast in
-      (* print_endline "; --- GENERATED LLVM IR CODE ---"; *)
-      (* print_endline ir_output *)
-     
+    
+      begin match options with 
+        | "--ast" -> 
+            print_endline "\n --------- Parsed Source Code ---------";
+            print_endline (Printer.print_program ast);
+        | "--ir"  ->
+            print_endline "\n ------- GENERATED LLVM IR CODE -------";
+            print_endline ir_output;
+        | "--ta"  ->  
+            Type_analyzer.analyze_program ast;
+        | "" -> ();
+        | _ -> 
+            print_endline usage;
+      end;
       (* print_endline " --------------------------------------"; *)
       print_endline " -------- Executed Code Result --------";
       (* print_endline " --------------------------------------"; *)

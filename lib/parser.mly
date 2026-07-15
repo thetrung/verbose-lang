@@ -10,7 +10,7 @@ open Ast
 %token <string> ID
 
 (* Core structural tokens *)
-%token PUBLIC STRUCTURE FUNCTION SUB BYVAL BYREF END AS DIM RETURN 
+%token PUBLIC PRIVATE STRUCTURE FUNCTION SUB BYVAL BYREF END AS DIM RETURN 
 %token NOTHING POINTER_TYPE ENUM INT_TYPE BYTE_TYPE SHORT_TYPE LONG_TYPE SINGLE_TYPE DOUBLE_TYPE BOOLEAN_TYPE 
 %token EOF LPAREN RPAREN COMMA NEWLINE DOT
 
@@ -46,6 +46,7 @@ definition_list:
 (* A simple layout checking if the 'Public' keyword is present *)
 visibility:
   | PUBLIC    { true }
+  | PRIVATE   { false }
   | /* empty */ { false }
 ;
 
