@@ -20,7 +20,9 @@ let create_context () = {
   globals = [];
 }
 (* Track reference pointers *)
-let byref_params:(string, bool) Hashtbl.t = Hashtbl.create 16
+let byref_params  : (string, bool) Hashtbl.t = Hashtbl.create 16
+(* Track visibility of structures/enums *)
+let visibility_table : (string, bool) Hashtbl.t = Hashtbl.create 16
 (* Struct Field/Type  *)
 let struct_fields = Hashtbl.create 10
 let struct_field_types = Hashtbl.create 10
@@ -603,7 +605,7 @@ let rec codegen_stmt ctx = function
 
 let codegen_def ctx = function
 
-  | FuncDef (_, name, params, ret_type, body) ->
+  | FuncDef (is_public, name, params, ret_type, body) ->
       (* Clear local registers and variable tables before processing each unique function body *)
       Hashtbl.clear ctx.variables;
       Hashtbl.clear local_types;
@@ -621,7 +623,8 @@ let codegen_def ctx = function
       (* Memorize ReturnType of Function -> ret_types *)
       Hashtbl.add ret_types name ret_str;
     
-      emit ctx (Printf.sprintf "define %s @%s(%s) {" ret_str name params_joined);
+      let linkage = if is_public then "" else "internal" in
+      emit ctx (Printf.sprintf "define %s %s @%s(%s) {" linkage ret_str name params_joined);
       
       (* 2. Map function parameters to local stack variables based on ByRef / ByVal *)
       List.iter (fun (mode, n, dt) ->
@@ -667,9 +670,8 @@ let codegen_def ctx = function
       if ret_type = Nothing then emit ctx "  ret void";
       emit ctx "}\n"
 
-  
-  | Structure (_, _, _) -> ()
-  | EnumDef (_, _, _) -> () 
+  | Structure (is_public, name, _)  -> Hashtbl.add visibility_table name is_public;
+  | EnumDef (is_public, name, _)    -> Hashtbl.add visibility_table name is_public
 
 (* Global Pass Registrar to define metadata structures cleanly *)
 let register_definition ctx = function

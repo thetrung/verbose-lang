@@ -27,7 +27,8 @@ Sub SetVector(ByRef vec1 As Vector)
   vec1 = temp_vec
 End Sub
 
-Function main() As Integer
+
+Public Function main() As Integer
   ' Struct 
   Dim vec1 As Vector
   printf("uninit vec1@%lu :\n %f -- %f -- %ld)\n", vec1, vec1.x, vec1.y, vec1.z)

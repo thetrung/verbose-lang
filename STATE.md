@@ -20,10 +20,12 @@ Here is our current state:
 - Pass Call/ReturnType
 - Boolean
 - ByVal/ByRef
+- Public/Private
 
 5. TODO :
+- patch Call(Ref/Val)
 - Arrays
-- Public/Private
+- Static/Heap
 - Declare/Include
 - Example with Raylib
 - Arena Allocator : As built-in memory management
