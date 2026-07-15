@@ -18,7 +18,7 @@ let () =
       print_endline (Printer.print_program ast);
       
       (* 2. Run the newly integrated Type Analyzer pass first! *)
-      Type_analyzer.analyze_program ast;
+      (* Type_analyzer.analyze_program ast; *)
     
       (* Generate and print our clean text patching string output *)
       let ir_output = Codegen.generate_program ast in
