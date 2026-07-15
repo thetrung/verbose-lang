@@ -15,7 +15,7 @@ Function TestComputation() As Integer
     End If
 End Function
 
-Function main() As Integer
+Public Function main() As Integer
   Dim result As Integer = TestComputation()
   printf("result = %d\n", result)
   Return 0

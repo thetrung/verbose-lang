@@ -21,13 +21,14 @@ Here is our current state:
 - Boolean
 - ByVal/ByRef
 - Public/Private
+- Declare
 
 5. TODO :
-- patch Call(Ref/Val)
-- Arrays
-- Static/Heap
-- Declare/Include
-- Example with Raylib
+- Call(Ref/Val)   : Pass by Value/Ptr
+- Arrays          : Index/Access memory
+- Static/Heap     : Global allocator/variable
 - Arena Allocator : As built-in memory management
-- Analyzer : Type Checking & Semantic Analysis
-- Bootstrapping : Write a Compiler in VerBose syntax to begin bootstrapping the language.
+- Include         : Modules, project structure
+- Raylib          : Write demo to refine code
+- Analyzer        : Type Checking & Semantic Analysis
+- Bootstrapping   : Write a Compiler in VerBose syntax to begin bootstrapping the language.

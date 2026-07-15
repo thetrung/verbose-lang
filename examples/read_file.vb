@@ -1,4 +1,9 @@
-Sub main()
+' Declares the external C signature to register its signature types globally
+Declare Sub putc(char As Integer, fp As Pointer)
+Declare Function getc(fp As Pointer) As Integer
+Declare Function malloc(amount As Integer) As Integer
+
+Public Sub main()
  ' 1. Memory and I/O initialization via C hooks
     Dim buffer As Pointer = malloc(512)
     Dim fileHandle As Pointer = fopen("lib/ast.ml", "r")

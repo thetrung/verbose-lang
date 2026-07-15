@@ -1,11 +1,11 @@
 
-Public Structure Token
-    Public Kind As Integer
-    Public Value As Pointer
+Structure Token
+ Dim Kind As Integer
+ Dim Value As Pointer
 End Structure
 
-Function main () As Integer
-  Dim t As Token(1,0x12345678)
+Public Function main () As Integer
+  Dim t As Token = Token(1,0x12345678)
   Dim kind As Integer = t.Kind
   kind = -2
   t.Kind = 4

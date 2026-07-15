@@ -1,4 +1,4 @@
-Function main() As Integer
+Public Function main() As Integer
   Dim calculation As Integer = 13
   Dim flag As Integer = 0
     ' 3. Loop statements and Comparison operators

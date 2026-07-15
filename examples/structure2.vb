@@ -15,7 +15,7 @@ Structure Mix
   Dim node As Integer
 End Structure
 
-Function main() As Integer
+Public Function main() As Integer
   Dim vec1 As Vector With {
     x = 1.0, 
     y = 2.000, 

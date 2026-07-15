@@ -12,6 +12,7 @@ demo: build
 	# ./verbose.exe examples/*.vb
 	./verbose.exe examples/enum.vb
 	./verbose.exe examples/compute.vb
+	./verbose.exe examples/boolean.vb
 	./verbose.exe examples/loop_while.vb
 	./verbose.exe examples/numberic.vb
 	./verbose.exe examples/read_file.vb
