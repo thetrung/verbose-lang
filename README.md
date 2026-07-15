@@ -7,67 +7,47 @@ Just my prototype WIP on top of LLVM for quick-play, nothing serious yet :
 
 ```VB
 
-Public Structure Token
-    Public Kind As Integer
-    Public Value As Pointer
+Structure Vector
+  Dim x As Single
+  Dim y As Double
+  Dim z As Long
 End Structure
 
-Function CompileKernel() As Integer
-    ' 1. Memory and I/O initialization via C hooks
-    Dim buffer As Pointer = malloc(512)
-    Dim fileHandle As Pointer = fopen("lib/ast.ml", "r")
-    
-    ' 2. Numeric and Bitwise testing
-    Dim calculation As Integer = (10 + 20 * 3) / 2 Mod 4
-    Dim flag As Integer = (1 Shl 4) Or (2 Shr 1) Xor Not 0
+Enum NodeType
+  Literal = 1
+  BinaryOp = 2
+  FunctionCall = 3
+End Enum
 
-    ' Print text strings and numbers directly to the terminal!
-    printf("--- VERBOSE LANGUAGE RUNTIME ---\n")
-    printf("Initial Calculation Result: %d\n", calculation)
-    printf("Initial Flag Byte Pattern: %d\n", flag)
+Structure Mix
+  Dim vec As Vector
+  Dim node As Integer
+End Structure
 
-    ' 3. Loop statements and Comparison operators
-    While calculation > flag Do
-        calculation = calculation + 1
-        flag = flag + 2
-        printf("Loop: calculation = %d -- flag = %d\n", calculation, flag)
-    End While
-   
-    For i = 0 To 100
-      Dim charCode As Integer = getc(fileHandle)
-
-        ' 4. Condition blocks testing
-        If charCode = 32 Then
-            ' Skip spaces
-            printf("#32: Norm.\n")
-        Else
-            ' Check structure using Select Case
-            Select Case charCode
-                Case 73, 78
-                    Dim isOp As Integer = 1
-                    printf("#73, #78 => JackPot bro \n")
-                Case 114, 111, 112
-                    Dim isNum As Integer = 1
-                    printf("#114, #111, #112 : Nah.\n")
-                Case Else
-                    printf("%d-%c:%d ", i, charCode, charCode)
-            End Select
-        End If
-
-    End For
-
-    free(buffer)
-
-    If flag > calculation Then
-      Return calculation
-    Else
-      Return 0
-    End If
+Function Square(number As Long) As Long
+  Dim result As Long = number * number
+  Return result
 End Function
 
-Function main () As Integer
-  Dim result As Integer = CompileKernel()
-  Return result
+Function main() As Integer
+  Dim vec1 As Vector(1.0, 2.000, 9999999)
+  printf("vec1@%lu :\n %f -- %f -- %ld)\n", vec1, vec1.x, vec1.y, vec1.z)
+  
+  Dim nodeType As Integer = NodeType.Literal
+  printf("nodeType = %d\n", nodeType)
+
+  Dim squared As Long = Square(vec1.z)
+  printf("vec1.z ^ 2 = %ld\n", squared)
+
+  Dim mix As Mix(vec1, 1)
+  ' mix.vec = Vector(1.0, 1.0, 999)
+  mix.node = NodeType.Literal
+  printf("mix:\n .vec = @%lu\n", mix.vec)
+  printf("    .x single %f\n", mix.vec.x)
+  printf("    .y double %f\n", mix.vec.y)
+  printf("    .z long   %lld\n", mix.vec.z)
+  printf(" .node integer %d\n",mix.node)
+  Return 0
 End Function
 
 ```
