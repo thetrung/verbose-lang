@@ -19,16 +19,16 @@ let create_context () = {
   variables = Hashtbl.create 50;
   globals = [];
 }
-(* ✅ Added metadata environments *)
+(* Struct Field/Type  *)
 let struct_fields = Hashtbl.create 10
 let struct_field_types = Hashtbl.create 10
+(* Variable, Local, Return Types  *)
 let var_types = Hashtbl.create 50
-
-(* 🆕 Map tracking "EnumName.MemberName" -> int value constant *)
+let ret_types   = Hashtbl.create 50
+let local_types = Hashtbl.create 50
+(* Enum Values  *)
 let enum_values = Hashtbl.create 50
 
-(* 🆕 Keeps track of the literal LLVM type string for every allocated variable *)
-let local_types = Hashtbl.create 50
 
 let emit ctx str = Buffer.add_string ctx.buf (str ^ "\n")
 
@@ -106,9 +106,12 @@ let rec codegen_expr ctx = function
       let res_reg = next_reg ctx in
       
       let t_str = 
-        if Hashtbl.mem var_types name then Printf.sprintf "%%struct.%s" (Hashtbl.find var_types name)
-        else if name = "buffer" || name = "fileHandle" then "ptr" 
-        else "i32" 
+        if Hashtbl.mem var_types name then 
+          Printf.sprintf "%%struct.%s" (Hashtbl.find var_types name)
+        else if name = "buffer" || name = "fileHandle" then "ptr"
+        else 
+          let local_type = Hashtbl.find local_types name in
+          local_type
       in
       
       if Hashtbl.mem var_types name then
@@ -191,24 +194,24 @@ let rec codegen_expr ctx = function
       end else begin
         (* --- STANDARD INTEGER OPERATIONS --- *)
         let op_str = match op with
-          | Add -> "add nsw i32" (* Or match t1 for i8/i16/i64 configurations *)
-          | Sub -> "sub nsw i32"
-          | Mul -> "mul nsw i32"
-          | Div -> "sdiv i32"
-          | Mod -> "srem i32"
-          | And -> "and i32"
-          | Or  -> "or i32"
-          | Xor -> "xor i32"
-          | Shl -> "shl i32"
-          | Shr -> "lshr i32"
-          | Equal        -> "icmp eq i32"
-          | Greater      -> "icmp sgt i32"
-          | Less         -> "icmp slt i32"
-          | GreaterEqual -> "icmp sge i32"
-          | LessEqual    -> "icmp sle i32"
-          | NotEqual     -> "icmp ne i32"
+          | Add -> "add nsw " (* Or match t1 for i8/i16/i64 configurations *)
+          | Sub -> "sub nsw "
+          | Mul -> "mul nsw "
+          | Div -> "sdiv "
+          | Mod -> "srem "
+          | And -> "and "
+          | Or  -> "or "
+          | Xor -> "xor "
+          | Shl -> "shl "
+          | Shr -> "lshr "
+          | Equal        -> "icmp eq "
+          | Greater      -> "icmp sgt "
+          | Less         -> "icmp slt "
+          | GreaterEqual -> "icmp sge "
+          | LessEqual    -> "icmp sle "
+          | NotEqual     -> "icmp ne "
         in
-        emit ctx (Printf.sprintf "  %s = %s %s, %s" res_reg op_str v1 v2);
+        emit ctx (Printf.sprintf "  %s = %s %s %s, %s" res_reg op_str t1 v1 v2);
         let ret_type = match op with
 
           | Equal | Greater | Less | GreaterEqual | LessEqual | NotEqual -> "i1"
@@ -280,10 +283,13 @@ let rec codegen_expr ctx = function
         let args_joined = String.concat ", " arg_strs in
         let res_reg = next_reg ctx in
         let ret_type = match name with
-
           | "malloc" | "fopen" -> "ptr"
           | "free" -> "void"
-          | _ -> "i32"
+          | _ -> 
+            if Hashtbl.mem ret_types name then
+              let found_ret_type = Hashtbl.find ret_types name in
+              found_ret_type
+            else raise (Error("Can't find ReturnType of " ^ name))
         in
         if ret_type = "void" then begin
           emit ctx (Printf.sprintf "  call void @%s(%s)" name args_joined);
@@ -587,7 +593,9 @@ let codegen_def ctx = function
       let param_strs = List.map (fun (n, t) -> string_of_dt t ^ " %" ^ n) params in
       let params_joined = String.concat ", " param_strs in
       let ret_str = string_of_dt ret_type in
-      
+      (* Memorize ReturnType of Function -> ret_types  *)
+      Hashtbl.add ret_types name ret_str;
+    
       emit ctx (Printf.sprintf "define %s @%s(%s) {" ret_str name params_joined);
       
       (* Map function parameters to local stack variables *)
