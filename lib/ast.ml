@@ -50,10 +50,12 @@ type stmt =
   | While of expr * stmt list
   | For of string * expr * expr * stmt list (* For var = start To end *)
 
+type param_mode = | ByVal | ByRef
+
 type definition =
   | Structure of bool * string * (string * data_type) list (* added bool flag *)
   | EnumDef of bool * string * (string * int) list
-  | FuncDef of bool * string * (string * data_type) list * data_type * stmt list
+  | FuncDef of bool * string * (param_mode * string * data_type) list * data_type * stmt list
 
 type program = definition list
 

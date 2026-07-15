@@ -21,11 +21,18 @@ Function Square(number As Long) As Long
   Return result
 End Function
 
+Sub SetVector(ByRef vec1 As Vector)
+  Dim temp_vec As Vector(1.0, 2.000, 9999999)
+  printf("ByRef: vec1@%lu :\n %f -- %f -- %ld\n", temp_vec, temp_vec.x, temp_vec.y, temp_vec.z)
+  vec1 = temp_vec
+End Sub
+
 Function main() As Integer
   ' Struct 
   Dim vec1 As Vector
   printf("uninit vec1@%lu :\n %f -- %f -- %ld)\n", vec1, vec1.x, vec1.y, vec1.z)
-  vec1 = Vector(1.0, 2.000, 9999999)
+  ' ByRef
+  SetVector(vec1)
   printf("filled vec1@%lu :\n %f -- %f -- %ld)\n\n", vec1, vec1.x, vec1.y, vec1.z)
   ' Enum 
   Dim nodeType As Integer

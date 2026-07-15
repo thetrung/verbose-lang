@@ -21,6 +21,8 @@ rule tokenize = parse
   | "Enum"           { ENUM }
   | "Function"       { FUNCTION }
   | "Sub"            { SUB }
+  | "ByVal"          { BYVAL }
+  | "ByRef"          { BYREF }
   | "End"            { END }
   | "As"             { AS }
   | "Dim"            { DIM }

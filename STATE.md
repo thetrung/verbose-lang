@@ -19,9 +19,9 @@ Here is our current state:
 - Allow un-init Dim
 - Pass Call/ReturnType
 - Boolean
+- ByVal/ByRef
 
 5. TODO :
-- ByVal/ByRef
 - Arrays
 - Public/Private
 - Declare/Include

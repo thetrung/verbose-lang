@@ -19,6 +19,8 @@ let create_context () = {
   variables = Hashtbl.create 50;
   globals = [];
 }
+(* Track reference pointers *)
+let byref_params:(string, bool) Hashtbl.t = Hashtbl.create 16
 (* Struct Field/Type  *)
 let struct_fields = Hashtbl.create 10
 let struct_field_types = Hashtbl.create 10
@@ -600,33 +602,63 @@ let rec codegen_stmt ctx = function
       emit ctx (Printf.sprintf "\n%s:" label_end)
 
 let codegen_def ctx = function
+
   | FuncDef (_, name, params, ret_type, body) ->
       (* Clear local registers and variable tables before processing each unique function body *)
       Hashtbl.clear ctx.variables;
       Hashtbl.clear local_types;
       ctx.reg_counter <- 1;
 
-      let param_strs = List.map (fun (n, t) -> string_of_dt t ^ " %" ^ n) params in
+      (* 1. Structure function signature strings: System structs or ByRef require a direct 'ptr' *)
+      let param_strs = List.map (fun (mode, n, t) -> 
+        match t with
+        | Custom _ -> "ptr %" ^ n (* Structs are always received via a memory reference pointer *)
+        | _ -> if mode = ByRef then "ptr %" ^ n else string_of_dt t ^ " %" ^ n
+      ) params in
       let params_joined = String.concat ", " param_strs in
       let ret_str = string_of_dt ret_type in
-      (* Memorize ReturnType of Function -> ret_types  *)
+      
+      (* Memorize ReturnType of Function -> ret_types *)
       Hashtbl.add ret_types name ret_str;
     
       emit ctx (Printf.sprintf "define %s @%s(%s) {" ret_str name params_joined);
       
-      (* Map function parameters to local stack variables *)
-      List.iter (fun (n, dt) ->
-        let t_str = string_of_dt dt in
-        let alloca_reg = next_reg ctx in
-        emit ctx (Printf.sprintf "  %s = alloca %s, align 8" alloca_reg t_str);
-        emit ctx (Printf.sprintf "  store %s %%%s, ptr %s, align 8" t_str n alloca_reg);
-        Hashtbl.add ctx.variables n alloca_reg;
-        Hashtbl.add local_types n t_str;
-        
-        (* Track underlying structural metadata types for parameters *)
-        (match dt with
-         | Custom struct_name -> Hashtbl.add var_types n struct_name
-         | _ -> ())
+      (* 2. Map function parameters to local stack variables based on ByRef / ByVal *)
+      List.iter (fun (mode, n, dt) ->
+        match dt with
+        | Custom struct_name ->
+            if mode = ByRef then begin
+              (* ByRef Struct: Bind the argument register directly as the pointer, skip stack cloning *)
+              Hashtbl.add ctx.variables n ("%" ^ n);
+              Hashtbl.add var_types n struct_name;
+              Hashtbl.add local_types n ("%struct." ^ struct_name)
+            end else begin
+              (* ByVal Struct: Create an isolated scratchpad slot and perform deep memory copy *)
+              let alloca_reg = next_reg ctx in
+              let struct_typ = "%struct." ^ struct_name in
+              emit ctx (Printf.sprintf "  %s = alloca %s, align 8" alloca_reg struct_typ);
+              let byte_size = get_struct_size struct_name in
+              emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %%%s, i64 %d, i1 false)" 
+                         alloca_reg n byte_size);
+              Hashtbl.add ctx.variables n alloca_reg;
+              Hashtbl.add var_types n struct_name;
+              Hashtbl.add local_types n struct_typ
+            end
+        | _ ->
+            (* Standard Primitive Scalar Data Types *)
+            let t_str = string_of_dt dt in
+            if mode = ByRef then begin
+              (* ByRef Primitive: Map variable name directly to incoming raw pointer register reference *)
+              Hashtbl.add ctx.variables n ("%" ^ n);
+              Hashtbl.add local_types n t_str
+            end else begin
+              (* ByVal Primitive: Store incoming value safely into an explicit alloca allocation slot *)
+              let alloca_reg = next_reg ctx in
+              emit ctx (Printf.sprintf "  %s = alloca %s, align 8" alloca_reg t_str);
+              emit ctx (Printf.sprintf "  store %s %%%s, ptr %s, align 8" t_str n alloca_reg);
+              Hashtbl.add ctx.variables n alloca_reg;
+              Hashtbl.add local_types n t_str
+            end
       ) params;
       
       List.iter (codegen_stmt ctx) body;
@@ -634,6 +666,7 @@ let codegen_def ctx = function
       (* Fallback protection for empty or branching void blocks *)
       if ret_type = Nothing then emit ctx "  ret void";
       emit ctx "}\n"
+
   
   | Structure (_, _, _) -> ()
   | EnumDef (_, _, _) -> () 

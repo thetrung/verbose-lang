@@ -221,14 +221,14 @@ let analyze_program prog =
     | Structure (_, name, fields) -> Hashtbl.add env.structs name fields
     | EnumDef (_, name, members) -> Hashtbl.add env.enums name (List.map fst members)
     | FuncDef (_, name, params, ret_type, _) ->
-        let param_types = List.map snd params in
+        let param_types = List.map (fun(_,_,t)->t) params in
         Hashtbl.add env.functions name (param_types, ret_type)
   ) prog;
 
   List.iter (function
     | FuncDef (_, name, params, _, body) ->
         let func_env = copy_env env in
-        List.iter (fun (pname, pdt) -> Hashtbl.add func_env.locals pname pdt) params;
+        List.iter (fun (pmode, pname, pdt) -> Hashtbl.add func_env.locals pname pdt) params;
         List.iter (check_stmt func_env) body
     | _ -> ()
   ) prog

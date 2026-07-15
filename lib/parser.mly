@@ -10,8 +10,8 @@ open Ast
 %token <string> ID
 
 (* Core structural tokens *)
-%token PUBLIC STRUCTURE FUNCTION SUB END AS DIM RETURN NOTHING POINTER_TYPE ENUM
-%token INT_TYPE BYTE_TYPE SHORT_TYPE LONG_TYPE SINGLE_TYPE DOUBLE_TYPE BOOLEAN_TYPE 
+%token PUBLIC STRUCTURE FUNCTION SUB BYVAL BYREF END AS DIM RETURN 
+%token NOTHING POINTER_TYPE ENUM INT_TYPE BYTE_TYPE SHORT_TYPE LONG_TYPE SINGLE_TYPE DOUBLE_TYPE BOOLEAN_TYPE 
 %token EOF LPAREN RPAREN COMMA NEWLINE DOT
 
 (* Operators and Control Flow *)
@@ -49,6 +49,12 @@ visibility:
   | /* empty */ { false }
 ;
 
+param:
+  | BYVAL name=ID AS t=data_type    { (Ast.ByVal, name, t) }
+  | BYREF name=ID AS t=data_type    { (Ast.ByRef, name, t) }
+  | name=ID       AS t=data_type    { (Ast.ByVal, name, t) } (*Default: ByVal to Copy *)
+;
+
 definition:
   | vis=visibility STRUCTURE name=ID mandatory_newlines fields=list(struct_field) END STRUCTURE mandatory_newlines
     { Ast.Structure(vis, name, fields) }
@@ -71,9 +77,6 @@ struct_field:
   | DIM name=ID AS t=data_type mandatory_newlines { (name, t) }
 ;
 
-param:
-  | name=ID AS t=data_type { (name, t) }
-;
 
 data_type:
   | INT_TYPE     { Ast.Int }

@@ -1,8 +1,11 @@
 open Ast
 (* Pretty Print  *)
 
-let rec string_of_dt = function
+let string_of_pmode = function 
+  | ByRef -> "ByRef"
+  | ByVal -> "ByVal"
 
+let rec string_of_dt = function
   | Int -> "Integer" 
   | Byte -> "Byte" 
   | Short -> "Short"   
@@ -15,7 +18,6 @@ let rec string_of_dt = function
   | Custom s -> s
 
 let string_of_op = function
-
   | Add -> "+" | Sub -> "-" | Mul -> "*" | Div -> "/" | Mod -> "Mod"
   | And -> "And" | Or -> "Or" | Xor -> "Xor" | Shl -> "Shl" | Shr -> "Shr"
   | Equal -> "=" | Greater -> ">" | Less -> "<" | GreaterEqual -> ">=" | LessEqual -> "<=" | NotEqual -> "<>"
@@ -73,7 +75,7 @@ let string_of_def = function
       let prefix = if is_public then "Public " else "" in
       let keyword = if rt = Nothing then "Sub " else "Function " in
       let as_clause = if rt = Nothing then "" else " As " ^ string_of_dt rt in
-      let pl = String.concat ", " (List.map (fun (n, t) -> n ^ " As " ^ string_of_dt t) params) in
+      let pl = String.concat ", " (List.map (fun (m, n, t) -> string_of_pmode m ^ " " ^ n ^ " As " ^ string_of_dt t) params) in
       prefix ^ keyword ^ name ^ "(" ^ pl ^ ")" ^ as_clause ^ "\n" ^ string_of_block "  " body ^ "End " ^ keyword ^ "\n"
 
 let print_program prog = String.concat "\n" (List.map string_of_def prog)
