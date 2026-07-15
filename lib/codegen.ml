@@ -340,25 +340,36 @@ and get_field_pointer ctx = function
 
 let rec codegen_stmt ctx = function
 
-  | Dim (name, dt, exp) ->
-      (match exp with
-       | Call (struct_name, _) when Hashtbl.mem struct_fields struct_name ->
-           Hashtbl.add var_types name struct_name
-       | _ -> ());
-       
-      let v, t = codegen_expr ctx exp in
-      let alloca_reg = next_reg ctx in
-      
-      let typ_str = 
-        if Hashtbl.mem var_types name then Printf.sprintf "%%struct.%s" (Hashtbl.find var_types name)
-        else string_of_dt dt 
-      in
+  | Dim (name, dt, opt_exp) ->
+   
+    (match dt with 
+    | Custom struct_name -> 
+        if Hashtbl.mem struct_fields struct_name then
+          Hashtbl.add var_types name struct_name
+    | _ -> ());
+
+    (match opt_exp with
+    | Some exp -> (match exp with 
+        | Call (struct_name, _) when Hashtbl.mem struct_fields struct_name ->
+                                     Hashtbl.add var_types name struct_name
+        | _ -> ());
+    | None -> ());
+
+    let alloca_reg = next_reg ctx in
+    let typ_str = 
+      if Hashtbl.mem var_types name then 
+        Printf.sprintf "%%struct.%s" (Hashtbl.find var_types name)
+      else string_of_dt dt 
+    in
       emit ctx (Printf.sprintf "  %s = alloca %s, align 8" alloca_reg typ_str);
       
       Hashtbl.add local_types name typ_str;
-      
+      Hashtbl.add ctx.variables name alloca_reg;
+
+    begin match opt_exp with Some exp -> 
+    let v, t = codegen_expr ctx exp in
+
       if Hashtbl.mem var_types name then begin
-        (* 👇 FIXED: Size parameter is now fully dynamic based on structure layout fields *)
         let struct_name = Hashtbl.find var_types name in
         let byte_size = get_struct_size struct_name in
         emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)" 
@@ -369,9 +380,8 @@ let rec codegen_stmt ctx = function
         emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 8" cast_reg alloca_reg)
       end else
         emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 8" typ_str v alloca_reg);
-        
-      Hashtbl.add ctx.variables name alloca_reg
-
+    | None -> ();
+    end
 
   | Assign (name, exp) ->
       if Hashtbl.mem ctx.variables name then
@@ -385,13 +395,15 @@ let rec codegen_stmt ctx = function
           emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)" 
                      alloca_reg v byte_size)
         end else begin
-          let expected_type = try Hashtbl.find local_types name with _ -> "i32" in
-          if expected_type = "ptr" && t = "i32" then begin
-            let cast_reg = next_reg ctx in
-            emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
-            emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 4" cast_reg alloca_reg)
-          end else
-            emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" t v alloca_reg)
+            if Hashtbl.mem local_types name then
+              let expected_type = try Hashtbl.find local_types name with _ -> "i32" in
+              if expected_type = "ptr" && t = "i32" then begin
+                let cast_reg = next_reg ctx in
+                emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
+                emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 4" cast_reg alloca_reg)
+              end else
+                emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" t v alloca_reg)
+            else raise(Error ("Can't find local type " ^ name))
         end
       else
         raise (Error ("Assignment target undefined: " ^ name))

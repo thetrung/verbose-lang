@@ -16,8 +16,12 @@ Here is our current state:
 - Enum
 - Nested/Mixed Struct 
 - Nested FieldAccess
+- Allow un-init Dim
+- Pass Call/ReturnType
+- Boolean
 
 5. TODO :
+- ByVal/ByRef
 - Arrays
 - Public/Private
 - Declare/Include

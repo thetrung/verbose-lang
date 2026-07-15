@@ -103,19 +103,16 @@ stmt:
 ;
 
 code_stmt:
-  | DIM name=ID AS t=data_type EQUALS e=expr { Ast.Dim(name, t, e) }
+  | DIM name=ID AS t=data_type               { Ast.Dim(name, t, None)}
+  | DIM name=ID AS t=data_type EQUALS e=expr { Ast.Dim(name, t, Some(e)) }
   | DIM name=ID AS struct_name=ID 
-    LPAREN args=separated_list(COMMA, expr) RPAREN
-    { 
-      Ast.Dim(name, Ast.Pointer, Ast.Call(struct_name, args)) 
-    }
-  /* 🆕 Added rule for Approach B field assignments: e.g., t.Kind = 5 */
-  | obj=expr; DOT; field=ID; EQUALS; e=expr 
-      { Ast.FieldAssign(obj, field, e) }
+    LPAREN args=separated_list(COMMA, expr) RPAREN  
+    { Ast.Dim(name, Ast.Pointer, Some(Ast.Call(struct_name, args))) }
 
-  | name=ID EQUALS e=expr                    { Ast.Assign(name, e) }
-  | e=expr                                   { Ast.ExprStatement(e) }
-  | RETURN e=option(expr)                    { Ast.Return(e) }
+  | obj=expr; DOT; field=ID; EQUALS; e=expr   { Ast.FieldAssign(obj, field, e) }
+  | name=ID EQUALS e=expr                     { Ast.Assign(name, e) }
+  | e=expr                                    { Ast.ExprStatement(e) }
+  | RETURN e=option(expr)                     { Ast.Return(e) }
   
   | IF cond=expr THEN mandatory_newlines body=block els=if_else_block END IF
     { Ast.If(cond, body, els) }

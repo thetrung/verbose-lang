@@ -33,7 +33,7 @@ type expr =
   | FieldAccess of expr * string    (* variable.Kind *)
   
 type stmt =
-  | Dim of string * data_type * expr
+  | Dim of string * data_type * expr option
   | Assign of string * expr
   | AssignExpr of expr * expr 
   | FieldAssign of expr * string * expr (* 🆕 Added for field assignment: e.g., t.Kind = 5 *)

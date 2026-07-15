@@ -130,23 +130,25 @@ let rec type_of_expr env = function
 
 let rec check_stmt env = function
 
-  | Dim (name, expected_dt, init_expr) ->
+  | Dim (name, expected_dt, opt_expr) ->
       if Hashtbl.mem env.locals name then
         raise (TypeError ("Variable '" ^ name ^ "' is already declared"));
+     
+      (match opt_expr with 
+      | Some init_expr ->
+        let actual_dt = type_of_expr env init_expr in
       
-      let actual_dt = type_of_expr env init_expr in
+        (* Normalize both types to raw string definitions for strict layout validation *)
+        let types_match = match expected_dt, actual_dt with
+          | Custom s1, Custom s2 -> s1 = s2
+          | t1, t2 -> t1 = t2
+        in
       
-      (* Normalize both types to raw string definitions for strict layout validation *)
-      let types_match = match expected_dt, actual_dt with
-        | Custom s1, Custom s2 -> s1 = s2
-        | t1, t2 -> t1 = t2
-      in
-      
-      if not types_match && expected_dt <> Pointer then
-        raise (TypeError (Printf.sprintf "Variable declaration assignment mismatch for '%s'" name));
+        if not types_match && expected_dt <> Pointer then
+          raise (TypeError (Printf.sprintf "Variable declaration assignment mismatch for '%s'" name));
         
-      Hashtbl.add env.locals name expected_dt
-
+        Hashtbl.add env.locals name expected_dt
+      | None -> ());
 
   (* ✅ Added old structural handlers to clear the pattern warning completely *)
   | Assign (name, expr) ->

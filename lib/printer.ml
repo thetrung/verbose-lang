@@ -32,7 +32,9 @@ let rec string_of_expr = function
   | FieldAccess (e, field) -> string_of_expr e ^ "." ^ field
 
 let rec string_of_stmt indent = function
-  | Dim (v, dt, e) -> indent ^ "Dim " ^ v ^ " As " ^ string_of_dt dt ^ " = " ^ string_of_expr e ^ "\n"
+  | Dim (v, dt, opt_e) -> 
+      let init_expr = match opt_e with | Some e -> " = " ^ string_of_expr e | None -> "" in
+      indent ^ "Dim " ^ v ^ " As " ^ string_of_dt dt ^ init_expr ^ "\n"
   | Assign (v, e) -> indent ^ v ^ " = " ^ string_of_expr e ^ "\n"
   | FieldAssign (obj, field, e) -> indent ^ string_of_expr obj ^ "." ^ field ^ " = " ^ string_of_expr e ^ "\n"
   | AssignExpr (lhs, rhs) -> indent ^ string_of_expr lhs ^ " = " ^ string_of_expr rhs ^ "\n"

@@ -16,23 +16,28 @@ Structure Mix
 End Structure
 
 Function Square(number As Long) As Long
-  Dim result As Long = 0
+  Dim result As Long
   result = number * number
   Return result
 End Function
 
 Function main() As Integer
   ' Struct 
-  Dim vec1 As Vector(1.0, 2.000, 9999999)
-  printf("vec1@%lu :\n %f -- %f -- %ld)\n", vec1, vec1.x, vec1.y, vec1.z)
+  Dim vec1 As Vector
+  printf("uninit vec1@%lu :\n %f -- %f -- %ld)\n", vec1, vec1.x, vec1.y, vec1.z)
+  vec1 = Vector(1.0, 2.000, 9999999)
+  printf("filled vec1@%lu :\n %f -- %f -- %ld)\n\n", vec1, vec1.x, vec1.y, vec1.z)
   ' Enum 
-  Dim nodeType As Integer = NodeType.Literal
+  Dim nodeType As Integer
+  nodeType = NodeType.Literal
   printf("nodeType = %d\n", nodeType)
   ' Function ArgTypes
-  Dim squared As Long = Square(vec1.z)
+  Dim squared As Long
+  squared = Square(vec1.z)
   printf("vec1.z ^ 2 = %ld\n", squared)
   ' Boolean
-  Dim logic As Boolean = True Xor False
+  Dim logic As Boolean
+  logic = True Xor False
   printf("logic = %d\n", logic)
   ' Nested Struct & Pointer 
   Dim mix As Mix(vec1, 1)
