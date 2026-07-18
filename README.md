@@ -71,13 +71,10 @@ End Function
 ### USAGE
 - It require LLVM@19+ to be installed.
 
-- Build compiler : `make`
+- Build compiler : `make build`
+- Build + run `Prototype.vb` : `make`
 
-- To compile `.vb` into `LLVM` : `main.exe demo.vb`
-
-- Then compile to native code by pipeline :
-
-      main.exe demo.vb && llc demo.ll && clang demo.s -o demo && ./demo
+- To compile any `.vb` file into native binary with `LLVM19+` : `./verbose.exe your_file.vb`
 
 ### GOAL 
 - Bootstap minimally.
@@ -86,7 +83,7 @@ End Function
 - Whole language fit into a single page.
 - Design for human readability, not for efficiency.
 - Easy to read, use, compile, fast as C/Rust, C interop natively.
-- Drop GC, Class/Inherit, Complex stuff.. for Arena, Struct/Enum, Async/Await.
+- Drop GC, Class/Inherit, Complex stuff.. for Arena, Struct/Enum, Async/Await & Expose Label/Pointer/Address/Raw Memory Access.
 - Can work natively with 32-bit ARM microcontroller too, beside any LLVM-supported platform. ( violatile, fixed/deterministic memory management ).
 - It may still compile some VB6/NET source code but won't be exactly or fully compatible with them (Ex: become case-sensitive to drop the need for Alias DLL import ).
   

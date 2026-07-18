@@ -36,7 +36,7 @@ Public Function main() As Integer
   printf("vec1.z ^ 2 = %ld\n", squared)
 
   ' Nested Struct & Pointer 
-  Dim mix As Nested = Nested(vec1)
+  Dim mix As Nested(vec1)
   printf("mix:\n .vec = @%lu\n", mix.vec)
   printf("    .x single %f\n", mix.vec.x)
   printf("    .y double %f\n", mix.vec.y)
