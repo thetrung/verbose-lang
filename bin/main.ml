@@ -18,6 +18,12 @@ let () =
     
     (* 1. Perform ALL operations that read the file inside the try block *)
     try
+      (* Compiler Info *)
+      Printf.printf       "\n -------- Verbose-Lang Compiler -------\n";
+      Printf.printf         " build: %s\n" Version.build_time;
+      Printf.printf         " version: %s/%s\n" Version.branch Version.commit_id;
+      Printf.printf       "\n";
+      (* Start parsing source code *)
       let ast = Parser.program Lexer.tokenize lexbuf in
       (* Safely close the input file pointer immediately after a successful parse *)
       close_in in_channel;
