@@ -1,5 +1,14 @@
+(rule
+ (targets version.ml)
+ (deps (universe))
+ (action
+  (with-stdout-to version.ml
+   (bash "echo \"let commit_id = \\\"$(git describe --always --dirty 2>/dev/null || echo unknown)\\\"\"
+          echo \"let branch = \\\"$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)\\\"\"
+          echo \"let build_time = \\\"$(date '+%d-%m-%Y @ %H:%M:%S')\\\"\""))))
+
 (executable
  (public_name verbose-lang)
  (name main)
- (libraries 
-   VerboseLang))
+ (libraries VerboseLang)
+ (modules main version))

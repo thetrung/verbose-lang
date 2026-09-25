@@ -74,7 +74,7 @@ End Function
 - Build compiler : `make build`
 - Build + run `Prototype.vb` : `make`
 
-- To compile any `.vb` file into native binary with `LLVM19+` : `./verbose.exe your_file.vb`
+- To compile any `.vb` file into native binary with `LLVM19+` : `./verbose your_file.vb`
 
 ### GOAL 
 - Bootstap minimally.

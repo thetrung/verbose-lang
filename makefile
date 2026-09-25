@@ -3,23 +3,23 @@ default: clean build run
 
 build: 
 	dune build
-	mv _build/default/bin/main.exe verbose.exe
+	mv _build/default/bin/main.exe verbose
 
 run:
-	./verbose.exe ${TARGET}.vb
+	./verbose ${TARGET}.vb
 
 demo: build
-	# ./verbose.exe examples/*.vb
-	./verbose.exe examples/enum.vb
-	./verbose.exe examples/compute.vb
-	./verbose.exe examples/boolean.vb
-	./verbose.exe examples/loop_while.vb
-	./verbose.exe examples/numberic.vb
-	./verbose.exe examples/read_file.vb
-	./verbose.exe examples/structure.vb
-	./verbose.exe examples/nested_struct.vb
+	# ./verbose examples/*.vb
+	./verbose examples/enum.vb
+	./verbose examples/compute.vb
+	./verbose examples/boolean.vb
+	./verbose examples/loop_while.vb
+	./verbose examples/numberic.vb
+	./verbose examples/read_file.vb
+	./verbose examples/structure.vb
+	./verbose examples/nested_struct.vb
 	rm -rf examples && git checkout examples
 
 clean:
-	rm -rf _build verbose.exe \
+	rm -rf _build \
 		${TARGET}.ll ${TARGET}.s ${TARGET}
