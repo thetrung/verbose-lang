@@ -53,13 +53,13 @@ let () =
       let f_output = binary ^ ".ll" in
       Out_channel.with_open_text f_output (fun channel -> 
       Out_channel.output_string channel ir_output );
-      let llc   = Sys.command (Printf.sprintf "llc %s.ll" binary) in
-      let clang = Sys.command (Printf.sprintf "clang %s.s -o %s" binary binary) in
+      (* let llc   = Sys.command (Printf.sprintf "llc %s.ll" binary) in *)
+      let clang = Sys.command (Printf.sprintf "clang -o2 %s.ll -o %s" binary binary) in
       let exec  = Sys.command (Printf.sprintf "./%s" binary) in
       print_endline " ---------------------------------------";
       print_endline "";
-      if llc + clang + exec != 0 then 
-        Printf.printf "Status: llc/clang/exec = %d %d %d\n" llc clang exec
+      if clang + exec != 0 then 
+        Printf.printf "Status: clang/exec = %d %d\n" clang exec
       else 
         ignore ()
 
