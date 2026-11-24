@@ -1,4 +1,9 @@
-' Built-in C runtime hooks: malloc, free, fopen, getc, putc, printf
+' Declares external C runtime signatures explicitly via FFI Declare
+Declare Function malloc(amount As Integer) As Pointer
+Declare Sub free(ptr As Pointer)
+Declare Function fopen(path As Pointer, mode As Pointer) As Pointer
+Declare Function fclose(fp As Pointer) As Integer
+Declare Function getc(fp As Pointer) As Integer
 
 Public Function main() As Integer
   ' 1. Memory and I/O initialization via C hooks
@@ -29,6 +34,7 @@ Public Function main() As Integer
     End If
   End For
 
+  fclose(fileHandle)
   free(buffer)
   Return 0
 End Function

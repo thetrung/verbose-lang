@@ -7,7 +7,7 @@ let whitespace = [' ' '\t' '\r']+
 let newline = '\n'
 let id = ['a'-'z' 'A'-'Z' '_'] ['a'-'z' 'A'-'Z' '0'-'9' '_']*
 let int = ['0'-'9']+
-let hex = '0' ['x' 'X'] ['0'-'9' 'a'-'f' 'A'-'Z']+ (* 0x1234 *)
+let hex = '0' ['x' 'X'] ['0'-'9' 'a'-'f' 'A'-'F']+ (* 0x1234 *)
 let float_num = ['0'-'9']+ '.' ['0'-'9']* (* 3.14 or -0.5 *)
 
 rule tokenize = parse
@@ -17,6 +17,9 @@ rule tokenize = parse
 
   (* System Block Keywords *)
   | "Public"         { PUBLIC }
+  | "Private"        { PRIVATE }
+  | "Declare"        { DECLARE }
+  | "With"           { WITH }
   | "Structure"      { STRUCTURE }
   | "Enum"           { ENUM }
   | "Function"       { FUNCTION }
@@ -72,7 +75,10 @@ rule tokenize = parse
   | ">"              { GREATER }
   | "("              { LPAREN }
   | ")"              { RPAREN }
+  | "{"              { LBRACE }
+  | "}"              { RBRACE }
   | ","              { COMMA }
+  | "..."            { ELLIPSIS }
   | "."              { DOT }
 
   (* Value Literals *)
@@ -82,9 +88,11 @@ rule tokenize = parse
   | '"'                     { string_literal (Buffer.create 16) lexbuf }
   | id as lxm               { ID(lxm) }
   | eof                     { EOF }
+  | _ as c                  { raise (SyntaxError (Printf.sprintf "Unexpected character '%c'" c)) }
 
 and comment = parse
-  | newline { tokenize lexbuf }
+  | newline { Lexing.new_line lexbuf; NEWLINE }
+  | eof     { EOF }
   | _       { comment lexbuf }
 
 and string_literal buf = parse

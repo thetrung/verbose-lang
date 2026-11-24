@@ -137,6 +137,17 @@ let rec type_of_expr env = function
         else
           Int
 
+  | StructInit (name, inits) ->
+      if not (Hashtbl.mem env.structs name) then
+        raise (TypeError ("Unknown structure in With initializer: " ^ name));
+      let fields = Hashtbl.find env.structs name in
+      List.iter (fun (fname, fexpr) ->
+        if not (List.mem_assoc fname fields) then
+          raise (TypeError (Printf.sprintf "Structure '%s' has no field named '%s'" name fname));
+        ignore (type_of_expr env fexpr)
+      ) inits;
+      Custom name
+
 
 let rec check_stmt env = function
 
@@ -233,6 +244,9 @@ let analyze_program prog =
     | FuncDef (_, name, params, ret_type, _) ->
         let param_specs = List.map (fun (m, _, t) -> (m, t)) params in
         Hashtbl.add env.functions name (param_specs, ret_type)
+    | ExternDecl (_, name, params, ret_type, _) ->
+        let param_specs = List.map (fun (m, _, t) -> (m, t)) params in
+        Hashtbl.replace env.functions name (param_specs, ret_type)
   ) prog;
 
   List.iter (function
