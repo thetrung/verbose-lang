@@ -12,6 +12,6 @@ End Sub
 
 Public Function main() As Integer
   BumpPort(ByRef g_cfg)
-  printf("zero=%d,%d cfg=%d,%d\n", g_zero.port, g_zero.retries, g_cfg.port, g_cfg.retries)
+  Printf("zero=%d,%d cfg=%d,%d\n", g_zero.port, g_zero.retries, g_cfg.port, g_cfg.retries)
   Return 0
 End Function

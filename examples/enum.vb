@@ -6,6 +6,6 @@ End Enum
 
 Public Function main() As Integer
   Dim nodeType As Integer = NodeType.Literal
-  printf("nodeType = %d\n", nodeType)
+  Printf("nodeType = %d\n", nodeType)
   Return 0
 End Function

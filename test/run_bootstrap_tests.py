@@ -14,13 +14,13 @@ SRC_ENTRY = REPO / "src" / "verbose.vb"
 PROGRAMS = [
     (
         "01_arith_and_vars.vb",
-        "Arithmetic, precedence, unary negation, local variables, printf",
+        "Arithmetic, precedence, unary negation, local variables, Printf",
         """Public Function main() As Integer
   Dim a As Integer = 10
   Dim b As Integer = 4
   Dim c As Integer = a + b * 3 - (a / 2)
   Dim neg As Integer = -c
-  printf("c=%d neg=%d\\n", c, neg)
+  Printf("c=%d neg=%d\\n", c, neg)
   Return 0
 End Function
 """,
@@ -44,7 +44,7 @@ End Function
   For k = 1 To 5
     fsum = fsum + k
   End For
-  printf("sum=%d fsum=%d\\n", sum, fsum)
+  Printf("sum=%d fsum=%d\\n", sum, fsum)
   Return 0
 End Function
 """,
@@ -61,7 +61,7 @@ End Function
 End Function
 
 Sub Report(k As Integer, val As Integer)
-  printf("fib(%d)=%d\\n", k, val)
+  Printf("fib(%d)=%d\\n", k, val)
 End Sub
 
 Public Function main() As Integer
@@ -102,7 +102,7 @@ Public Function main() As Integer
   Dim p As Pair With ( a = arr(0), b = arr(2) )
   Apply(ByRef p, Mode.Add, 2)
   Apply(ByRef p, Mode.Mul, 3)
-  printf("len=%d p=%d,%d\\n", Len(arr), p.a, p.b)
+  Printf("len=%d p=%d,%d\\n", Len(arr), p.a, p.b)
   Return 0
 End Function
 """,
@@ -127,7 +127,7 @@ Public Function main() As Integer
   Dim used2 As Long = ArenaUsed(ByRef a)
   ArenaDestroy(ByRef a)
   Dim dead As Pointer = ArenaAllocBytes(ByRef a, 8)
-  printf("xs=%d,%d used=%ld,%ld null=%d\\n", x0, x3, used1, used2, IsNull(dead))
+  Printf("xs=%d,%d used=%ld,%ld null=%d\\n", x0, x3, used1, used2, IsNull(dead))
   Return 0
 End Function
 """,

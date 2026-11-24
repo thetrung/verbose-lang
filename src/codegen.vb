@@ -1054,7 +1054,7 @@ Private Function CgEmitLValuePtr(id As Integer, ByRef outTy As TypeInfo, ByRef o
       fprintf(cg_out, ", i64 0\n")
       Return r
     End If
-    printf("verbose codegen error: undefined variable\n")
+    Printf("verbose codegen error: undefined variable\n")
     Return 0
   End If
 
@@ -1129,7 +1129,7 @@ Private Function CgEmitLValuePtr(id As Integer, ByRef outTy As TypeInfo, ByRef o
     End If
   End If
 
-  printf("verbose codegen error: invalid lvalue\n")
+  Printf("verbose codegen error: invalid lvalue\n")
   Return 0
 End Function
 
@@ -1723,8 +1723,8 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Return 0
   End If
 
-  ' Builtin: printf
-  If SliceEqualsStr(nPos, nLen, "printf", 6) Then
+  ' Builtin: Printf
+  If SliceEqualsStr(nPos, nLen, "Printf", 6) Then
     Dim argRegs(32) As Integer
     Dim argTys(32) As TypeInfo
     Dim i As Integer = 0
@@ -1758,6 +1758,33 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     End While
     fprintf(cg_out, ")\n")
     outTy = TypeInfo With ( kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+    Return r
+  End If
+
+  ' Builtin: Calloc(n, sz)
+  If SliceEqualsStr(nPos, nLen, "Calloc", 6) Then
+    Dim nTy As TypeInfo
+    Dim nReg As Integer = CgEmitExpr(g_nodes(g_kids(aStart)).left, ByRef nTy)
+    Dim n64 As Integer = CgWidenToI64(nReg, nTy)
+    Dim szTy As TypeInfo
+    Dim szReg As Integer = CgEmitExpr(g_nodes(g_kids(aStart + 1)).left, ByRef szTy)
+    Dim sz64 As Integer = CgWidenToI64(szReg, szTy)
+    Dim r As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = call ptr @calloc(i64 %%r%d, i64 %%r%d)\n", r, n64, sz64)
+    outTy = TypeInfo With ( kind = TypeKind.TyPointer, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+    Return r
+  End If
+
+  ' Builtin: Realloc(p, sz)
+  If SliceEqualsStr(nPos, nLen, "Realloc", 7) Then
+    Dim pTy As TypeInfo
+    Dim pReg As Integer = CgEmitExpr(g_nodes(g_kids(aStart)).left, ByRef pTy)
+    Dim szTy As TypeInfo
+    Dim szReg As Integer = CgEmitExpr(g_nodes(g_kids(aStart + 1)).left, ByRef szTy)
+    Dim sz64 As Integer = CgWidenToI64(szReg, szTy)
+    Dim r As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = call ptr @realloc(ptr %%r%d, i64 %%r%d)\n", r, pReg, sz64)
+    outTy = TypeInfo With ( kind = TypeKind.TyPointer, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
   End If
 
@@ -1907,15 +1934,31 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
 
   Dim retTy As TypeInfo With ( kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
   Dim isVar As Integer = 0
+  Dim cBuiltin As Integer = 0
   If fnIdx >= 0 Then
     retTy = cg_funcs(fnIdx).retTy
     isVar = cg_funcs(fnIdx).isVariadic
   Else
-    If SliceEqualsStr(nPos, nLen, "fopen", 5) Or SliceEqualsStr(nPos, nLen, "malloc", 6) Then
+    If SliceEqualsStr(nPos, nLen, "Fopen", 5) Then
       retTy.kind = TypeKind.TyPointer
+      cBuiltin = 1
     Else
-      If SliceEqualsStr(nPos, nLen, "free", 4) Then
-        retTy.kind = TypeKind.TyNothing
+      If SliceEqualsStr(nPos, nLen, "Malloc", 6) Then
+        retTy.kind = TypeKind.TyPointer
+        cBuiltin = 2
+      Else
+        If SliceEqualsStr(nPos, nLen, "Free", 4) Then
+          retTy.kind = TypeKind.TyNothing
+          cBuiltin = 3
+        Else
+          If SliceEqualsStr(nPos, nLen, "Getc", 4) Then
+            cBuiltin = 4
+          Else
+            If SliceEqualsStr(nPos, nLen, "Putc", 4) Then
+              cBuiltin = 5
+            End If
+          End If
+        End If
       End If
     End If
   End If
@@ -1959,7 +2002,20 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
   If fnIdx >= 0 Then
     CgEmitSymName(nPos, nLen, cg_funcs(fnIdx).modId, cg_funcs(fnIdx).isPrivate)
   Else
-    CgEmitSlice(nPos, nLen)
+    Select Case cBuiltin
+      Case 1
+        fprintf(cg_out, "fopen")
+      Case 2
+        fprintf(cg_out, "malloc")
+      Case 3
+        fprintf(cg_out, "free")
+      Case 4
+        fprintf(cg_out, "getc")
+      Case 5
+        fprintf(cg_out, "putc")
+      Case Else
+        CgEmitSlice(nPos, nLen)
+    End Select
   End If
   fprintf(cg_out, "(")
   Dim j As Integer = 0
@@ -2803,9 +2859,9 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   ' Collect all strings and detect Arena usage
   CgCollectStrings(progRoot)
 
-  cg_out = fopen(outPath, "w")
+  cg_out = Fopen(outPath, "w")
   If IsNull(cg_out) Then
-    printf("verbose codegen error: cannot open output file\n")
+    Printf("verbose codegen error: cannot open output file\n")
     Return -1
   End If
 

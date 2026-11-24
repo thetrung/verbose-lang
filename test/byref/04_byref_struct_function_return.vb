@@ -17,6 +17,6 @@ Public Function main() As Integer
   Dim r2 As Long
   r1 = Bump(ByRef ctr)
   r2 = Bump(ByRef ctr)
-  printf("r1=%ld r2=%ld final=%ld\n", r1, r2, ctr.count)
+  Printf("r1=%ld r2=%ld final=%ld\n", r1, r2, ctr.count)
   Return 0
 End Function

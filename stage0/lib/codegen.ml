@@ -822,9 +822,9 @@ let rec codegen_expr ctx = function
   | Call ("Len", _) ->
       raise (Error "Len() expects exactly one ByVal fixed-size array argument")
 
-  | Call ("printf", args) ->
+  | Call ("Printf", args) ->
       let evaluated_args = List.map (fun (mode, e) ->
-        if mode = ByRef then raise (Error "printf does not accept ByRef arguments")
+        if mode = ByRef then raise (Error "Printf does not accept ByRef arguments")
         else codegen_expr ctx e
       ) args in
       
@@ -844,6 +844,20 @@ let rec codegen_expr ctx = function
       
       emit ctx (Printf.sprintf "  %s = call i32 (ptr, ...) @printf(%s)" res_reg args_joined);
       (res_reg, "i32")
+
+  | Call ("Calloc", [(ByVal, n_expr); (ByVal, sz_expr)]) ->
+      let n64 = widen_index_to_i64 ctx n_expr in
+      let sz64 = widen_index_to_i64 ctx sz_expr in
+      let res_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = call ptr @calloc(i64 %s, i64 %s)" res_reg n64 sz64);
+      (res_reg, "ptr")
+
+  | Call ("Realloc", [(ByVal, p_expr); (ByVal, sz_expr)]) ->
+      let pv, _ = codegen_expr ctx p_expr in
+      let sz64 = widen_index_to_i64 ctx sz_expr in
+      let res_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = call ptr @realloc(ptr %s, i64 %s)" res_reg pv sz64);
+      (res_reg, "ptr")
  
   | Call (name, [(ByVal, idx_expr)]) when is_var_index_call ctx name [(ByVal, idx_expr)] ->
       codegen_expr ctx (IndexAccess (Id name, idx_expr))
@@ -961,20 +975,24 @@ let rec codegen_expr ctx = function
               if arg_mode = ByRef then [eval_byref_arg arg_expr]
               else [codegen_expr ctx arg_expr]
         ) args) in
+        let llvm_callee, ret_type =
+          if Hashtbl.mem ret_types name then
+            (name, Hashtbl.find ret_types name)
+          else match name with
+            | "Malloc" -> ("malloc", "ptr")
+            | "Fopen"  -> ("fopen", "ptr")
+            | "Calloc" -> ("calloc", "ptr")
+            | "Realloc" -> ("realloc", "ptr")
+            | "Free"   -> ("free", "void")
+            | "Getc"   -> ("getc", "i32")
+            | "Putc"   -> ("putc", "i32")
+            | _ -> raise (Error("Can't find ReturnType of " ^ name))
+        in
         let arg_strs = List.map (fun (v, t) -> 
-          let checked_type = if name = "free" then "ptr" else t in
+          let checked_type = if llvm_callee = "free" then "ptr" else t in
           checked_type ^ " " ^ v) evaluated_args in
         let args_joined = String.concat ", " arg_strs in
         let res_reg = next_reg ctx in
-        let ret_type =
-          if Hashtbl.mem ret_types name then
-            Hashtbl.find ret_types name
-          else match name with
-            | "malloc" | "fopen" -> "ptr"
-            | "free" -> "void"
-            | "getc" | "putc" -> "i32"
-            | _ -> raise (Error("Can't find ReturnType of " ^ name))
-        in
         let var_sig_prefix =
           if is_var then
             let fixed = Hashtbl.find variadic_funcs name in
@@ -986,12 +1004,12 @@ let rec codegen_expr ctx = function
           else ""
         in
         if ret_type = "void" then begin
-          emit ctx (Printf.sprintf "  call void%s @%s(%s)" var_sig_prefix name args_joined);
+          emit ctx (Printf.sprintf "  call void%s @%s(%s)" var_sig_prefix llvm_callee args_joined);
           ("", "void")
         end else begin
           match Hashtbl.find_opt extern_ret_ast name with
           | Some (Custom sn) when Hashtbl.mem struct_fields sn ->
-              emit ctx (Printf.sprintf "  %s = call %s%s @%s(%s)" res_reg ret_type var_sig_prefix name args_joined);
+              emit ctx (Printf.sprintf "  %s = call %s%s @%s(%s)" res_reg ret_type var_sig_prefix llvm_callee args_joined);
               let tmp_slot = next_reg ctx in
               emit ctx (Printf.sprintf "  %s = alloca %%struct.%s, align 8" tmp_slot sn);
               (match classify_c_struct sn with
@@ -1010,13 +1028,13 @@ let rec codegen_expr ctx = function
                    emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 8" ret_type res_reg tmp_slot));
               (tmp_slot, "ptr")
           | _ when String.length ret_type > 0 && (ret_type.[0] = '%' || ret_type.[0] = '[') ->
-              emit ctx (Printf.sprintf "  %s = call %s%s @%s(%s)" res_reg ret_type var_sig_prefix name args_joined);
+              emit ctx (Printf.sprintf "  %s = call %s%s @%s(%s)" res_reg ret_type var_sig_prefix llvm_callee args_joined);
               let tmp_slot = next_reg ctx in
               emit ctx (Printf.sprintf "  %s = alloca %s, align 8" tmp_slot ret_type);
               emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 8" ret_type res_reg tmp_slot);
               (tmp_slot, "ptr")
           | _ ->
-              emit ctx (Printf.sprintf "  %s = call %s%s @%s(%s)" res_reg ret_type var_sig_prefix name args_joined);
+              emit ctx (Printf.sprintf "  %s = call %s%s @%s(%s)" res_reg ret_type var_sig_prefix llvm_callee args_joined);
               (res_reg, ret_type)
         end
       end

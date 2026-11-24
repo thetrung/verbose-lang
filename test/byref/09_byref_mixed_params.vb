@@ -14,6 +14,6 @@ Public Function main() As Integer
   Dim d As Long = 25
   Dim out As Long
   out = AddDelta(ByRef a, d)
-  printf("acc=%ld delta=%ld out=%ld\n", a.value, d, out)
+  Printf("acc=%ld delta=%ld out=%ld\n", a.value, d, out)
   Return 0
 End Function

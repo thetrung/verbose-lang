@@ -7,7 +7,7 @@ End Function ' inline comment on End Function
 
 Public Function main() As Integer
   Dim out As Integer = DoubleIt(20) ' inline call comment
-  printf("out=%d\n", out) ' inline printf comment
+  Printf("out=%d\n", out) ' inline printf comment
   Return 0
 End Function
 ' Trailing comment with no final newline

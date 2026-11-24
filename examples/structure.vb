@@ -11,9 +11,9 @@ Public Function main () As Integer
   t.Kind = 4
   t.Value = 0x1234
   If kind < t.Kind Then
-    printf("  kind = %d (correct=-2)\n", kind)
+    Printf("  kind = %d (correct=-2)\n", kind)
   End If 
-  printf("  t.Kind = %d (correct=4)\n",t.Kind)
-  printf("  t.Value = %d (correct=4660)\n", t.Value)
+  Printf("  t.Kind = %d (correct=4)\n",t.Kind)
+  Printf("  t.Value = %d (correct=4660)\n", t.Value)
   Return 0
 End Function

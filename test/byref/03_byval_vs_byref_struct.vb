@@ -22,10 +22,10 @@ End Sub
 Public Function main() As Integer
   Dim inst As Pair(1, 2)
   TouchByVal(inst)
-  printf("after_byval=%d,%ld\n", inst.a, inst.b)
+  Printf("after_byval=%d,%ld\n", inst.a, inst.b)
   TouchDefault(inst)
-  printf("after_default=%d,%ld\n", inst.a, inst.b)
+  Printf("after_default=%d,%ld\n", inst.a, inst.b)
   TouchByRef(ByRef inst)
-  printf("after_byref=%d,%ld\n", inst.a, inst.b)
+  Printf("after_byref=%d,%ld\n", inst.a, inst.b)
   Return 0
 End Function

@@ -17,6 +17,6 @@ Public Function main() As Integer
   TouchVec(ByRef vec)
   Dim r As Integer
   r = ReuseName()
-  printf("vec.x=%d r=%d\n", vec.x, r)
+  Printf("vec.x=%d r=%d\n", vec.x, r)
   Return 0
 End Function

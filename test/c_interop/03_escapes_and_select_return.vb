@@ -10,7 +10,7 @@ Private Function Classify(code As Integer) As Integer
 End Function
 
 Public Function main() As Integer
-  printf("esc=\"hello\"\\t\tpath=C:\\vb\n")
-  printf("cls=%d,%d,%d\n", Classify(2), Classify(3), Classify(9))
+  Printf("esc=\"hello\"\\t\tpath=C:\\vb\n")
+  Printf("cls=%d,%d,%d\n", Classify(2), Classify(3), Classify(9))
   Return 0
 End Function

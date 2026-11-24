@@ -14,6 +14,6 @@ Public Function main() As Integer
   SetInt(ByRef a)
   Dim res As Integer
   res = IncrementInt(ByRef b)
-  printf("a=%d b=%d res=%d\n", a, b, res)
+  Printf("a=%d b=%d res=%d\n", a, b, res)
   Return 0
 End Function

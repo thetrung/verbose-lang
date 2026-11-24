@@ -5,7 +5,7 @@ Public Function main() As Integer
     While calculation > flag Do
         calculation = calculation + 1
         flag = flag + 2
-        printf("Loop: calculation = %d -- flag = %d\n", calculation, flag)
+        Printf("Loop: calculation = %d -- flag = %d\n", calculation, flag)
     End While
   Return 0
 End Function

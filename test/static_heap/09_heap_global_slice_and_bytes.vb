@@ -12,7 +12,7 @@ Public Function main() As Integer
   raw(0) = 79
   raw(1) = 75
   raw(2) = 0
-  printf("pool=%d,%d raw=%s\n", g_pool(0), g_pool(3), raw)
+  Printf("pool=%d,%d raw=%s\n", g_pool(0), g_pool(3), raw)
   HeapFree(raw)
   HeapFree(g_pool)
   Return 0

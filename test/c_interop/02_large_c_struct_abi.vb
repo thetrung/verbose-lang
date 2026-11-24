@@ -12,6 +12,6 @@ Public Function main() As Integer
   Dim s1 As Long = sum_big_byval(b)
   scale_big_byref(ByRef b, 3)
   Dim s2 As Long = sum_big_byval(b)
-  printf("s1=%ld s2=%ld fields=%ld,%ld,%ld\n", s1, s2, b.a, b.b, b.c)
+  Printf("s1=%ld s2=%ld fields=%ld,%ld,%ld\n", s1, s2, b.a, b.b, b.c)
   Return 0
 End Function

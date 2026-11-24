@@ -15,6 +15,6 @@ Public Function main() As Integer
   Dim p1 As Pair(10, 100)
   Dim p2 As Pair(20, 200)
   SwapPairs(ByRef p1, ByRef p2)
-  printf("p1=%d,%ld p2=%d,%ld\n", p1.a, p1.b, p2.a, p2.b)
+  Printf("p1=%d,%ld p2=%d,%ld\n", p1.a, p1.b, p2.a, p2.b)
   Return 0
 End Function

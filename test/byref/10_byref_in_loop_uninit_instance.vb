@@ -16,6 +16,6 @@ Public Function main() As Integer
   For i = 1 To 4
     RecordHit(ByRef st)
   End For
-  printf("hits=%d score=%d\n", st.hits, st.score)
+  Printf("hits=%d score=%d\n", st.hits, st.score)
   Return 0
 End Function

@@ -12,7 +12,7 @@ Public Function main() As Integer
   ArenaRewind(ByRef a, mark)
   Dim rewound As Long = ArenaUsed(ByRef a)
   Dim fresh() As Integer = ArenaAlloc(ByRef a, Integer, 2)
-  printf("mark=%ld peak=%ld rewound=%ld perm=%d,%d fresh0=%d\n", mark, peak, rewound, perm(0), perm(1), fresh(0))
+  Printf("mark=%ld peak=%ld rewound=%ld perm=%d,%d fresh0=%d\n", mark, peak, rewound, perm(0), perm(1), fresh(0))
   ArenaDestroy(ByRef a)
   Return 0
 End Function

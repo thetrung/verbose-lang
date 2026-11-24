@@ -11,6 +11,6 @@ Public Function main() As Integer
   Dim a As Integer = NextVal()
   Dim b As Integer = NextVal()
   Dim c As Integer = NextVal()
-  printf("seq=%d,%d,%d\n", a, b, c)
+  Printf("seq=%d,%d,%d\n", a, b, c)
   Return 0
 End Function

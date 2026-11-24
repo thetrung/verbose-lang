@@ -22,7 +22,7 @@ Public Function main() As Integer
   pts(1) = Point With ( x = 10, y = 20 )
   pts(2) = Point With ( x = 100, y = 200 )
   Translate(ByRef pts(1), 5, 6)
-  printf("p1=%d,%d sumX=%d\n", pts(1).x, pts(1).y, SumX(pts, 3))
+  Printf("p1=%d,%d sumX=%d\n", pts(1).x, pts(1).y, SumX(pts, 3))
   HeapFree(pts)
   Return 0
 End Function

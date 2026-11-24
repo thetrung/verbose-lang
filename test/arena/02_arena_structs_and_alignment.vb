@@ -16,7 +16,7 @@ Public Function main() As Integer
   Dim nodes() As Node = ArenaAlloc(ByRef a, Node, 3)
   nodes(1) = Node With ( id = 5, weight = 2.5 )
   BumpNode(ByRef nodes(1))
-  printf("align=%ld b0=%d node1=%d,%.1f used=%ld\n", afterByte, b(0), nodes(1).id, nodes(1).weight, ArenaUsed(ByRef a))
+  Printf("align=%ld b0=%d node1=%d,%.1f used=%ld\n", afterByte, b(0), nodes(1).id, nodes(1).weight, ArenaUsed(ByRef a))
   ArenaDestroy(ByRef a)
   Return 0
 End Function

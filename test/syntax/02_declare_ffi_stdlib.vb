@@ -8,6 +8,6 @@ Public Function main() As Integer
   Dim n As Long = strlen("VerBose")
   Dim parsed As Integer = atoi("1234")
   puts("ffi_puts_ok")
-  printf("abs=%d strlen=%ld atoi=%d\n", a, n, parsed)
+  Printf("abs=%d strlen=%ld atoi=%d\n", a, n, parsed)
   Return 0
 End Function

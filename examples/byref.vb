@@ -16,11 +16,11 @@ End Sub
 Public Function main() As Integer
   Dim count As Integer = 10
   Increment(ByRef count)
-  printf("count = %d\n", count)
+  Printf("count = %d\n", count)
 
   Dim p As Point(3, 4)
   MovePoint(ByRef p, 7, 6)
   Increment(ByRef p.x)
-  printf("point = (%d, %d)\n", p.x, p.y)
+  Printf("point = (%d, %d)\n", p.x, p.y)
   Return 0
 End Function

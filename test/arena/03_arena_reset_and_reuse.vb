@@ -7,7 +7,7 @@ Public Function main() As Integer
   ArenaReset(ByRef a)
   Dim usedAfterReset As Long = ArenaUsed(ByRef a)
   Dim second() As Integer = ArenaAlloc(ByRef a, Integer, 4)
-  printf("reset_used=%ld zeroed=%d,%d\n", usedAfterReset, second(0), second(1))
+  Printf("reset_used=%ld zeroed=%d,%d\n", usedAfterReset, second(0), second(1))
   ArenaDestroy(ByRef a)
   Return 0
 End Function

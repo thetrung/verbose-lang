@@ -6,6 +6,6 @@ Private Function helper(x As Integer) As Integer
 End Function
 
 Public Function main() As Integer
-  printf("alpha=%d beta=%d local=%d\n", ComputeAlpha(4), ComputeBeta(4), helper(4))
+  Printf("alpha=%d beta=%d local=%d\n", ComputeAlpha(4), ComputeBeta(4), helper(4))
   Return 0
 End Function

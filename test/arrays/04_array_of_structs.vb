@@ -10,6 +10,6 @@ Public Function main() As Integer
   pts(1).y = 40
   pts(2) = pts(0)
   pts(2).x = 99
-  printf("p0=%d,%d p1=%d,%d p2=%d,%d\n", pts(0).x, pts(0).y, pts(1).x, pts(1).y, pts(2).x, pts(2).y)
+  Printf("p0=%d,%d p1=%d,%d p2=%d,%d\n", pts(0).x, pts(0).y, pts(1).x, pts(1).y, pts(2).x, pts(2).y)
   Return 0
 End Function

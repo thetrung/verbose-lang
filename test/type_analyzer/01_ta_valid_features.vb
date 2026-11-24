@@ -18,6 +18,6 @@ Public Function main() As Integer
   Dim ok As Boolean = (g_val < 10)
   Dim flipped As Boolean = CheckBool(ok)
   Dim b As Byte = 65
-  printf("ui=%d up=%f p=%f,%f,%ld gv=%d ok=%d fl=%d b=%d\n", uninit_i, uninit_p.x, p.x, p.y, p.z, g_val, ok, flipped, b)
+  Printf("ui=%d up=%f p=%f,%f,%ld gv=%d ok=%d fl=%d b=%d\n", uninit_i, uninit_p.x, p.x, p.y, p.z, g_val, ok, flipped, b)
   Return 0
 End Function

@@ -422,9 +422,9 @@ and type_of_expr env = function
   | Call ("Len", _) ->
       raise (TypeError "Len() expects exactly one ByVal fixed-size array argument")
 
-  | Call ("printf", args) ->
+  | Call ("Printf", args) ->
       List.iter (fun (mode, e) ->
-        if mode = ByRef then raise (TypeError "printf does not accept ByRef arguments");
+        if mode = ByRef then raise (TypeError "Printf does not accept ByRef arguments");
         ignore (type_of_expr env e)
       ) args;
       Int
@@ -483,19 +483,19 @@ and type_of_expr env = function
       end else begin
         (* Check built-in C runtime defaults *)
         match name with
-        | "malloc" | "fopen" | "calloc" | "realloc" ->
+        | "Malloc" | "Fopen" | "Calloc" | "Realloc" ->
             List.iter (fun (m, e) ->
               if m = ByRef then raise (TypeError (name ^ " does not accept ByRef arguments"));
               ignore (type_of_expr env e)
             ) args;
             Pointer
-        | "free" ->
+        | "Free" ->
             List.iter (fun (m, e) ->
-              if m = ByRef then raise (TypeError "free does not accept ByRef arguments");
+              if m = ByRef then raise (TypeError "Free does not accept ByRef arguments");
               ignore (type_of_expr env e)
             ) args;
             Nothing
-        | "getc" | "putc" ->
+        | "Getc" | "Putc" ->
             List.iter (fun (m, e) ->
               if m = ByRef then raise (TypeError (name ^ " does not accept ByRef arguments"));
               ignore (type_of_expr env e)

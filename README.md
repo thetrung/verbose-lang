@@ -106,9 +106,9 @@ Public Function main() As Integer
   Dim heapSum As Integer = SumSlice(buf, 3)
   HeapFree(buf)
 
-  printf("hero#%d state=%d pos=(%.2f,%.2f) ticks=%ld\n", hero.id, hero.state, hero.pos.x, hero.pos.y, g_ticks)
-  printf("fixedLen=%d heapSum=%d sqrt=%.1f sizeof(Entity)=%d\n", Len(fixed), heapSum, root, SizeOf(Entity))
-  printf("arenaUsed=%ld afterDestroyNull=%d mask=%d\n", used, IsNull(dead), mask)
+  Printf("hero#%d state=%d pos=(%.2f,%.2f) ticks=%ld\n", hero.id, hero.state, hero.pos.x, hero.pos.y, g_ticks)
+  Printf("fixedLen=%d heapSum=%d sqrt=%.1f sizeof(Entity)=%d\n", Len(fixed), heapSum, root, SizeOf(Entity))
+  Printf("arenaUsed=%ld afterDestroyNull=%d mask=%d\n", used, IsNull(dead), mask)
   Return 0
 End Function
 ```

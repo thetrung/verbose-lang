@@ -8,6 +8,6 @@ End Function
 
 Public Function main() As Integer
   Dim localVal As Integer = ShadowRead()
-  printf("local=%d global=%d\n", localVal, g_num)
+  Printf("local=%d global=%d\n", localVal, g_num)
   Return 0
 End Function

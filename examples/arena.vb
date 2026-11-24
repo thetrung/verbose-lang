@@ -22,10 +22,10 @@ Public Function main() As Integer
   Dim mark As Long = ArenaMark(ByRef frame)
   Dim temp() As Integer = ArenaAlloc(ByRef frame, Integer, 16)
   temp(0) = 99
-  printf("frame cap=%ld used_with_temp=%ld temp0=%d\n", ArenaCapacity(ByRef frame), ArenaUsed(ByRef frame), temp(0))
+  Printf("frame cap=%ld used_with_temp=%ld temp0=%d\n", ArenaCapacity(ByRef frame), ArenaUsed(ByRef frame), temp(0))
 
   ArenaRewind(ByRef frame, mark)
-  printf("after_rewind used=%ld p1=(%d,%.1f,%.1f)\n", ArenaUsed(ByRef frame), parts(1).id, parts(1).x, parts(1).y)
+  Printf("after_rewind used=%ld p1=(%d,%.1f,%.1f)\n", ArenaUsed(ByRef frame), parts(1).id, parts(1).x, parts(1).y)
 
   ArenaReset(ByRef frame)
   ArenaDestroy(ByRef frame)
@@ -35,6 +35,6 @@ Public Function main() As Integer
   Dim nums() As Integer = ArenaAlloc(ByRef embedded, Integer, 4)
   nums(0) = 10
   nums(3) = 40
-  printf("static_arena used=%ld rem=%ld nums=%d,%d\n", ArenaUsed(ByRef embedded), ArenaRemaining(ByRef embedded), nums(0), nums(3))
+  Printf("static_arena used=%ld rem=%ld nums=%d,%d\n", ArenaUsed(ByRef embedded), ArenaRemaining(ByRef embedded), nums(0), nums(3))
   Return 0
 End Function

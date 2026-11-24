@@ -11,6 +11,6 @@ Public Function main() As Integer
   MutateByVal(nums)
   Dim afterVal As Integer = nums(0)
   MutateByRef(ByRef nums)
-  printf("after_byval=%d after_byref=%d\n", afterVal, nums(0))
+  Printf("after_byval=%d after_byref=%d\n", afterVal, nums(0))
   Return 0
 End Function

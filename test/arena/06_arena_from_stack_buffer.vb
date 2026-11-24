@@ -5,6 +5,6 @@ Public Function main() As Integer
   s(0) = 65
   s(1) = 82
   s(2) = 0
-  printf("s=%s used=%ld rem=%ld\n", s, ArenaUsed(ByRef arena), ArenaRemaining(ByRef arena))
+  Printf("s=%s used=%ld rem=%ld\n", s, ArenaUsed(ByRef arena), ArenaRemaining(ByRef arena))
   Return 0
 End Function

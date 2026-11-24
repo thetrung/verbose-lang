@@ -11,6 +11,6 @@ End Sub
 
 Public Function main() As Integer
   BumpAll()
-  printf("pub=%d priv=%d label=%s flag=%d\n", pub_counter, priv_counter, g_label, g_flag)
+  Printf("pub=%d priv=%d label=%s flag=%d\n", pub_counter, priv_counter, g_label, g_flag)
   Return 0
 End Function

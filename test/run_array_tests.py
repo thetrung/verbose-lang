@@ -21,7 +21,7 @@ CASES = [
     ("06_array_byval_vs_byref_fixed.vb", "ByVal fixed array isolation vs ByRef mutation", ["after_byval=1 after_byref=777"], False),
     ("07_array_unsized_param.vb", "Unsized array params (arr() As T) with ByVal & ByRef", ["sumA=30 sumB=200"], False),
     ("08_array_element_byref.vb", "ByRef passing of array elements & struct-array elements", ["nums1=12 b2=15"], False),
-    ("09_pointer_byte_indexing.vb", "Byte indexing on raw malloc Pointer & string Pointer", ["buf=VB msg0=X msg2=Z"], False),
+    ("09_pointer_byte_indexing.vb", "Byte indexing on raw Malloc Pointer & string Pointer", ["buf=VB msg0=X msg2=Z"], False),
     ("10_array_zero_size_err.vb", "Reject zero-sized array declaration", ["Array size must be greater than 0"], True),
     ("11_array_lit_overflow_err.vb", "Reject array literal exceeding declared size", ["exceeding size 2"], True),
     ("12_array_index_scalar_err.vb", "Reject indexing a non-array scalar", ["Cannot index non-array, non-pointer expression"], True),

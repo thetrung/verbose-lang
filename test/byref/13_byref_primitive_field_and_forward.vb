@@ -18,6 +18,6 @@ Public Function main() As Integer
   OuterAdd(ByRef p.a)
   Dim n As Integer = 100
   OuterAdd(ByRef n)
-  printf("p.a=%d p.b=%d n=%d\n", p.a, p.b, n)
+  Printf("p.a=%d p.b=%d n=%d\n", p.a, p.b, n)
   Return 0
 End Function

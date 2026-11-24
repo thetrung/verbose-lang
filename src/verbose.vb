@@ -6,7 +6,7 @@ Include "codegen.vb"
 
 Public Function main(argc As Integer, argv() As Pointer) As Integer
   If argc < 3 Then
-    printf("Usage: verbose <input.vb> <output.ll>\n")
+    Printf("Usage: verbose <input.vb> <output.ll>\n")
     Return 1
   End If
 
@@ -24,7 +24,7 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
   AstInit(ByRef arena)
   Dim progRoot As Integer = ParseProgram()
   If g_nodes(progRoot).op > 0 Then
-    printf("verbose: aborting due to %d parse error(s)\n", g_nodes(progRoot).op)
+    Printf("verbose: aborting due to %d parse error(s)\n", g_nodes(progRoot).op)
     ArenaDestroy(ByRef arena)
     Return 1
   End If
@@ -37,6 +37,6 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
     Return 1
   End If
 
-  printf("verbose: compiled %s -> %s (bytes=%d tokens=%d nodes=%d arena=%ld)\n", inPath, outPath, g_srcPoolLen, tokCount, g_nodeCount, usedBytes)
+  Printf("verbose: compiled %s -> %s (bytes=%d tokens=%d nodes=%d arena=%ld)\n", inPath, outPath, g_srcPoolLen, tokCount, g_nodeCount, usedBytes)
   Return 0
 End Function

@@ -34,7 +34,7 @@ End Sub
 
 Private Sub PExpect(k As Integer)
   If PPeekKind() <> k Then
-    printf("verbose parse error: expected token %d, got %d at line %d\n", k, PPeekKind(), g_tokens(p_pos).line)
+    Printf("verbose parse error: expected token %d, got %d at line %d\n", k, PPeekKind(), g_tokens(p_pos).line)
     p_errors = p_errors + 1
   End If
   PAdvance()
@@ -81,7 +81,7 @@ Private Sub PParseBaseType(ByRef outKind As Integer, ByRef outNamePos As Integer
       outNameLen = g_tokens(p_pos).len
       PAdvance()
     Case Else
-      printf("verbose parse error: expected type, got token %d at line %d\n", k, g_tokens(p_pos).line)
+      Printf("verbose parse error: expected type, got token %d at line %d\n", k, g_tokens(p_pos).line)
       p_errors = p_errors + 1
       outKind = TypeKind.TyInt
       PAdvance()
@@ -353,7 +353,7 @@ Private Function PParsePrimary() As Integer
     End If
   End If
 
-  printf("verbose parse error: unexpected token %d in primary at line %d\n", k, g_tokens(p_pos).line)
+  Printf("verbose parse error: unexpected token %d in primary at line %d\n", k, g_tokens(p_pos).line)
   p_errors = p_errors + 1
   PAdvance()
   Return NewNode(NodeKind.NdIntLit)
@@ -813,7 +813,7 @@ Public Function ParseStmt() As Integer
       g_nodes(id).third = rhs
       Return id
     End If
-    printf("verbose parse error: invalid assignment target at line %d\n", g_tokens(p_pos).line)
+    Printf("verbose parse error: invalid assignment target at line %d\n", g_tokens(p_pos).line)
     p_errors = p_errors + 1
   End If
 

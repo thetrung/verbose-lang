@@ -415,7 +415,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
   lx_loaded(lx_loadedCount) = LoadedFile With ( pathPos = pathPos, pathLen = pathLen )
   lx_loadedCount = lx_loadedCount + 1
 
-  ' Copy path to small null-terminated stack buffer for fopen
+  ' Copy path to small null-terminated stack buffer for Fopen
   Dim pathBuf(512) As Byte
   Dim pi As Integer = 0
   While pi < pathLen Do
@@ -424,9 +424,9 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
   End While
   pathBuf(pathLen) = 0
 
-  Dim fp As Pointer = fopen(pathBuf, "rb")
+  Dim fp As Pointer = Fopen(pathBuf, "rb")
   If IsNull(fp) Then
-    printf("verbose error: cannot open file '%s'\n", pathBuf)
+    Printf("verbose error: cannot open file '%s'\n", pathBuf)
     Return -1
   End If
 
@@ -439,7 +439,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
   Dim tmpBuf As Pointer = ArenaAllocBytes(ByRef arena, fsize + 1)
   If IsNull(tmpBuf) Then
     fclose(fp)
-    printf("verbose error: arena OOM reading file\n")
+    Printf("verbose error: arena OOM reading file\n")
     Return -1
   End If
   fread(tmpBuf, 1, fsizeLong, fp)
@@ -612,7 +612,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
                           Case 47
                             LxEmitTok(TokenKind.TkSlash, pos, 1, 0, line)
                           Case Else
-                            printf("verbose lexer error: unexpected char %d at line %d\n", c, line)
+                            Printf("verbose lexer error: unexpected char %d at line %d\n", c, line)
                             Return -1
                         End Select
                         pos = pos + 1

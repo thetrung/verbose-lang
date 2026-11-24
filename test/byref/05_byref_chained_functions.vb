@@ -26,6 +26,6 @@ End Sub
 Public Function main() As Integer
   Dim st As State(0, 0)
   Outer(ByRef st)
-  printf("stage=%d total=%d\n", st.stage, st.total)
+  Printf("stage=%d total=%d\n", st.stage, st.total)
   Return 0
 End Function

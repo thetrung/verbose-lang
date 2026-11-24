@@ -11,6 +11,6 @@ Public Function main() As Integer
     z = 9999999,
   )
   Dim v2 As Vector With ( z = 7, x = 1.5, y = 4.5 )
-  printf("v1=%.2f,%.2f,%lld v2=%.1f,%.1f,%lld\n", v1.x, v1.y, v1.z, v2.x, v2.y, v2.z)
+  Printf("v1=%.2f,%.2f,%lld v2=%.1f,%.1f,%lld\n", v1.x, v1.y, v1.z, v2.x, v2.y, v2.z)
   Return 0
 End Function

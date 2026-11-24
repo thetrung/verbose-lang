@@ -17,6 +17,6 @@ Public Function main() As Integer
   Dim b() As Integer = {10, 20, 30, 40}
   Scale(ByRef a, Len(a), 5)
   Scale(ByRef b, Len(b), 2)
-  printf("sumA=%d sumB=%d\n", Sum(a, Len(a)), Sum(b, Len(b)))
+  Printf("sumA=%d sumB=%d\n", Sum(a, Len(a)), Sum(b, Len(b)))
   Return 0
 End Function
