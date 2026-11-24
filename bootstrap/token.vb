@@ -1,4 +1,4 @@
-' VerBose Bootstrap Compiler (vbc) - Token definitions
+' VerBose Self-Hosting Compiler (vbc) - Tokens & Type Tags
 
 Public Enum TokenKind
   TkEof = 0
@@ -6,32 +6,76 @@ Public Enum TokenKind
   TkIdent = 2
   TkIntLit = 3
   TkStrLit = 4
-  TkPublic = 10
-  TkFunction = 11
-  TkSub = 12
-  TkEnd = 13
-  TkDim = 14
-  TkAs = 15
-  TkInteger = 16
-  TkReturn = 17
-  TkIf = 18
-  TkThen = 19
-  TkElse = 20
-  TkWhile = 21
-  TkDo = 22
-  TkLParen = 30
-  TkRParen = 31
-  TkComma = 32
-  TkEq = 33
-  TkNeq = 34
-  TkLt = 35
-  TkGt = 36
-  TkLe = 37
-  TkGe = 38
-  TkPlus = 39
-  TkMinus = 40
-  TkStar = 41
-  TkSlash = 42
+
+  ' Keywords
+  TkInclude = 10
+  TkPublic = 11
+  TkPrivate = 12
+  TkDeclare = 13
+  TkStructure = 14
+  TkEnum = 15
+  TkStatic = 16
+  TkFunction = 17
+  TkSub = 18
+  TkEnd = 19
+  TkDim = 20
+  TkAs = 21
+  TkByVal = 22
+  TkByRef = 23
+  TkWith = 24
+  TkReturn = 25
+
+  ' Types
+  TkInteger = 30
+  TkByte = 31
+  TkShort = 32
+  TkLong = 33
+  TkBoolean = 34
+  TkPointer = 35
+  TkArena = 36
+  TkNothing = 37
+
+  ' Literals & Builtin keywords
+  TkTrue = 40
+  TkFalse = 41
+  TkSizeOf = 42
+  TkArenaAlloc = 43
+
+  ' Control flow
+  TkIf = 50
+  TkThen = 51
+  TkElse = 52
+  TkWhile = 53
+  TkDo = 54
+  TkFor = 55
+  TkTo = 56
+  TkSelect = 57
+  TkCase = 58
+
+  ' Word operators
+  TkAnd = 60
+  TkOr = 61
+  TkNot = 62
+  TkMod = 63
+
+  ' Punctuation & symbols
+  TkLParen = 70
+  TkRParen = 71
+  TkLBrace = 72
+  TkRBrace = 73
+  TkComma = 74
+  TkDot = 75
+  TkEllipsis = 76
+  TkEq = 77
+  TkNeq = 78
+  TkLt = 79
+  TkGt = 80
+  TkLe = 81
+  TkGe = 82
+  TkPlus = 83
+  TkMinus = 84
+  TkStar = 85
+  TkSlash = 86
 End Enum
 
 Public Structure Token

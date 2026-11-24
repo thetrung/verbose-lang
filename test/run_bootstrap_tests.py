@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end test runner for vbc — the VerBose Bootstrap Compiler written in VerBose-Lang."""
+"""Self-hosting Stage 1 -> Stage 2 -> Stage 3 fixpoint & feature test runner for vbc."""
 
 import shutil
 import subprocess
@@ -27,28 +27,32 @@ End Function
         ["c=17 neg=-17"],
     ),
     (
-        "02_if_else_while.vb",
-        "If/Then/Else branching & While loop accumulation",
+        "02_if_else_while_for.vb",
+        "If/Then/Else, While, For loops & Boolean And/Or/Not",
         """Public Function main() As Integer
   Dim i As Integer = 1
   Dim sum As Integer = 0
   While i <= 10 Do
-    If i > 5 Then
+    If (i > 5) And (Not (i = 11)) Then
       sum = sum + i * 2
     Else
       sum = sum + i
     End If
     i = i + 1
   End While
-  printf("sum=%d\\n", sum)
+  Dim fsum As Integer = 0
+  For k = 1 To 5
+    fsum = fsum + k
+  End For
+  printf("sum=%d fsum=%d\\n", sum, fsum)
   Return 0
 End Function
 """,
-        ["sum=95"],
+        ["sum=95 fsum=15"],
     ),
     (
         "03_recursive_fib_and_sub.vb",
-        "Recursive Fibonacci function + helper Sub compiled by vbc",
+        "Recursive Fibonacci function + helper Sub",
         """Function Fib(n As Integer) As Integer
   If n <= 1 Then
     Return n
@@ -68,51 +72,150 @@ End Function
 """,
         ["fib(10)=55"],
     ),
+    (
+        "04_structs_enums_byref_arrays.vb",
+        "Structure, Enum, With, ByRef, VB () arrays, Len(), Select Case",
+        """Enum Mode
+  Add = 1
+  Mul = 2
+End Enum
+
+Structure Pair
+  Dim a As Integer
+  Dim b As Integer
+End Structure
+
+Sub Apply(ByRef p As Pair, m As Integer, k As Integer)
+  Select Case m
+    Case Mode.Add
+      p.a = p.a + k
+      p.b = p.b + k
+    Case Mode.Mul
+      p.a = p.a * k
+      p.b = p.b * k
+  End Select
+End Sub
+
+Public Function main() As Integer
+  Dim arr(4) As Integer = {10, 20, 30, 40}
+  arr(2) = arr(2) + 5
+  Dim p As Pair With { a = arr(0), b = arr(2) }
+  Apply(ByRef p, Mode.Add, 2)
+  Apply(ByRef p, Mode.Mul, 3)
+  printf("len=%d p=%d,%d\\n", Len(arr), p.a, p.b)
+  Return 0
+End Function
+""",
+        ["len=4 p=36,111"],
+    ),
+    (
+        "05_arena_and_include.vb",
+        "Include module, Static globals, ArenaCreate/Alloc/Used/Reset/Destroy & IsNull",
+        """Include "helper_mod.vb"
+
+Static g_total As Integer = 100
+
+Public Function main() As Integer
+  Dim a As Arena = ArenaCreate(256)
+  Dim xs() As Integer = ArenaAlloc(ByRef a, Integer, 4)
+  xs(0) = DoubleIt(7)
+  xs(3) = g_total + xs(0)
+  Dim x0 As Integer = xs(0)
+  Dim x3 As Integer = xs(3)
+  Dim used1 As Long = ArenaUsed(ByRef a)
+  ArenaReset(ByRef a)
+  Dim used2 As Long = ArenaUsed(ByRef a)
+  ArenaDestroy(ByRef a)
+  Dim dead As Pointer = ArenaAllocBytes(ByRef a, 8)
+  printf("xs=%d,%d used=%ld,%ld null=%d\\n", x0, x3, used1, used2, IsNull(dead))
+  Return 0
+End Function
+""",
+        ["xs=14,114 used=16,0 null=1"],
+    ),
 ]
 
 
 def main():
-    tmp = Path(tempfile.mkdtemp(prefix="vbc_boot_"))
+    tmp = Path(tempfile.mkdtemp(prefix="vbc_selfhost_"))
     try:
-        vbc_bin = tmp / "vbc"
-        # Step 1: Compile bootstrap/vbc.vb using OCaml verbose compiler
-        build = subprocess.run(
-            [str(COMPILER), str(VBC_SRC), "--no-run", "-o", str(vbc_bin)],
+        (tmp / "helper_mod.vb").write_text(
+            "Public Function DoubleIt(x As Integer) As Integer\n  Return x * 2\nEnd Function\n",
+            encoding="utf-8",
+        )
+        vbc1 = tmp / "vbc1"
+        vbc2_ll = tmp / "vbc2.ll"
+        vbc2 = tmp / "vbc2"
+        vbc3_ll = tmp / "vbc3.ll"
+
+        passed = 0
+        failed = 0
+        total = 3 + len(PROGRAMS)
+
+        # Stage 1: OCaml verbose compiles bootstrap/vbc.vb -> vbc1
+        s1 = subprocess.run(
+            [str(COMPILER), str(VBC_SRC), "--no-run", "-o", str(vbc1)],
             cwd=str(tmp),
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=30,
         )
-        # Clean up emitted .ll beside bootstrap/vbc.vb
-        vbc_ll = VBC_SRC.with_suffix(".ll")
-        if vbc_ll.exists():
-            vbc_ll.unlink()
-        if build.returncode != 0:
-            print("[FAIL] Build bootstrap/vbc.vb with verbose")
-            print(build.stdout)
-            print(build.stderr)
+        vbc_ll_cleanup = VBC_SRC.with_suffix(".ll")
+        if vbc_ll_cleanup.exists():
+            vbc_ll_cleanup.unlink()
+        if s1.returncode != 0:
+            print("[FAIL] (STAGE-1) OCaml verbose failed to compile bootstrap/vbc.vb")
+            print(s1.stdout)
+            print(s1.stderr)
             return 1
-        print("[PASS] (BUILD) bootstrap/vbc.vb compiled to native binary by verbose")
+        passed += 1
+        print("[PASS] (STAGE-1) verbose compiled bootstrap/vbc.vb -> vbc1")
 
-        passed = 1
-        failed = 0
-        total = 1 + len(PROGRAMS)
+        # Stage 2: vbc1 compiles bootstrap/vbc.vb -> vbc2.ll -> clang -O2 -> vbc2
+        s2_emit = subprocess.run([str(vbc1), str(VBC_SRC), str(vbc2_ll)], capture_output=True, text=True, timeout=30)
+        if s2_emit.returncode != 0:
+            print("[FAIL] (STAGE-2) vbc1 failed to compile bootstrap/vbc.vb")
+            print(s2_emit.stdout)
+            print(s2_emit.stderr)
+            return 1
+        s2_cc = subprocess.run(["clang", "-O2", str(vbc2_ll), "-o", str(vbc2)], capture_output=True, text=True, timeout=30)
+        if s2_cc.returncode != 0:
+            print("[FAIL] (STAGE-2 CLANG) clang failed on vbc2.ll")
+            print(s2_cc.stdout)
+            print(s2_cc.stderr)
+            return 1
+        passed += 1
+        print(f"[PASS] (STAGE-2) vbc1 self-compiled bootstrap/vbc.vb -> vbc2 [{s2_emit.stdout.strip()}]")
 
+        # Stage 3: vbc2 compiles bootstrap/vbc.vb -> vbc3.ll and verifies byte-for-byte fixpoint!
+        s3_emit = subprocess.run([str(vbc2), str(VBC_SRC), str(vbc3_ll)], capture_output=True, text=True, timeout=30)
+        if s3_emit.returncode != 0:
+            print("[FAIL] (STAGE-3) vbc2 failed to compile bootstrap/vbc.vb")
+            print(s3_emit.stdout)
+            print(s3_emit.stderr)
+            return 1
+        ir2 = vbc2_ll.read_text(encoding="utf-8")
+        ir3 = vbc3_ll.read_text(encoding="utf-8")
+        if ir2 != ir3:
+            print(f"[FAIL] (STAGE-3 FIXPOINT) vbc2.ll ({len(ir2)}B) != vbc3.ll ({len(ir3)}B)")
+            return 1
+        passed += 1
+        print(f"[PASS] (STAGE-3 FIXPOINT) vbc2.ll == vbc3.ll byte-for-byte identical ({len(ir3)} bytes)!")
+
+        # Feature suite compiled by self-hosted Stage-2 vbc2!
         for fname, desc, source, expected in PROGRAMS:
             src_file = tmp / fname
             ll_file = tmp / (Path(fname).stem + ".ll")
             exe_file = tmp / Path(fname).stem
-            src_file.write_text(source)
+            src_file.write_text(source, encoding="utf-8")
 
-            # Step 2: Run vbc (VerBose binary!) to compile .vb -> .ll
-            r1 = subprocess.run([str(vbc_bin), str(src_file), str(ll_file)], capture_output=True, text=True, timeout=10)
+            r1 = subprocess.run([str(vbc2), str(src_file), str(ll_file)], capture_output=True, text=True, timeout=15)
             if r1.returncode != 0:
                 failed += 1
-                print(f"[FAIL] (VBC) {fname} — {desc}")
+                print(f"[FAIL] (VBC2) {fname} — {desc}")
                 print("    " + (r1.stdout + "\n" + r1.stderr).strip())
                 continue
 
-            # Step 3: Compile vbc's emitted LLVM IR with clang -O2
             r2 = subprocess.run(["clang", "-O2", str(ll_file), "-o", str(exe_file)], capture_output=True, text=True, timeout=15)
             if r2.returncode != 0:
                 failed += 1
@@ -120,13 +223,12 @@ def main():
                 print("    " + (r2.stdout + "\n" + r2.stderr).strip())
                 continue
 
-            # Step 4: Execute compiled program and verify stdout
             r3 = subprocess.run([str(exe_file)], capture_output=True, text=True, timeout=10)
             out = (r3.stdout + "\n" + r3.stderr).strip()
             missing = [line for line in expected if line not in out]
             if r3.returncode == 0 and not missing:
                 passed += 1
-                print(f"[PASS] (BOOTSTRAP) {fname} — {desc} [{r1.stdout.strip()}]")
+                print(f"[PASS] (VBC2) {fname} — {desc}")
             else:
                 failed += 1
                 print(f"[FAIL] (RUN) {fname} — {desc}")
