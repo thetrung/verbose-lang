@@ -7,7 +7,7 @@ Private Sub MutateByRef(ByRef a(3) As Integer)
 End Sub
 
 Public Function main() As Integer
-  Dim nums(3) As Integer = {1, 2, 3}
+  Dim nums(3) As Integer = (1, 2, 3)
   MutateByVal(nums)
   Dim afterVal As Integer = nums(0)
   MutateByRef(ByRef nums)

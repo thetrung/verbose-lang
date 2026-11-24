@@ -15,7 +15,7 @@ TEST_DIR = Path(__file__).resolve().parent / "arrays"
 
 CASES = [
     ("01_array_basic_primitives.vb", "Fixed-size zero-init, loop indexing, Len()", ["init=0,0 len=5", "vals=10,30,50"], False),
-    ("02_array_literals_and_inferred.vb", "Partial literal, inferred size, value copy isolation", ["a=10,30,0 lenA=5", "b0=1 c0=999 lenB=4"], False),
+    ("02_array_literals_and_inferred.vb", "Partial literal, single-element, inferred size, value copy isolation", ["a=10,30,0 lenA=5", "b0=1 c0=999 lenB=4", "s1=42 lenS1=1 s2=77 lenS2=1"], False),
     ("03_array_numeric_types.vb", "Long/Single/Double/Byte/Boolean arrays", ["l=3000000 f=3.25 d=4.75 b=ABC fl=1,0"], False),
     ("04_array_of_structs.vb", "Array of structs with With init & field access", ["p0=10,20 p1=30,40 p2=99,20"], False),
     ("05_array_inside_struct.vb", "Fixed-size array embedded inside Structure", ["len=4 count=2 vals=11,0,44"], False),

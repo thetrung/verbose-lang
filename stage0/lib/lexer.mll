@@ -82,8 +82,6 @@ rule tokenize = parse
   | ">"              { GREATER }
   | "("              { LPAREN }
   | ")"              { RPAREN }
-  | "{"              { LBRACE }
-  | "}"              { RBRACE }
   | ","              { COMMA }
   | "..."            { ELLIPSIS }
   | "."              { DOT }

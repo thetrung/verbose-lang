@@ -43,7 +43,7 @@ let rec string_of_expr = function
       f ^ "(" ^ String.concat ", " (List.map fmt_arg args) ^ ")"
   | FieldAccess (e, field) -> string_of_expr e ^ "." ^ field
   | IndexAccess (e, idx) -> string_of_expr e ^ "(" ^ string_of_expr idx ^ ")"
-  | ArrayLit elems -> "{" ^ String.concat ", " (List.map string_of_expr elems) ^ "}"
+  | ArrayLit elems -> "(" ^ String.concat ", " (List.map string_of_expr elems) ^ ")"
   | StructInit (name, inits) ->
       let fmt_init (f, e) = f ^ " = " ^ string_of_expr e in
       name ^ " With ( " ^ String.concat ", " (List.map fmt_init inits) ^ " )"

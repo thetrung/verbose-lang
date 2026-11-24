@@ -144,6 +144,37 @@ Private Function PParseWithInit(structNamePos As Integer, structNameLen As Integ
   Return initId
 End Function
 
+Private Function PParseArrayLit() As Integer
+  PExpect(TokenKind.TkLParen)
+  PSkipNewlines()
+  Dim elBuf(64) As Integer
+  Dim elCount As Integer = 0
+  If PPeekKind() <> TokenKind.TkRParen Then
+    Dim reading As Boolean = True
+    While reading Do
+      elBuf(elCount) = ParseExpr()
+      elCount = elCount + 1
+      PSkipNewlines()
+      If PPeekKind() = TokenKind.TkComma Then
+        PAdvance()
+        PSkipNewlines()
+      Else
+        reading = False
+      End If
+    End While
+  End If
+  PExpect(TokenKind.TkRParen)
+  Dim litId As Integer = NewNode(NodeKind.NdArrayLit)
+  g_nodes(litId).firstChild = g_kidCount
+  g_nodes(litId).childCount = elCount
+  Dim i As Integer = 0
+  While i < elCount Do
+    PushKid(elBuf(i))
+    i = i + 1
+  End While
+  Return litId
+End Function
+
 Private Function PParsePrimary() As Integer
   Dim k As Integer = PPeekKind()
 
@@ -186,40 +217,38 @@ Private Function PParsePrimary() As Integer
 
   If k = TokenKind.TkLParen Then
     PAdvance()
-    Dim inner As Integer = ParseExpr()
-    PExpect(TokenKind.TkRParen)
-    Return inner
-  End If
-
-  If k = TokenKind.TkLBrace Then
-    PAdvance()
     PSkipNewlines()
-    Dim elBuf(64) As Integer
-    Dim elCount As Integer = 0
-    If PPeekKind() <> TokenKind.TkRBrace Then
-      Dim reading As Boolean = True
-      While reading Do
+    If PPeekKind() = TokenKind.TkRParen Then
+      PAdvance()
+      Dim emptyLit As Integer = NewNode(NodeKind.NdArrayLit)
+      Return emptyLit
+    End If
+    Dim first As Integer = ParseExpr()
+    PSkipNewlines()
+    If PPeekKind() = TokenKind.TkComma Then
+      Dim elBuf(64) As Integer
+      elBuf(0) = first
+      Dim elCount As Integer = 1
+      While PPeekKind() = TokenKind.TkComma Do
+        PAdvance()
+        PSkipNewlines()
         elBuf(elCount) = ParseExpr()
         elCount = elCount + 1
         PSkipNewlines()
-        If PPeekKind() = TokenKind.TkComma Then
-          PAdvance()
-          PSkipNewlines()
-        Else
-          reading = False
-        End If
       End While
+      PExpect(TokenKind.TkRParen)
+      Dim litId As Integer = NewNode(NodeKind.NdArrayLit)
+      g_nodes(litId).firstChild = g_kidCount
+      g_nodes(litId).childCount = elCount
+      Dim i As Integer = 0
+      While i < elCount Do
+        PushKid(elBuf(i))
+        i = i + 1
+      End While
+      Return litId
     End If
-    PExpect(TokenKind.TkRBrace)
-    Dim litId As Integer = NewNode(NodeKind.NdArrayLit)
-    g_nodes(litId).firstChild = g_kidCount
-    g_nodes(litId).childCount = elCount
-    Dim i As Integer = 0
-    While i < elCount Do
-      PushKid(elBuf(i))
-      i = i + 1
-    End While
-    Return litId
+    PExpect(TokenKind.TkRParen)
+    Return first
   End If
 
   If k = TokenKind.TkSizeOf Then
@@ -612,7 +641,11 @@ Public Function ParseStmt() As Integer
       Else
         If PPeekKind() = TokenKind.TkEq Then
           PAdvance()
-          initNode = ParseExpr()
+          If (arrLen <> 0) And (PPeekKind() = TokenKind.TkLParen) Then
+            initNode = PParseArrayLit()
+          Else
+            initNode = ParseExpr()
+          End If
           If (arrLen = -1) And (g_nodes(initNode).kind = NodeKind.NdArrayLit) Then
             arrLen = g_nodes(initNode).childCount
           End If
@@ -1046,7 +1079,11 @@ Private Function PParseDef() As Integer
       Else
         If PPeekKind() = TokenKind.TkEq Then
           PAdvance()
-          initNode = ParseExpr()
+          If (arrLen <> 0) And (PPeekKind() = TokenKind.TkLParen) Then
+            initNode = PParseArrayLit()
+          Else
+            initNode = ParseExpr()
+          End If
           If (arrLen = -1) And (g_nodes(initNode).kind = NodeKind.NdArrayLit) Then
             arrLen = g_nodes(initNode).childCount
           End If

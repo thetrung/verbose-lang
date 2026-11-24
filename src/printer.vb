@@ -215,7 +215,7 @@ Private Sub PrExpr(id As Integer)
     Return
   End If
   If k = NodeKind.NdArrayLit Then
-    Printf("{")
+    Printf("(")
     Dim i As Integer = 0
     While i < g_nodes(id).childCount Do
       If i > 0 Then
@@ -224,7 +224,7 @@ Private Sub PrExpr(id As Integer)
       PrExpr(g_kids(g_nodes(id).firstChild + i))
       i = i + 1
     End While
-    Printf("}")
+    Printf(")")
     Return
   End If
   If k = NodeKind.NdCall Then

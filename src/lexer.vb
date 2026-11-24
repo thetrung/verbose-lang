@@ -693,10 +693,6 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
                             LxEmitTok(TokenKind.TkLParen, pos, 1, 0, line)
                           Case 41
                             LxEmitTok(TokenKind.TkRParen, pos, 1, 0, line)
-                          Case 123
-                            LxEmitTok(TokenKind.TkLBrace, pos, 1, 0, line)
-                          Case 125
-                            LxEmitTok(TokenKind.TkRBrace, pos, 1, 0, line)
                           Case 44
                             LxEmitTok(TokenKind.TkComma, pos, 1, 0, line)
                           Case 46

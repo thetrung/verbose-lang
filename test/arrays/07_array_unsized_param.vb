@@ -13,8 +13,8 @@ Private Sub Scale(ByRef arr() As Integer, n As Integer, k As Integer)
 End Sub
 
 Public Function main() As Integer
-  Dim a() As Integer = {1, 2, 3}
-  Dim b() As Integer = {10, 20, 30, 40}
+  Dim a() As Integer = (1, 2, 3)
+  Dim b() As Integer = (10, 20, 30, 40)
   Scale(ByRef a, Len(a), 5)
   Scale(ByRef b, Len(b), 2)
   Printf("sumA=%d sumB=%d\n", Sum(a, Len(a)), Sum(b, Len(b)))

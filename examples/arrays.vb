@@ -18,7 +18,7 @@ Private Sub DoubleInPlace(ByRef arr() As Integer, count As Integer)
 End Sub
 
 Public Function main() As Integer
-  Dim nums() As Integer = {10, 20, 30, 40, 50}
+  Dim nums() As Integer = (10, 20, 30, 40, 50)
   Printf("len=%d sum=%d\n", Len(nums), Sum(nums, Len(nums)))
 
   DoubleInPlace(ByRef nums, Len(nums))

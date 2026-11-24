@@ -12,7 +12,7 @@ open Ast
 (* Core structural tokens *)
 %token INCLUDE PUBLIC PRIVATE DECLARE WITH STATIC SIZEOF HEAP_ALLOC HEAP_REALLOC ARENA_TYPE ARENA_ALLOC STRUCTURE FUNCTION SUB BYVAL BYREF END AS DIM RETURN 
 %token NOTHING POINTER_TYPE ENUM INT_TYPE BYTE_TYPE SHORT_TYPE LONG_TYPE SINGLE_TYPE DOUBLE_TYPE BOOLEAN_TYPE 
-%token EOF LPAREN RPAREN LBRACE RBRACE COMMA NEWLINE DOT ELLIPSIS
+%token EOF LPAREN RPAREN COMMA NEWLINE DOT ELLIPSIS
 
 (* Operators and Control Flow *)
 %token IF THEN ELSE SELECT CASE WHILE DO FOR TO
@@ -92,11 +92,11 @@ definition:
     { Ast.GlobalVar(vis, name, Ast.Custom(struct_name), Some(Ast.StructInit(struct_name, inits))) }
   | vis=visibility STATIC name=ID LPAREN size=INT_LIT RPAREN AS t=data_type mandatory_newlines
     { Ast.GlobalVar(vis, name, Ast.Array(t, size), None) }
-  | vis=visibility STATIC name=ID LPAREN size=INT_LIT RPAREN AS t=data_type EQUALS e=expr mandatory_newlines
+  | vis=visibility STATIC name=ID LPAREN size=INT_LIT RPAREN AS t=data_type EQUALS e=array_init mandatory_newlines
     { Ast.GlobalVar(vis, name, Ast.Array(t, size), Some(e)) }
   | vis=visibility STATIC name=ID LPAREN RPAREN AS t=data_type mandatory_newlines
     { Ast.GlobalVar(vis, name, Ast.Array(t, -1), None) }
-  | vis=visibility STATIC name=ID LPAREN RPAREN AS t=data_type EQUALS e=expr mandatory_newlines
+  | vis=visibility STATIC name=ID LPAREN RPAREN AS t=data_type EQUALS e=array_init mandatory_newlines
     {
       match e with
       | Ast.ArrayLit elems -> Ast.GlobalVar(vis, name, Ast.Array(t, List.length elems), Some(e))
@@ -159,11 +159,11 @@ code_stmt:
   | DIM name=ID AS t=data_type EQUALS e=expr { Ast.Dim(name, t, Some(e)) }
   | DIM name=ID LPAREN size=INT_LIT RPAREN AS t=data_type
     { Ast.Dim(name, Ast.Array(t, size), None) }
-  | DIM name=ID LPAREN size=INT_LIT RPAREN AS t=data_type EQUALS e=expr
+  | DIM name=ID LPAREN size=INT_LIT RPAREN AS t=data_type EQUALS e=array_init
     { Ast.Dim(name, Ast.Array(t, size), Some(e)) }
   | DIM name=ID LPAREN RPAREN AS t=data_type
     { Ast.Dim(name, Ast.Array(t, -1), None) }
-  | DIM name=ID LPAREN RPAREN AS t=data_type EQUALS e=expr
+  | DIM name=ID LPAREN RPAREN AS t=data_type EQUALS e=array_init
     {
       match e with
       | Ast.ArrayLit elems -> Ast.Dim(name, Ast.Array(t, List.length elems), Some(e))
@@ -183,11 +183,11 @@ code_stmt:
     { Ast.StaticDim(name, Ast.Custom(struct_name), Some(Ast.StructInit(struct_name, inits))) }
   | STATIC name=ID LPAREN size=INT_LIT RPAREN AS t=data_type
     { Ast.StaticDim(name, Ast.Array(t, size), None) }
-  | STATIC name=ID LPAREN size=INT_LIT RPAREN AS t=data_type EQUALS e=expr
+  | STATIC name=ID LPAREN size=INT_LIT RPAREN AS t=data_type EQUALS e=array_init
     { Ast.StaticDim(name, Ast.Array(t, size), Some(e)) }
   | STATIC name=ID LPAREN RPAREN AS t=data_type
     { Ast.StaticDim(name, Ast.Array(t, -1), None) }
-  | STATIC name=ID LPAREN RPAREN AS t=data_type EQUALS e=expr
+  | STATIC name=ID LPAREN RPAREN AS t=data_type EQUALS e=array_init
     {
       match e with
       | Ast.ArrayLit elems -> Ast.StaticDim(name, Ast.Array(t, List.length elems), Some(e))
@@ -263,13 +263,43 @@ postfix_expr:
   | e1=postfix_expr DOT field=ID LPAREN idx=expr RPAREN           { Ast.IndexAccess(Ast.FieldAccess(e1, field), idx) }
 ;
 
+array_lit_elems:
+  | /* empty */                                                                    { [] }
+  | e=expr optional_newlines                                                       { [e] }
+  | e=expr optional_newlines COMMA optional_newlines rest=array_lit_elems_nonempty { e :: rest }
+;
+
+array_lit_elems_nonempty:
+  | e=expr optional_newlines                                                       { [e] }
+  | e=expr optional_newlines COMMA optional_newlines rest=array_lit_elems_nonempty { e :: rest }
+;
+
+array_init:
+  | LPAREN optional_newlines elems=array_lit_elems RPAREN                          { Ast.ArrayLit(elems) }
+  | p=postfix_expr                                                                 { p }
+  | i=INT_LIT                                                                      { Ast.IntLit(i) }
+  | f=FLOAT_LIT                                                                    { Ast.FloatLit(f) }
+  | b=BOOLEAN_LIT                                                                  { Ast.BooleanLit(b) }
+  | s=STRING_LIT                                                                   { Ast.StringLit(s) }
+  | SIZEOF LPAREN t=data_type RPAREN                                               { Ast.SizeOf(t) }
+  | HEAP_ALLOC LPAREN t=data_type RPAREN                                           { Ast.HeapAlloc(t, Ast.IntLit(1)) }
+  | HEAP_ALLOC LPAREN t=data_type COMMA count=expr RPAREN                          { Ast.HeapAlloc(t, count) }
+  | HEAP_REALLOC LPAREN p=expr COMMA t=data_type COMMA count=expr RPAREN           { Ast.HeapRealloc(p, t, count) }
+  | ARENA_ALLOC LPAREN a=call_arg COMMA t=data_type RPAREN                         { Ast.ArenaAlloc(fst a, snd a, t, Ast.IntLit(1)) }
+  | ARENA_ALLOC LPAREN a=call_arg COMMA t=data_type COMMA count=expr RPAREN        { Ast.ArenaAlloc(fst a, snd a, t, count) }
+  | name=ID WITH LPAREN optional_newlines inits=field_init_list RPAREN             { Ast.StructInit(name, inits) }
+;
+
 expr:
   | p=postfix_expr                                          { p }
   | i=INT_LIT                                               { Ast.IntLit(i) }
   | f=FLOAT_LIT                                             { Ast.FloatLit(f) }
   | b=BOOLEAN_LIT                                           { Ast.BooleanLit(b) }
   | s=STRING_LIT                                            { Ast.StringLit(s) }
-  | LPAREN e=expr RPAREN                                    { e }
+  | LPAREN optional_newlines RPAREN                         { Ast.ArrayLit([]) }
+  | LPAREN optional_newlines e=expr optional_newlines RPAREN { e }
+  | LPAREN optional_newlines e1=expr optional_newlines COMMA optional_newlines rest=array_lit_elems_nonempty RPAREN
+    { Ast.ArrayLit(e1 :: rest) }
   | NOT e=expr                                              { Ast.UnaryOp("Not", e) }
   | MINUS e=expr %prec UMINUS                               { Ast.UnaryOp("Neg", e) }
   | name=ID WITH LPAREN optional_newlines inits=field_init_list RPAREN { Ast.StructInit(name, inits) }
@@ -279,7 +309,6 @@ expr:
   | HEAP_REALLOC LPAREN p=expr COMMA t=data_type COMMA count=expr RPAREN { Ast.HeapRealloc(p, t, count) }
   | ARENA_ALLOC LPAREN a=call_arg COMMA t=data_type RPAREN { Ast.ArenaAlloc(fst a, snd a, t, Ast.IntLit(1)) }
   | ARENA_ALLOC LPAREN a=call_arg COMMA t=data_type COMMA count=expr RPAREN { Ast.ArenaAlloc(fst a, snd a, t, count) }
-  | LBRACE optional_newlines elems=separated_list(COMMA, expr) optional_newlines RBRACE { Ast.ArrayLit(elems) }
   
   | e1=expr PLUS e2=expr           { Ast.BinOp(e1, Ast.Add, e2) }
   | e1=expr MINUS e2=expr          { Ast.BinOp(e1, Ast.Sub, e2) }

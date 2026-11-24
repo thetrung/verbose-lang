@@ -1,5 +1,5 @@
 Static g_zero(4) As Integer
-Static g_primes(4) As Integer = {2, 3, 5, 7}
+Static g_primes(4) As Integer = (2, 3, 5, 7)
 
 Private Sub AddOne(ByRef arr() As Integer, n As Integer)
   For i = 0 To n - 1

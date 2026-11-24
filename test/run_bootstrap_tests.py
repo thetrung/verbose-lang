@@ -97,7 +97,7 @@ Sub Apply(ByRef p As Pair, m As Integer, k As Integer)
 End Sub
 
 Public Function main() As Integer
-  Dim arr(4) As Integer = {10, 20, 30, 40}
+  Dim arr(4) As Integer = (10, 20, 30, 40)
   arr(2) = arr(2) + 5
   Dim p As Pair With ( a = arr(0), b = arr(2) )
   Apply(ByRef p, Mode.Add, 2)

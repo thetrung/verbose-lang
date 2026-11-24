@@ -7,7 +7,7 @@ Private Sub IncInt(ByRef x As Integer)
 End Sub
 
 Public Function main() As Integer
-  Dim nums() As Integer = {1, 2, 3}
+  Dim nums() As Integer = (1, 2, 3)
   Dim b As Box
   b.vals(2) = 5
   IncInt(ByRef nums(1))

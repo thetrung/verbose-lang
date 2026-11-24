@@ -69,8 +69,6 @@ Public Enum TokenKind
   ' Punctuation & symbols
   TkLParen = 70
   TkRParen = 71
-  TkLBrace = 72
-  TkRBrace = 73
   TkComma = 74
   TkDot = 75
   TkEllipsis = 76
