@@ -567,6 +567,9 @@ Public Function ParseStmt() As Integer
         arrLen = g_tokens(p_pos).intVal
         PExpect(TokenKind.TkIntLit)
         PExpect(TokenKind.TkRParen)
+        If arrLen <= 0 Then
+          arrLen = -2
+        End If
       End If
     End If
     PExpect(TokenKind.TkAs)
@@ -899,6 +902,9 @@ Private Function PParseDef() As Integer
         arrLen = g_tokens(p_pos).intVal
         PExpect(TokenKind.TkIntLit)
         PExpect(TokenKind.TkRParen)
+        If arrLen <= 0 Then
+          arrLen = -2
+        End If
       End If
       PExpect(TokenKind.TkAs)
       Dim tk As Integer = 0
@@ -995,6 +1001,9 @@ Private Function PParseDef() As Integer
         arrLen = g_tokens(p_pos).intVal
         PExpect(TokenKind.TkIntLit)
         PExpect(TokenKind.TkRParen)
+        If arrLen <= 0 Then
+          arrLen = -2
+        End If
       End If
     End If
     PExpect(TokenKind.TkAs)

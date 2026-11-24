@@ -139,7 +139,7 @@ Private Sub CgEmitSlice(pos As Integer, slen As Integer)
 End Sub
 
 Private Sub CgEmitSymName(pos As Integer, slen As Integer, modId As Integer, isPrivate As Integer)
-  If isPrivate = 1 Then
+  If (isPrivate = 1) And (modId > 0) Then
     fprintf(cg_out, "__mod%d_", modId)
   End If
   CgEmitSlice(pos, slen)
@@ -2687,14 +2687,14 @@ End Function
 Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, outPath As Pointer) As Integer
   cg_enums = ArenaAlloc(ByRef arena, CgEnumInfo, 64)
   cg_enumMems = ArenaAlloc(ByRef arena, CgEnumMem, 512)
-  cg_structs = ArenaAlloc(ByRef arena, CgStructInfo, 64)
-  cg_fields = ArenaAlloc(ByRef arena, CgFieldInfo, 512)
-  cg_globals = ArenaAlloc(ByRef arena, CgGlobalInfo, 256)
-  cg_funcs = ArenaAlloc(ByRef arena, CgFuncInfo, 256)
-  cg_params = ArenaAlloc(ByRef arena, CgParamInfo, 1024)
-  cg_locals = ArenaAlloc(ByRef arena, CgLocalSym, 256)
-  cg_strs = ArenaAlloc(ByRef arena, CgStrConst, 512)
-  cg_staticLocals = ArenaAlloc(ByRef arena, CgStaticLocal, 256)
+  cg_structs = ArenaAlloc(ByRef arena, CgStructInfo, 128)
+  cg_fields = ArenaAlloc(ByRef arena, CgFieldInfo, 1024)
+  cg_globals = ArenaAlloc(ByRef arena, CgGlobalInfo, 512)
+  cg_funcs = ArenaAlloc(ByRef arena, CgFuncInfo, 512)
+  cg_params = ArenaAlloc(ByRef arena, CgParamInfo, 2048)
+  cg_locals = ArenaAlloc(ByRef arena, CgLocalSym, 512)
+  cg_strs = ArenaAlloc(ByRef arena, CgStrConst, 1024)
+  cg_staticLocals = ArenaAlloc(ByRef arena, CgStaticLocal, 512)
 
   cg_enumCount = 0
   cg_enumMemCount = 0

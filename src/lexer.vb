@@ -18,11 +18,25 @@ Public Static g_tokCap As Integer
 Structure LoadedFile
   Dim pathPos As Integer
   Dim pathLen As Integer
+  Dim inProgress As Integer
 End Structure
 
 Private Static lx_loaded(64) As LoadedFile
 Private Static lx_loadedCount As Integer = 0
 Private Static lx_curModId As Integer = 0
+Private Static lx_incDirs(32) As Pointer
+Private Static lx_incDirCount As Integer = 0
+
+Public Sub LexerClearIncludeDirs()
+  lx_incDirCount = 0
+End Sub
+
+Public Sub LexerAddIncludeDir(dirPtr As Pointer)
+  If lx_incDirCount < 32 Then
+    lx_incDirs(lx_incDirCount) = dirPtr
+    lx_incDirCount = lx_incDirCount + 1
+  End If
+End Sub
 
 Private Function LxIsAlpha(c As Integer) As Boolean
   If (c >= 65) And (c <= 90) Then
@@ -262,15 +276,31 @@ Private Sub LxEmitTok(kind As Integer, pos As Integer, slen As Integer, ival As 
   End If
 End Sub
 
-Private Function LxIsLoaded(pPos As Integer, pLen As Integer) As Boolean
+Private Function LxFindLoaded(pPos As Integer, pLen As Integer) As Integer
   Dim i As Integer = 0
   While i < lx_loadedCount Do
     If SlicesEqual(lx_loaded(i).pathPos, lx_loaded(i).pathLen, pPos, pLen) Then
-      Return True
+      Return i
     End If
     i = i + 1
   End While
-  Return False
+  Return -1
+End Function
+
+Private Function LxFileExists(pPos As Integer, pLen As Integer) As Boolean
+  Dim pathBuf(512) As Byte
+  Dim pi As Integer = 0
+  While (pi < pLen) And (pi < 511) Do
+    pathBuf(pi) = g_srcPool(pPos + pi)
+    pi = pi + 1
+  End While
+  pathBuf(pi) = 0
+  Dim fp As Pointer = Fopen(pathBuf, "rb")
+  If IsNull(fp) Then
+    Return False
+  End If
+  fclose(fp)
+  Return True
 End Function
 
 Private Function LxCopyCStringToPool(s As Pointer) As Integer
@@ -406,13 +436,84 @@ Private Function LxResolveRelPath(curPos As Integer, curLen As Integer, relPos A
   Return LxNormalizePath(startPos, rawLen, ByRef outLen)
 End Function
 
+Private Function LxResolveIncludePath(curPos As Integer, curLen As Integer, incPos As Integer, incLen As Integer, ByRef outLen As Integer) As Integer
+  Dim candLen As Integer = 0
+  Dim candPos As Integer = LxResolveRelPath(curPos, curLen, incPos, incLen, ByRef candLen)
+  If LxFileExists(candPos, candLen) Then
+    outLen = candLen
+    Return candPos
+  End If
+
+  ' Try -I search directories in order
+  Dim d As Integer = 0
+  While d < lx_incDirCount Do
+    Dim dirPtr As Pointer = lx_incDirs(d)
+    Dim startPos As Integer = g_srcPoolLen
+    Dim j As Integer = 0
+    Dim reading As Boolean = True
+    While reading Do
+      Dim ch As Integer = dirPtr(j)
+      If ch = 0 Then
+        reading = False
+      Else
+        g_srcPool(g_srcPoolLen) = ch
+        g_srcPoolLen = g_srcPoolLen + 1
+        j = j + 1
+      End If
+    End While
+    If (g_srcPoolLen > startPos) And (g_srcPool(g_srcPoolLen - 1) <> 47) Then
+      g_srcPool(g_srcPoolLen) = 47
+      g_srcPoolLen = g_srcPoolLen + 1
+    End If
+    Dim k As Integer = 0
+    While k < incLen Do
+      g_srcPool(g_srcPoolLen) = g_srcPool(incPos + k)
+      g_srcPoolLen = g_srcPoolLen + 1
+      k = k + 1
+    End While
+    Dim rawLen As Integer = g_srcPoolLen - startPos
+    g_srcPool(g_srcPoolLen) = 0
+    g_srcPoolLen = g_srcPoolLen + 1
+    Dim normLen As Integer = 0
+    Dim normPos As Integer = LxNormalizePath(startPos, rawLen, ByRef normLen)
+    If LxFileExists(normPos, normLen) Then
+      outLen = normLen
+      Return normPos
+    End If
+    d = d + 1
+  End While
+
+  Dim incBuf(512) As Byte
+  Dim ii As Integer = 0
+  While (ii < incLen) And (ii < 511) Do
+    incBuf(ii) = g_srcPool(incPos + ii)
+    ii = ii + 1
+  End While
+  incBuf(ii) = 0
+  Printf("Module Load Error: Included file not found: '%s'\n", incBuf)
+  Return -1
+End Function
+
 Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen As Integer) As Integer
-  If LxIsLoaded(pathPos, pathLen) Then
+  Dim loadedIdx As Integer = LxFindLoaded(pathPos, pathLen)
+  If loadedIdx >= 0 Then
+    If lx_loaded(loadedIdx).inProgress = 1 Then
+      Dim cycBuf(512) As Byte
+      Dim ci2 As Integer = 0
+      While (ci2 < pathLen) And (ci2 < 511) Do
+        cycBuf(ci2) = g_srcPool(pathPos + ci2)
+        ci2 = ci2 + 1
+      End While
+      cycBuf(ci2) = 0
+      Printf("Module Load Error: Circular Include detected: '%s'\n", cycBuf)
+      Return -1
+    End If
     Return 0
   End If
   Dim savedModId As Integer = lx_curModId
-  lx_curModId = lx_loadedCount
-  lx_loaded(lx_loadedCount) = LoadedFile With ( pathPos = pathPos, pathLen = pathLen )
+  Dim mySlot As Integer = lx_loadedCount
+  lx_curModId = mySlot
+  lx_loaded(mySlot) = LoadedFile With ( pathPos = pathPos, pathLen = pathLen, inProgress = 1 )
   lx_loadedCount = lx_loadedCount + 1
 
   ' Copy path to small null-terminated stack buffer for Fopen
@@ -514,7 +615,10 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
                     pos = pos + 1
                   End If
                   Dim resLen As Integer = 0
-                  Dim resPos As Integer = LxResolveRelPath(pathPos, pathLen, incStart, incLen, ByRef resLen)
+                  Dim resPos As Integer = LxResolveIncludePath(pathPos, pathLen, incStart, incLen, ByRef resLen)
+                  If resPos < 0 Then
+                    Return -1
+                  End If
                   Dim incRc As Integer = LexerLoadFile(ByRef arena, resPos, resLen)
                   If incRc < 0 Then
                     Return -1
@@ -629,6 +733,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
   End While
 
   LxEmitTok(TokenKind.TkNewline, fileEnd, 1, 0, line)
+  lx_loaded(mySlot).inProgress = 0
   lx_curModId = savedModId
   Return 0
 End Function
@@ -637,7 +742,7 @@ Public Function LexerLoadEntry(ByRef arena As Arena, entryPath As Pointer) As In
   g_srcPoolCap = 1048576
   g_srcPoolLen = 0
   g_srcPool = ArenaAllocBytes(ByRef arena, g_srcPoolCap)
-  g_tokCap = 65536
+  g_tokCap = 131072
   g_tokCount = 0
   g_tokens = ArenaAlloc(ByRef arena, Token, g_tokCap)
   lx_loadedCount = 0

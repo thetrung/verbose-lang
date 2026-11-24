@@ -60,6 +60,7 @@
 ## Roadmap / TODO
 
 - [ ] **Self-Hosted Semantic Type Checker & CLI**: Port Stage 0's Type Analyzer diagnostics and CLI flags (`-o`, `-I`, `-l`, `-L`, `--emit-only`, direct `clang` invocation) into `src/verbose.vb`
+- [ ] **Compress Languge Syntax**: stack old `stage0/` into `_stage0/` as **unused**, then allow common declaration like Dim, Public, Private, Static ...etc to group same type variables to reduce code/word length. Also put all messages logs as referenced constants from a common constant.vb file to avoid re-reading it when no demand to modify. Add `string concat` feature to **verbose** so in `codegen.vb` we don't need to repeat a function call just to fprintf things all the time. 
 - [ ] **Cross-Compilation & Target Triples**: Emit explicit LLVM target triples & data layouts for Linux x86-64, macOS arm64, and bare-metal 32-bit ARM-M (incl. `Volatile` / fixed memory regions)
 - [ ] **Standard Library Modules**: Build `std/` modules (`strings`, `math`, `collections`, `io`) using `Include` + `Arena`
 - [ ] **Tooling & CI**: Add package/build tooling and GitHub Actions CI workflow running `make test-all`
