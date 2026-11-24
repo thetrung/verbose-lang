@@ -8,9 +8,4 @@ _All current core language tasks are complete and archived in **[LOGS.md](LOGS.m
 
 ## Extensions
 
-_All 4 initial ecosystem extensions are complete and archived in **[LOGS.md](LOGS.md)**:_
-
-- [x] **Raylib Wrapper Support** — [`thetrung/verbose-raylib`](https://github.com/thetrung/verbose-raylib)
-- [x] **NVIM Plugin** — [`thetrung/verbose.nvim`](https://github.com/thetrung/verbose.nvim)
-- [x] **Package Manager (`vpm`)** — [`thetrung/verbose-pkg`](https://github.com/thetrung/verbose-pkg)
-- [x] **TUI Support** — [`thetrung/verbose-tui`](https://github.com/thetrung/verbose-tui)
+_All completed ecosystem extensions (`verbose-raylib`, `verbose.nvim`, `verbose-pkg`, `verbose-tui`) have been moved to **[LOGS.md](LOGS.md)**._
