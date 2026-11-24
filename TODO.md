@@ -3,10 +3,30 @@
 Active roadmap and completed milestones for **VerBose-Lang**.
 
 ## Active TODO
+_All planned roadmap milestones are complete! New ideas and next-phase items will be tracked here.
 
-_All planned roadmap milestones are complete! New ideas and next-phase items will be tracked here._
+- [ ] **Explain how `verbose test`** work : in **FEATURES.md** (how it link c-lib too) along how to write one (usage).
+- [ ] **String Interpolation** : alike to **VBNET 14+** style: `Dim result As String = $"{ quantity } x { item_names }"`, add & test feature.
+- [ ] **Pattern Matching** : like OCAML, it could either match value, variable, Conditional statement.. etc like : 
+```
+```
+```
+Match condition With  
+  Case True Then Return 1 
+  Case False Then
+    DoSomeThing()
+    Return 0
+End Match
+```
+As the goal is to reduce redundant code like dozen of `If..Then..End If` since this Pattern Matching will handle `Case ... Then` Block, write test-case then refactor the codebase with it.
+- [ ] **Language Syntax / Semantic Compression** : analyze whole codebase to suggest new features or combine any unnecessary features to shorten amount of keyword/lines of code in codebase.
+- [ ] **Refine /test/Raylib** : refactor the demo to be compile-able with comment/note text file along. 
 
----
+## Extensions 
+- [ ] **Raylib Wrapper Support** : (in new repo) attempt to build a wrapper in c/verbose to build up functions natively in Verbose-Lang style for more intensive graphical demos.
+- [ ] **Package Manager** : (in new repo) Learn from what you have done with Raylib to build a way to pack such library so people can pack, upload/download, install into their project like cargo did while easy to include/import in verbose. I don't mean to build a whole server thing but a way to pack/build/install from source code/binary. We may discuss this if you are unclear or confused.
+- [ ] **NVIM Plugin** : (in new repo) syntax-highlighting, intellisense (cache on included/imported files), auto-complete, treesitter, include latest version of verbose for easy installation.
+- [ ] **TUI support** : (in new repo) lookup ways to build TUI application with verbose like Ratatui on Rust.
 
 ## Completed Milestones
 
