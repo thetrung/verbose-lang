@@ -23,3 +23,6 @@ demo: build
 clean:
 	rm -rf _build \
 		${TARGET}.ll ${TARGET}.s ${TARGET}
+	@if [ -d test/byref ]; then \
+		find test/byref -maxdepth 1 -type f ! -name '*.vb' -delete; \
+	fi
