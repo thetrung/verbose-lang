@@ -32,6 +32,7 @@ endif
 BIN := verbose$(EXE)
 DIST_NAME := verbose-$(PLATFORM)$(EXE)
 RELEASE_URL ?= https://github.com/thetrung/verbose-lang/releases/latest/download/$(DIST_NAME)
+BOOTSTRAP_CHAIN ?= bc56415 c6d6f37
 
 .PHONY: default build run test test-all install uninstall dist clean
 
@@ -60,7 +61,28 @@ build:
 		BOOT="./.verbose.boot$(EXE)"; \
 	fi; \
 	echo "=== Stage 1 ($(PLATFORM)): $$BOOT -> ./verbose1$(EXE) ==="; \
-	"$$BOOT" src/verbose.vb --emit-only -o verbose1.ll && clang -O2 verbose1.ll -o verbose1$(EXE) || exit 1
+	if ! ("$$BOOT" src/verbose.vb --emit-only -o verbose1.ll && clang -O2 verbose1.ll -o verbose1$(EXE)); then \
+		if [ -n "$(BOOTSTRAP_CHAIN)" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+			echo "=== Direct bootstrap failed; stepping through BOOTSTRAP_CHAIN: $(BOOTSTRAP_CHAIN) ==="; \
+			CHAIN_TMP="$$(mktemp -d)"; \
+			CUR_BOOT="$$BOOT"; \
+			STEP=0; \
+			for REV in $(BOOTSTRAP_CHAIN); do \
+				STEP=$$((STEP + 1)); \
+				STEP_DIR="$$CHAIN_TMP/step$$STEP"; \
+				mkdir -p "$$STEP_DIR"; \
+				echo "=== Bootstrap step $$STEP ($$REV) ==="; \
+				git archive "$$REV" src | tar -x -C "$$STEP_DIR" || { rm -rf "$$CHAIN_TMP"; exit 1; }; \
+				"$$CUR_BOOT" "$$STEP_DIR/src/verbose.vb" --emit-only -o "$$STEP_DIR/boot.ll" && clang -O2 "$$STEP_DIR/boot.ll" -o "$$STEP_DIR/boot$(EXE)" || { rm -rf "$$CHAIN_TMP"; exit 1; }; \
+				CUR_BOOT="$$STEP_DIR/boot$(EXE)"; \
+			done; \
+			echo "=== Stage 1 ($(PLATFORM)) via stepped bootstrap -> ./verbose1$(EXE) ==="; \
+			"$$CUR_BOOT" src/verbose.vb --emit-only -o verbose1.ll && clang -O2 verbose1.ll -o verbose1$(EXE) || { rm -rf "$$CHAIN_TMP"; exit 1; }; \
+			rm -rf "$$CHAIN_TMP"; \
+		else \
+			exit 1; \
+		fi; \
+	fi
 	@echo "=== Stage 2 ($(PLATFORM)): verbose1$(EXE) self-compiles src/verbose.vb -> ./$(BIN) ==="
 	./verbose1$(EXE) src/verbose.vb --emit-only -o verbose2.ll
 	clang -O2 verbose2.ll -o $(BIN)
