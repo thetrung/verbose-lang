@@ -5,9 +5,10 @@ Active roadmap and completed milestones for **VerBose-Lang**.
 ## Active TODO
 _All planned roadmap milestones are complete! New ideas and next-phase items will be tracked here.
 
-- [ ] **Explain how `verbose test`** work : in **FEATURES.md** (how it link c-lib too) along how to write one (usage).
-- [ ] **String Interpolation** : alike to **VBNET 14+** style: `Dim result As String = $"{ quantity } x { item_names }"`, add & test feature.
-- [ ] **Pattern Matching** : like OCAML, it could either match value, variable, Conditional statement.. etc like : 
+1. [ ] **Explain how `verbose test`** work : in **FEATURES.md** (how it link c-lib too) along how to write one (usage).
+2. [ ] **Refine `tests/raylib/`** : refactor the demo to be compile-able with comment/note text file along.
+3. [ ] **String Interpolation** : alike to **VBNET 14+** style: `Dim result As String = $"{ quantity } x { item_names }"`, add & test feature.
+4. [ ] **Pattern Matching** : like OCAML, it could either match value, variable, Conditional statement.. etc like : 
 ```
 Match condition With  
   Case True Then Return 1 
@@ -17,8 +18,7 @@ Match condition With
 End Match
 ```
 As the goal is to reduce redundant code like dozen of `If..Then..End If` since this Pattern Matching will handle `Case ... Then` Block, write test-case then refactor the codebase with it.
-- [ ] **Language Syntax / Semantic Compression** : analyze whole codebase to suggest new features or combine any unnecessary features to shorten amount of keyword/lines of code in codebase.
-- [ ] **Refine /test/Raylib** : refactor the demo to be compile-able with comment/note text file along. 
+5. [ ] **Language Syntax / Semantic Compression** : analyze whole codebase to suggest new features or combine any unnecessary features to shorten amount of keyword/lines of code in codebase.
 
 ## Extensions 
 - [ ] **Raylib Wrapper Support** : (in new repo) attempt to build a wrapper in c/verbose to build up functions natively in Verbose-Lang style for more intensive graphical demos.
