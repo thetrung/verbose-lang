@@ -68,7 +68,11 @@ End Sub
 
 Public Function RunShell(cmd As Pointer) As Integer
   Dim fullCmd(4096) As Byte
-  snprintf(fullCmd, 4096, "%s 2>&1", cmd)
+  If IsWindowsHost() Then
+    snprintf(fullCmd, 4096, "\"%s 2>&1\"", cmd)
+  Else
+    snprintf(fullCmd, 4096, "%s 2>&1", cmd)
+  End If
   Dim fp As Pointer = popen(fullCmd, "r")
   If IsNull(fp) Then
     g_out(0) = 0

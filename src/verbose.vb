@@ -379,6 +379,10 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
     CliAppendStr(cmdBuf, ByRef cmdPos, 4096, "-target ")
     CliAppendStr(cmdBuf, ByRef cmdPos, 4096, CliTargetTriple(targetId))
     CliAppendChar(cmdBuf, ByRef cmdPos, 4096, 32)
+  Else
+    If targetId = TargetKind.TgtMacosArm64 Then
+      CliAppendStr(cmdBuf, ByRef cmdPos, 4096, "-Wno-override-module ")
+    End If
   End If
   If effEmitObj = 1 Then
     CliAppendStr(cmdBuf, ByRef cmdPos, 4096, "-c ")
