@@ -14,7 +14,7 @@ Public Function main() As Integer
   st.hits = 0
   st.score = 0
   For i = 1 To 4
-    RecordHit(st)
+    RecordHit(ByRef st)
   End For
   printf("hits=%d score=%d\n", st.hits, st.score)
   Return 0

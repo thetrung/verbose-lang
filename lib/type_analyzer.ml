@@ -8,7 +8,7 @@ type env = {
   locals: (string, data_type) Hashtbl.t;
   structs: (string, (string * data_type) list) Hashtbl.t;
   enums: (string, string list) Hashtbl.t;
-  functions: (string, (data_type list * data_type)) Hashtbl.t;
+  functions: (string, ((param_mode * data_type) list * data_type)) Hashtbl.t;
 }
 
 let create_env () = {
@@ -118,7 +118,17 @@ let rec type_of_expr env = function
       if Hashtbl.mem env.structs name then
         Custom name
       else if Hashtbl.mem env.functions name then
-        let (_, ret_type) = Hashtbl.find env.functions name in ret_type
+        let (param_specs, ret_type) = Hashtbl.find env.functions name in
+        List.iteri (fun idx (arg_mode, arg_expr) ->
+          let _ = type_of_expr env arg_expr in
+          match List.nth_opt param_specs idx with
+          | Some (ByRef, _) when arg_mode <> ByRef ->
+              raise (TypeError (Printf.sprintf "Argument %d of '%s' requires ByRef at call site" (idx + 1) name))
+          | Some (ByVal, _) when arg_mode = ByRef ->
+              raise (TypeError (Printf.sprintf "Argument %d of '%s' is ByVal and cannot be passed ByRef" (idx + 1) name))
+          | _ -> ()
+        ) args;
+        ret_type
       else
         (* ✅ Safe Auto-Inference: If a function isn't declared but matches an uppercase name, 
            treat it as an implicit constructor to prevent falling back to Int *)
@@ -221,8 +231,8 @@ let analyze_program prog =
     | Structure (_, name, fields) -> Hashtbl.add env.structs name fields
     | EnumDef (_, name, members) -> Hashtbl.add env.enums name (List.map fst members)
     | FuncDef (_, name, params, ret_type, _) ->
-        let param_types = List.map (fun(_,_,t)->t) params in
-        Hashtbl.add env.functions name (param_types, ret_type)
+        let param_specs = List.map (fun (m, _, t) -> (m, t)) params in
+        Hashtbl.add env.functions name (param_specs, ret_type)
   ) prog;
 
   List.iter (function

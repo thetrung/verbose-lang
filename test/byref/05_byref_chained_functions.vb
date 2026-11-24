@@ -14,18 +14,18 @@ Sub Middle(ByRef s As State)
   s.stage = 2
   s.total = s.total + 20
   Dim res As Integer
-  res = Finalize(s)
+  res = Finalize(ByRef s)
 End Sub
 
 Sub Outer(ByRef s As State)
   s.stage = 1
   s.total = s.total + 5
-  Middle(s)
+  Middle(ByRef s)
 End Sub
 
 Public Function main() As Integer
   Dim st As State(0, 0)
-  Outer(st)
+  Outer(ByRef st)
   printf("stage=%d total=%d\n", st.stage, st.total)
   Return 0
 End Function

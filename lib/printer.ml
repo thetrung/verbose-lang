@@ -30,7 +30,13 @@ let rec string_of_expr = function
   | StringLit s -> (Printf.sprintf "%S" s)
   | UnaryOp (op, e) -> "(" ^ op ^ " " ^ string_of_expr e ^ ")"
   | BinOp (e1, op, e2) -> "(" ^ string_of_expr e1 ^ " " ^ string_of_op op ^ " " ^ string_of_expr e2 ^ ")"
-  | Call (f, args) -> f ^ "(" ^ String.concat ", " (List.map string_of_expr args) ^ ")"
+  | Call (f, args) ->
+      let fmt_arg (mode, e) =
+        match mode with
+        | ByRef -> "ByRef " ^ string_of_expr e
+        | ByVal -> string_of_expr e
+      in
+      f ^ "(" ^ String.concat ", " (List.map fmt_arg args) ^ ")"
   | FieldAccess (e, field) -> string_of_expr e ^ "." ^ field
 
 let rec string_of_stmt indent = function

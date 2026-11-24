@@ -21,6 +21,8 @@ type op =
 
   | Equal | Greater | Less | GreaterEqual | LessEqual | NotEqual
 
+type param_mode = | ByVal | ByRef
+
 type expr =
   | Id of string
   | IntLit of int
@@ -29,7 +31,7 @@ type expr =
   | StringLit of string
   | UnaryOp of string * expr (* For "Not" or negative numbers *)
   | BinOp of expr * op * expr
-  | Call of string * expr list
+  | Call of string * (param_mode * expr) list
   | FieldAccess of expr * string    (* variable.Kind *)
   
 type stmt =
@@ -49,8 +51,6 @@ type stmt =
   (* Loops *)
   | While of expr * stmt list
   | For of string * expr * expr * stmt list (* For var = start To end *)
-
-type param_mode = | ByVal | ByRef
 
 type definition =
   | Structure of bool * string * (string * data_type) list (* added bool flag *)

@@ -41,7 +41,7 @@ Function main() As Integer
   Dim vec1 As Vector
   printf("uninit vec1@%lu :\n %f -- %f -- %ld)\n", vec1, vec1.x, vec1.y, vec1.z)
   ' ByRef
-  SetVector(vec1)
+  SetVector(ByRef vec1)
   printf("filled vec1@%lu :\n %f -- %f -- %ld)\n\n", vec1, vec1.x, vec1.y, vec1.z)
   ' Enum 
   Dim nodeType As Integer

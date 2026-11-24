@@ -10,14 +10,14 @@ End Sub
 
 Sub OuterAdd(ByRef x As Integer)
   x = x + 5
-  InnerAdd(x)
+  InnerAdd(ByRef x)
 End Sub
 
 Public Function main() As Integer
   Dim p As Pair(1, 2)
-  OuterAdd(p.a)
+  OuterAdd(ByRef p.a)
   Dim n As Integer = 100
-  OuterAdd(n)
+  OuterAdd(ByRef n)
   printf("p.a=%d p.b=%d n=%d\n", p.a, p.b, n)
   Return 0
 End Function

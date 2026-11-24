@@ -13,7 +13,7 @@ Public Function main() As Integer
   Dim a As Accum(100)
   Dim d As Long = 25
   Dim out As Long
-  out = AddDelta(a, d)
+  out = AddDelta(ByRef a, d)
   printf("acc=%ld delta=%ld out=%ld\n", a.value, d, out)
   Return 0
 End Function

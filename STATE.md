@@ -17,9 +17,9 @@ Here is our current state:
 - Allow un-initialized Dim
 - Function/Sub Call & ReturnType (with forward registration)
 - Boolean & Bitwise/Comparison Operators
-- ByVal/ByRef Parameters & Call-Site Lowering (structs, primitives, struct fields, chained forwarding)
+- ByVal/ByRef Parameters & Explicit Call-Site `ByRef` (`foo(ByRef x)`) with strict signature enforcement (structs, primitives, struct fields, chained forwarding)
 - Public/Internal Linkage
-- Isolated ByRef Regression Test Suite (13/13 runtime tests in test/byref + test/run_byref_tests.py)
+- Isolated ByRef Regression Test Suite (16/16 tests in test/byref + test/run_byref_tests.py, incl. error checks)
 - Clean Build Artifacts via make clean (incl. test/byref outputs)
 
 5. TODO:
