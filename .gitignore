@@ -1,1 +1,4 @@
 _build
+bootstrap/vbc
+bootstrap/vbc1
+bootstrap/*.ll

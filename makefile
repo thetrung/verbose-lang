@@ -1,9 +1,11 @@
 TARGET=prototype
+.PHONY: default build run demo test bootstrap boostrap clean
+
 default: clean build run
 
 build: 
 	dune build
-	mv _build/default/bin/main.exe verbose
+	mv -f _build/default/bin/main.exe verbose
 
 run:
 	./verbose ${TARGET}.vb
@@ -36,10 +38,27 @@ test: build
 	python3 test/run_c_interop_tests.py
 	python3 test/run_bootstrap_tests.py
 
+bootstrap:
+	@if [ ! -x ./verbose ]; then $(MAKE) build; fi
+	@echo "=== Stage 1: OCaml verbose -> bootstrap/vbc1 ==="
+	./verbose bootstrap/vbc.vb --no-run -o bootstrap/vbc1
+	@echo "=== Stage 2: vbc1 self-compiles -> bootstrap/vbc (Stage 2) ==="
+	./bootstrap/vbc1 bootstrap/vbc.vb bootstrap/vbc2.ll
+	clang -O2 bootstrap/vbc2.ll -o bootstrap/vbc
+	@echo "=== Stage 3: Fixpoint check (vbc2.ll == vbc3.ll) ==="
+	./bootstrap/vbc bootstrap/vbc.vb bootstrap/vbc3.ll
+	diff -u bootstrap/vbc2.ll bootstrap/vbc3.ll && echo "[OK] Stage 3 self-hosting fixpoint verified (byte-for-byte identical)!"
+	@rm -f bootstrap/vbc1 bootstrap/vbc.ll bootstrap/vbc2.ll bootstrap/vbc3.ll
+	@echo "=== Running Bootstrap Feature Suite ==="
+	python3 test/run_bootstrap_tests.py
+	@echo "[READY] Self-hosted compiler binary built at ./bootstrap/vbc"
+
+boostrap: bootstrap
+
 clean:
 	rm -rf _build \
 		${TARGET}.ll ${TARGET}.s ${TARGET} \
-		bootstrap/*.ll bootstrap/vbc \
+		bootstrap/*.ll bootstrap/vbc bootstrap/vbc1 \
 		examples/raylib/*.ll examples/raylib/bouncing_ball
 	@for dir in test/byref test/syntax test/arrays test/static_heap test/arena test/type_analyzer test/modules test/c_interop; do \
 		if [ -d "$$dir" ]; then \
