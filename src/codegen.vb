@@ -87,8 +87,16 @@ Private Static cg_out As Pointer
 Private Static cg_reg As Integer = 1
 Private Static cg_lbl As Integer = 1
 Private Static cg_usesArena As Integer = 0
+Private Static cg_usesAssure As Integer = 0
+Private Static cg_testMode As Integer = 0
+Private Static cg_inTestFn As Integer = 0
+Private Static cg_testCount As Integer = 0
 Private Static cg_curModId As Integer = 0
 Private Static cg_curRetTy As TypeInfo
+
+Public Sub CgSetTestMode(enabled As Integer)
+  cg_testMode = enabled
+End Sub
 
 Private Static cg_enums() As CgEnumInfo
 Private Static cg_enumCount As Integer = 0
@@ -654,6 +662,13 @@ Private Sub CgEmitZeroVal(ty As TypeInfo)
 End Sub
 
 Private Function CgRegisterString(srcPos As Integer, srcLen As Integer) As Integer
+  Dim k As Integer = 0
+  While k < cg_strCount Do
+    If SlicesEqual(cg_strs(k).srcPos, cg_strs(k).srcLen, srcPos, srcLen) Then
+      Return k
+    End If
+    k = k + 1
+  End While
   Dim idx As Integer = cg_strCount
   Dim i As Integer = 0
   Dim bytes As Integer = 0
@@ -681,6 +696,16 @@ Private Sub CgCollectStrings(id As Integer)
     Return
   End If
   Dim k As Integer = g_nodes(id).kind
+  If k = NodeKind.NdTestDef Then
+    If cg_testMode = 0 Then
+      Return
+    End If
+    g_nodes(id).op = CgRegisterString(g_nodes(id).intVal, g_nodes(id).lenVal)
+    cg_testCount = cg_testCount + 1
+  End If
+  If k = NodeKind.NdAssure Then
+    cg_usesAssure = 1
+  End If
   If k = NodeKind.NdStrLit Then
     Dim sid As Integer = CgRegisterString(g_nodes(id).intVal, g_nodes(id).lenVal)
     g_nodes(id).op = sid
@@ -727,9 +752,11 @@ Private Sub CgEmitStringGlobals()
     fprintf(cg_out, "@.str_%d = private unnamed_addr constant [%d x i8] c\"", i, bl)
     Dim j As Integer = 0
     While j < sl Do
-      Dim ch As Integer = g_srcPool(sp + j)
+      Dim chRaw As Integer = g_srcPool(sp + j)
+      Dim ch As Integer = chRaw And 255
       If (ch = 92) And ((j + 1) < sl) Then
-        Dim nc As Integer = g_srcPool(sp + j + 1)
+        Dim ncRaw As Integer = g_srcPool(sp + j + 1)
+        Dim nc As Integer = ncRaw And 255
         If nc = 110 Then
           fprintf(cg_out, "\\0A")
         Else
@@ -2244,6 +2271,37 @@ Private Sub CgEmitStmt(id As Integer)
     Return
   End If
 
+  If k = NodeKind.NdAssure Then
+    Dim cTy As TypeInfo
+    Dim cReg As Integer = CgEmitExpr(g_nodes(id).left, ByRef cTy)
+    Dim cBit As Integer = cReg
+    If cTy.kind <> TypeKind.TyBoolean Then
+      cBit = CgNextReg()
+      fprintf(cg_out, "  %%r%d = icmp ne ", cBit)
+      CgEmitLlvmType(cTy)
+      fprintf(cg_out, " %%r%d, 0\n", cReg)
+    End If
+    Dim lOk As Integer = CgNextLbl()
+    Dim lFail As Integer = CgNextLbl()
+    fprintf(cg_out, "  br i1 %%r%d, label %%L%d, label %%L%d\n", cBit, lOk, lFail)
+    fprintf(cg_out, "L%d:\n", lFail)
+    Dim msgNode As Integer = g_nodes(id).right
+    If msgNode >= 0 Then
+      Dim mTy As TypeInfo
+      Dim mReg As Integer = CgEmitExpr(msgNode, ByRef mTy)
+      fprintf(cg_out, "  call void @__vb_assure_fail(i32 %d, ptr %%r%d)\n", g_nodes(id).intVal, mReg)
+    Else
+      fprintf(cg_out, "  call void @__vb_assure_fail(i32 %d, ptr null)\n", g_nodes(id).intVal)
+    End If
+    If cg_inTestFn = 1 Then
+      fprintf(cg_out, "  ret void\n")
+    Else
+      fprintf(cg_out, "  br label %%L%d\n", lOk)
+    End If
+    fprintf(cg_out, "L%d:\n", lOk)
+    Return
+  End If
+
   If k = NodeKind.NdIf Then
     Dim cTy As TypeInfo
     Dim cReg As Integer = CgEmitExpr(g_nodes(id).left, ByRef cTy)
@@ -2470,14 +2528,19 @@ Private Sub CgEmitFunc(fnNodeId As Integer, fnIdx As Integer)
   cg_curRetTy = fi.retTy
   cg_curModId = fi.modId
 
-  If fi.isPublic = 1 Then
+  Dim renameMain As Boolean = (cg_testMode = 1) And (cg_testCount > 0) And SliceEqualsStr(fi.namePos, fi.nameLen, "main", 4)
+  If (fi.isPublic = 1) And (Not renameMain) Then
     fprintf(cg_out, "define ")
   Else
     fprintf(cg_out, "define internal ")
   End If
   CgEmitLlvmType(fi.retTy)
   fprintf(cg_out, " @")
-  CgEmitSymName(fi.namePos, fi.nameLen, fi.modId, fi.isPrivate)
+  If renameMain Then
+    fprintf(cg_out, "__vb_user_main")
+  Else
+    CgEmitSymName(fi.namePos, fi.nameLen, fi.modId, fi.isPrivate)
+  End If
   fprintf(cg_out, "(")
   Dim i As Integer = 0
   While i < fi.paramCount Do
@@ -2546,131 +2609,78 @@ Private Sub CgEmitFunc(fnNodeId As Integer, fnIdx As Integer)
   fprintf(cg_out, "}\n\n")
 End Sub
 
+Private Sub CgEmitTestFn(tdNodeId As Integer, testIdx As Integer)
+  cg_reg = 1
+  cg_localCount = 0
+  cg_curModId = g_nodes(tdNodeId).modId
+  cg_curRetTy = TypeInfo With ( kind = TypeKind.TyNothing, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+  cg_inTestFn = 1
+
+  fprintf(cg_out, "define internal void @__vb_test_%d() {\nentry:\n", testIdx)
+  Dim bStart As Integer = g_nodes(tdNodeId).firstChild
+  Dim bCount As Integer = g_nodes(tdNodeId).childCount
+  Dim k As Integer = 0
+  While k < bCount Do
+    CgEmitStmt(g_kids(bStart + k))
+    k = k + 1
+  End While
+  If Not CgBlockTerminates(bStart, bCount) Then
+    fprintf(cg_out, "  ret void\n")
+  End If
+  fprintf(cg_out, "}\n\n")
+  cg_inTestFn = 0
+End Sub
+
+Private Sub CgEmitAssureRuntime()
+  If (cg_testMode = 1) And (cg_testCount > 0) Then
+    If Not CgHasExtern("fflush", 6) Then
+      fprintf(cg_out, "declare i32 @fflush(ptr)\n")
+    End If
+    fprintf(cg_out, "@__vb_test_cur_fail = internal global i32 0, align 4\n@__vb_assure_fmt = private unnamed_addr constant [27 x i8] c\"  [ASSURE FAILED] line %%d\\0A\\00\", align 1\n@__vb_assure_msg_fmt = private unnamed_addr constant [31 x i8] c\"  [ASSURE FAILED] line %%d: %%s\\0A\\00\", align 1\n@__vb_test_pass_fmt = private unnamed_addr constant [11 x i8] c\"[PASS] %%s\\0A\\00\", align 1\n@__vb_test_fail_fmt = private unnamed_addr constant [11 x i8] c\"[FAIL] %%s\\0A\\00\", align 1\n@__vb_test_sum_fmt = private unnamed_addr constant [42 x i8] c\"\\0ASummary: %%d/%%d tests passed, %%d failed.\\0A\\00\", align 1\n\n")
+    fprintf(cg_out, "define internal void @__vb_assure_fail(i32 %%line, ptr %%msg) {\nentry:\n  store i32 1, ptr @__vb_test_cur_fail, align 4\n  %%isnull = icmp eq ptr %%msg, null\n  br i1 %%isnull, label %%no_msg, label %%has_msg\nno_msg:\n  call i32 (ptr, ...) @printf(ptr @__vb_assure_fmt, i32 %%line)\n  br label %%done\nhas_msg:\n  call i32 (ptr, ...) @printf(ptr @__vb_assure_msg_fmt, i32 %%line, ptr %%msg)\n  br label %%done\ndone:\n  call i32 @fflush(ptr null)\n  ret void\n}\n\n")
+    Return
+  End If
+
+  If cg_usesAssure = 1 Then
+    If Not CgHasExtern("exit", 4) Then
+      fprintf(cg_out, "declare void @exit(i32)\n")
+    End If
+    If Not CgHasExtern("fflush", 6) Then
+      fprintf(cg_out, "declare i32 @fflush(ptr)\n")
+    End If
+    fprintf(cg_out, "@__vb_assure_fmt = private unnamed_addr constant [25 x i8] c\"[ASSURE FAILED] line %%d\\0A\\00\", align 1\n@__vb_assure_msg_fmt = private unnamed_addr constant [29 x i8] c\"[ASSURE FAILED] line %%d: %%s\\0A\\00\", align 1\n\n")
+    fprintf(cg_out, "define internal void @__vb_assure_fail(i32 %%line, ptr %%msg) {\nentry:\n  %%isnull = icmp eq ptr %%msg, null\n  br i1 %%isnull, label %%no_msg, label %%has_msg\nno_msg:\n  call i32 (ptr, ...) @printf(ptr @__vb_assure_fmt, i32 %%line)\n  br label %%done\nhas_msg:\n  call i32 (ptr, ...) @printf(ptr @__vb_assure_msg_fmt, i32 %%line, ptr %%msg)\n  br label %%done\ndone:\n  call i32 @fflush(ptr null)\n  call void @exit(i32 1)\n  ret void\n}\n\n")
+  End If
+End Sub
+
+Private Sub CgEmitTestMain(progRoot As Integer)
+  Dim defStart As Integer = g_nodes(progRoot).firstChild
+  Dim defCount As Integer = g_nodes(progRoot).childCount
+  fprintf(cg_out, "define i32 @main() {\nentry:\n  %%passed = alloca i32, align 4\n  %%failed = alloca i32, align 4\n  store i32 0, ptr %%passed, align 4\n  store i32 0, ptr %%failed, align 4\n")
+
+  Dim tIdx As Integer = 0
+  Dim i As Integer = 0
+  While i < defCount Do
+    Dim d As Integer = g_kids(defStart + i)
+    If g_nodes(d).kind = NodeKind.NdTestDef Then
+      Dim nameStrId As Integer = g_nodes(d).op
+      fprintf(cg_out, "  store i32 0, ptr @__vb_test_cur_fail, align 4\n  call void @__vb_test_%d()\n  %%tf_%d = load i32, ptr @__vb_test_cur_fail, align 4\n  %%tok_%d = icmp eq i32 %%tf_%d, 0\n  br i1 %%tok_%d, label %%tpass_%d, label %%tfail_%d\ntpass_%d:\n", tIdx, tIdx, tIdx, tIdx, tIdx, tIdx, tIdx, tIdx)
+      fprintf(cg_out, "  call i32 (ptr, ...) @printf(ptr @__vb_test_pass_fmt, ptr @.str_%d)\n  call i32 @fflush(ptr null)\n  %%p0_%d = load i32, ptr %%passed, align 4\n  %%p1_%d = add i32 %%p0_%d, 1\n  store i32 %%p1_%d, ptr %%passed, align 4\n  br label %%tnext_%d\ntfail_%d:\n", nameStrId, tIdx, tIdx, tIdx, tIdx, tIdx, tIdx)
+      fprintf(cg_out, "  call i32 (ptr, ...) @printf(ptr @__vb_test_fail_fmt, ptr @.str_%d)\n  call i32 @fflush(ptr null)\n  %%f0_%d = load i32, ptr %%failed, align 4\n  %%f1_%d = add i32 %%f0_%d, 1\n  store i32 %%f1_%d, ptr %%failed, align 4\n  br label %%tnext_%d\ntnext_%d:\n", nameStrId, tIdx, tIdx, tIdx, tIdx, tIdx, tIdx)
+      tIdx = tIdx + 1
+    End If
+    i = i + 1
+  End While
+
+  fprintf(cg_out, "  %%tot_p = load i32, ptr %%passed, align 4\n  %%tot_f = load i32, ptr %%failed, align 4\n  %%tot = add i32 %%tot_p, %%tot_f\n  call i32 (ptr, ...) @printf(ptr @__vb_test_sum_fmt, i32 %%tot_p, i32 %%tot, i32 %%tot_f)\n  call i32 @fflush(ptr null)\n  %%any_fail = icmp ne i32 %%tot_f, 0\n  %%rc = zext i1 %%any_fail to i32\n  ret i32 %%rc\n}\n\n")
+End Sub
+
 Private Sub CgEmitArenaRuntime()
-  fprintf(cg_out, "declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)\n\n")
-  fprintf(cg_out, "define internal void @__vb_arena_init_heap(ptr %%a, i64 %%cap) {\n")
-  fprintf(cg_out, "entry:\n")
-  fprintf(cg_out, "  %%valid = icmp sgt i64 %%cap, 0\n")
-  fprintf(cg_out, "  br i1 %%valid, label %%alloc_blk, label %%zero_blk\n")
-  fprintf(cg_out, "alloc_blk:\n")
-  fprintf(cg_out, "  %%mem = call ptr @calloc(i64 1, i64 %%cap)\n")
-  fprintf(cg_out, "  %%ok = icmp ne ptr %%mem, null\n")
-  fprintf(cg_out, "  br i1 %%ok, label %%store_ok, label %%zero_blk\n")
-  fprintf(cg_out, "store_ok:\n")
-  fprintf(cg_out, "  %%p0 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 0\n")
-  fprintf(cg_out, "  store ptr %%mem, ptr %%p0, align 8\n")
-  fprintf(cg_out, "  %%p1 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 1\n")
-  fprintf(cg_out, "  store i64 %%cap, ptr %%p1, align 8\n")
-  fprintf(cg_out, "  %%p2 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n")
-  fprintf(cg_out, "  store i64 0, ptr %%p2, align 8\n")
-  fprintf(cg_out, "  ret void\n")
-  fprintf(cg_out, "zero_blk:\n")
-  fprintf(cg_out, "  store %%struct.__vb_arena zeroinitializer, ptr %%a, align 8\n")
-  fprintf(cg_out, "  ret void\n")
-  fprintf(cg_out, "}\n\n")
-
-  fprintf(cg_out, "define internal void @__vb_arena_init_buf(ptr %%a, ptr %%buf, i64 %%cap) {\n")
-  fprintf(cg_out, "entry:\n")
-  fprintf(cg_out, "  %%valid = icmp sgt i64 %%cap, 0\n")
-  fprintf(cg_out, "  br i1 %%valid, label %%store_ok, label %%zero_blk\n")
-  fprintf(cg_out, "store_ok:\n")
-  fprintf(cg_out, "  %%p0 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 0\n")
-  fprintf(cg_out, "  store ptr %%buf, ptr %%p0, align 8\n")
-  fprintf(cg_out, "  %%p1 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 1\n")
-  fprintf(cg_out, "  store i64 %%cap, ptr %%p1, align 8\n")
-  fprintf(cg_out, "  %%p2 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n")
-  fprintf(cg_out, "  store i64 0, ptr %%p2, align 8\n")
-  fprintf(cg_out, "  ret void\n")
-  fprintf(cg_out, "zero_blk:\n")
-  fprintf(cg_out, "  store %%struct.__vb_arena zeroinitializer, ptr %%a, align 8\n")
-  fprintf(cg_out, "  ret void\n")
-  fprintf(cg_out, "}\n\n")
-
-  fprintf(cg_out, "define internal ptr @__vb_arena_alloc(ptr %%a, i64 %%size) {\n")
-  fprintf(cg_out, "entry:\n")
-  fprintf(cg_out, "  %%le0 = icmp sle i64 %%size, 0\n")
-  fprintf(cg_out, "  br i1 %%le0, label %%oom, label %%align_blk\n")
-  fprintf(cg_out, "align_blk:\n")
-  fprintf(cg_out, "  %%plus7 = add i64 %%size, 7\n")
-  fprintf(cg_out, "  %%aligned = and i64 %%plus7, -8\n")
-  fprintf(cg_out, "  %%cap_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 1\n")
-  fprintf(cg_out, "  %%cap = load i64, ptr %%cap_ptr, align 8\n")
-  fprintf(cg_out, "  %%off_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n")
-  fprintf(cg_out, "  %%off = load i64, ptr %%off_ptr, align 8\n")
-  fprintf(cg_out, "  %%new_off = add i64 %%off, %%aligned\n")
-  fprintf(cg_out, "  %%wrap = icmp ult i64 %%new_off, %%off\n")
-  fprintf(cg_out, "  %%ovf = icmp ugt i64 %%new_off, %%cap\n")
-  fprintf(cg_out, "  %%fail = or i1 %%wrap, %%ovf\n")
-  fprintf(cg_out, "  br i1 %%fail, label %%oom, label %%ok\n")
-  fprintf(cg_out, "ok:\n")
-  fprintf(cg_out, "  %%base_slot = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 0\n")
-  fprintf(cg_out, "  %%base = load ptr, ptr %%base_slot, align 8\n")
-  fprintf(cg_out, "  %%isnull = icmp eq ptr %%base, null\n")
-  fprintf(cg_out, "  br i1 %%isnull, label %%oom, label %%commit\n")
-  fprintf(cg_out, "commit:\n")
-  fprintf(cg_out, "  store i64 %%new_off, ptr %%off_ptr, align 8\n")
-  fprintf(cg_out, "  %%res = getelementptr inbounds i8, ptr %%base, i64 %%off\n")
-  fprintf(cg_out, "  call void @llvm.memset.p0.i64(ptr align 8 %%res, i8 0, i64 %%aligned, i1 false)\n")
-  fprintf(cg_out, "  ret ptr %%res\n")
-  fprintf(cg_out, "oom:\n")
-  fprintf(cg_out, "  ret ptr null\n")
-  fprintf(cg_out, "}\n\n")
-
-  fprintf(cg_out, "define internal void @__vb_arena_reset(ptr %%a) {\n")
-  fprintf(cg_out, "  %%off_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n")
-  fprintf(cg_out, "  store i64 0, ptr %%off_ptr, align 8\n")
-  fprintf(cg_out, "  ret void\n")
-  fprintf(cg_out, "}\n\n")
-
-  fprintf(cg_out, "define internal i64 @__vb_arena_used(ptr %%a) {\n")
-  fprintf(cg_out, "  %%off_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n")
-  fprintf(cg_out, "  %%off = load i64, ptr %%off_ptr, align 8\n")
-  fprintf(cg_out, "  ret i64 %%off\n")
-  fprintf(cg_out, "}\n\n")
-
-  fprintf(cg_out, "define internal i64 @__vb_arena_capacity(ptr %%a) {\n")
-  fprintf(cg_out, "  %%cap_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 1\n")
-  fprintf(cg_out, "  %%cap = load i64, ptr %%cap_ptr, align 8\n")
-  fprintf(cg_out, "  ret i64 %%cap\n")
-  fprintf(cg_out, "}\n\n")
-
-  fprintf(cg_out, "define internal i64 @__vb_arena_remaining(ptr %%a) {\n")
-  fprintf(cg_out, "  %%cap_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 1\n")
-  fprintf(cg_out, "  %%cap = load i64, ptr %%cap_ptr, align 8\n")
-  fprintf(cg_out, "  %%off_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n")
-  fprintf(cg_out, "  %%off = load i64, ptr %%off_ptr, align 8\n")
-  fprintf(cg_out, "  %%rem = sub i64 %%cap, %%off\n")
-  fprintf(cg_out, "  ret i64 %%rem\n")
-  fprintf(cg_out, "}\n\n")
-
-  fprintf(cg_out, "define internal void @__vb_arena_rewind(ptr %%a, i64 %%mark) {\n")
-  fprintf(cg_out, "entry:\n")
-  fprintf(cg_out, "  %%off_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n")
-  fprintf(cg_out, "  %%off = load i64, ptr %%off_ptr, align 8\n")
-  fprintf(cg_out, "  %%nonneg = icmp sge i64 %%mark, 0\n")
-  fprintf(cg_out, "  %%le_off = icmp sle i64 %%mark, %%off\n")
-  fprintf(cg_out, "  %%ok = and i1 %%nonneg, %%le_off\n")
-  fprintf(cg_out, "  br i1 %%ok, label %%do_rewind, label %%done\n")
-  fprintf(cg_out, "do_rewind:\n")
-  fprintf(cg_out, "  store i64 %%mark, ptr %%off_ptr, align 8\n")
-  fprintf(cg_out, "  br label %%done\n")
-  fprintf(cg_out, "done:\n")
-  fprintf(cg_out, "  ret void\n")
-  fprintf(cg_out, "}\n\n")
-
-  fprintf(cg_out, "define internal void @__vb_arena_destroy(ptr %%a) {\n")
-  fprintf(cg_out, "entry:\n")
-  fprintf(cg_out, "  %%base_slot = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 0\n")
-  fprintf(cg_out, "  %%base = load ptr, ptr %%base_slot, align 8\n")
-  fprintf(cg_out, "  %%nonnull = icmp ne ptr %%base, null\n")
-  fprintf(cg_out, "  br i1 %%nonnull, label %%do_free, label %%clear\n")
-  fprintf(cg_out, "do_free:\n")
-  fprintf(cg_out, "  call void @free(ptr %%base)\n")
-  fprintf(cg_out, "  br label %%clear\n")
-  fprintf(cg_out, "clear:\n")
-  fprintf(cg_out, "  store %%struct.__vb_arena zeroinitializer, ptr %%a, align 8\n")
-  fprintf(cg_out, "  ret void\n")
-  fprintf(cg_out, "}\n\n")
+  fprintf(cg_out, "declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)\n\ndefine internal void @__vb_arena_init_heap(ptr %%a, i64 %%cap) {\nentry:\n  %%valid = icmp sgt i64 %%cap, 0\n  br i1 %%valid, label %%alloc_blk, label %%zero_blk\nalloc_blk:\n  %%mem = call ptr @calloc(i64 1, i64 %%cap)\n  %%ok = icmp ne ptr %%mem, null\n  br i1 %%ok, label %%store_ok, label %%zero_blk\nstore_ok:\n  %%p0 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 0\n  store ptr %%mem, ptr %%p0, align 8\n  %%p1 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 1\n  store i64 %%cap, ptr %%p1, align 8\n  %%p2 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n  store i64 0, ptr %%p2, align 8\n  ret void\nzero_blk:\n  store %%struct.__vb_arena zeroinitializer, ptr %%a, align 8\n  ret void\n}\n\n")
+  fprintf(cg_out, "define internal void @__vb_arena_init_buf(ptr %%a, ptr %%buf, i64 %%cap) {\nentry:\n  %%valid = icmp sgt i64 %%cap, 0\n  br i1 %%valid, label %%store_ok, label %%zero_blk\nstore_ok:\n  %%p0 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 0\n  store ptr %%buf, ptr %%p0, align 8\n  %%p1 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 1\n  store i64 %%cap, ptr %%p1, align 8\n  %%p2 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n  store i64 0, ptr %%p2, align 8\n  ret void\nzero_blk:\n  store %%struct.__vb_arena zeroinitializer, ptr %%a, align 8\n  ret void\n}\n\n")
+  fprintf(cg_out, "define internal ptr @__vb_arena_alloc(ptr %%a, i64 %%size) {\nentry:\n  %%le0 = icmp sle i64 %%size, 0\n  br i1 %%le0, label %%oom, label %%align_blk\nalign_blk:\n  %%plus7 = add i64 %%size, 7\n  %%aligned = and i64 %%plus7, -8\n  %%cap_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 1\n  %%cap = load i64, ptr %%cap_ptr, align 8\n  %%off_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n  %%off = load i64, ptr %%off_ptr, align 8\n  %%new_off = add i64 %%off, %%aligned\n  %%wrap = icmp ult i64 %%new_off, %%off\n  %%ovf = icmp ugt i64 %%new_off, %%cap\n  %%fail = or i1 %%wrap, %%ovf\n  br i1 %%fail, label %%oom, label %%ok\nok:\n  %%base_slot = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 0\n  %%base = load ptr, ptr %%base_slot, align 8\n  %%isnull = icmp eq ptr %%base, null\n  br i1 %%isnull, label %%oom, label %%commit\ncommit:\n  store i64 %%new_off, ptr %%off_ptr, align 8\n  %%res = getelementptr inbounds i8, ptr %%base, i64 %%off\n  call void @llvm.memset.p0.i64(ptr align 8 %%res, i8 0, i64 %%aligned, i1 false)\n  ret ptr %%res\noom:\n  ret ptr null\n}\n\n")
+  fprintf(cg_out, "define internal void @__vb_arena_reset(ptr %%a) {\n  %%off_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n  store i64 0, ptr %%off_ptr, align 8\n  ret void\n}\n\ndefine internal i64 @__vb_arena_used(ptr %%a) {\n  %%off_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n  %%off = load i64, ptr %%off_ptr, align 8\n  ret i64 %%off\n}\n\ndefine internal i64 @__vb_arena_capacity(ptr %%a) {\n  %%cap_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 1\n  %%cap = load i64, ptr %%cap_ptr, align 8\n  ret i64 %%cap\n}\n\ndefine internal i64 @__vb_arena_remaining(ptr %%a) {\n  %%cap_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 1\n  %%cap = load i64, ptr %%cap_ptr, align 8\n  %%off_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n  %%off = load i64, ptr %%off_ptr, align 8\n  %%rem = sub i64 %%cap, %%off\n  ret i64 %%rem\n}\n\n")
+  fprintf(cg_out, "define internal void @__vb_arena_rewind(ptr %%a, i64 %%mark) {\nentry:\n  %%off_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n  %%off = load i64, ptr %%off_ptr, align 8\n  %%nonneg = icmp sge i64 %%mark, 0\n  %%le_off = icmp sle i64 %%mark, %%off\n  %%ok = and i1 %%nonneg, %%le_off\n  br i1 %%ok, label %%do_rewind, label %%done\ndo_rewind:\n  store i64 %%mark, ptr %%off_ptr, align 8\n  br label %%done\ndone:\n  ret void\n}\n\ndefine internal void @__vb_arena_destroy(ptr %%a) {\nentry:\n  %%base_slot = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 0\n  %%base = load ptr, ptr %%base_slot, align 8\n  %%nonnull = icmp ne ptr %%base, null\n  br i1 %%nonnull, label %%do_free, label %%clear\ndo_free:\n  call void @free(ptr %%base)\n  br label %%clear\nclear:\n  store %%struct.__vb_arena zeroinitializer, ptr %%a, align 8\n  ret void\n}\n\n")
 End Sub
 
 Private Function CgHasExtern(name As Pointer, nLen As Integer) As Boolean
@@ -2693,7 +2703,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   cg_funcs = ArenaAlloc(ByRef arena, CgFuncInfo, 512)
   cg_params = ArenaAlloc(ByRef arena, CgParamInfo, 2048)
   cg_locals = ArenaAlloc(ByRef arena, CgLocalSym, 512)
-  cg_strs = ArenaAlloc(ByRef arena, CgStrConst, 1024)
+  cg_strs = ArenaAlloc(ByRef arena, CgStrConst, 4096)
   cg_staticLocals = ArenaAlloc(ByRef arena, CgStaticLocal, 512)
 
   cg_enumCount = 0
@@ -2708,6 +2718,9 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   cg_staticLocalCount = 0
   cg_lbl = 1
   cg_usesArena = 0
+  cg_usesAssure = 0
+  cg_inTestFn = 0
+  cg_testCount = 0
 
   Dim defStart As Integer = g_nodes(progRoot).firstChild
   Dim defCount As Integer = g_nodes(progRoot).childCount
@@ -2983,6 +2996,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   If cg_usesArena = 1 Then
     CgEmitArenaRuntime()
   End If
+  CgEmitAssureRuntime()
 
   ' Emit all function bodies
   i = 0
@@ -2993,6 +3007,20 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
     End If
     i = i + 1
   End While
+
+  If (cg_testMode = 1) And (cg_testCount > 0) Then
+    Dim tIdx As Integer = 0
+    i = 0
+    While i < defCount Do
+      Dim d As Integer = g_kids(defStart + i)
+      If g_nodes(d).kind = NodeKind.NdTestDef Then
+        CgEmitTestFn(d, tIdx)
+        tIdx = tIdx + 1
+      End If
+      i = i + 1
+    End While
+    CgEmitTestMain(progRoot)
+  End If
 
   fclose(cg_out)
   Return 0

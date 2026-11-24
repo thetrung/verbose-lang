@@ -58,6 +58,7 @@ Public Enum NodeKind
   NdSelect = 29
   NdCaseBranch = 30
   NdStaticDim = 31
+  NdAssure = 32
 
   ' Definitions
   NdParam = 40
@@ -69,6 +70,7 @@ Public Enum NodeKind
   NdExternDecl = 46
   NdFuncDef = 47
   NdProgram = 48
+  NdTestDef = 49
 End Enum
 
 Public Structure AstNode

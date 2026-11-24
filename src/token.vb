@@ -25,6 +25,8 @@ Public Enum TokenKind
   TkByRef = 23
   TkWith = 24
   TkReturn = 25
+  TkTest = 26
+  TkAssure = 27
 
   ' Types
   TkInteger = 30

@@ -1538,6 +1538,26 @@ Private Sub TaCheckStmt(id As Integer)
     Return
   End If
 
+  If k = NodeKind.NdAssure Then
+    Dim condTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
+    If Not (((condTy.arrLen = 0) And (condTy.kind = TypeKind.TyBoolean)) Or TaIsIntType(condTy)) Then
+      Printf("Semantic Type Error: Assure condition must be Boolean, got ")
+      TaPrintType(condTy)
+      Printf("\n")
+      ta_errCount = ta_errCount + 1
+    End If
+    If g_nodes(id).right >= 0 Then
+      Dim msgTy As TypeInfo = TaTypeOfExpr(g_nodes(id).right)
+      If Not ((msgTy.arrLen = 0) And (msgTy.kind = TypeKind.TyPointer)) Then
+        Printf("Semantic Type Error: Assure message must be a string Pointer, got ")
+        TaPrintType(msgTy)
+        Printf("\n")
+        ta_errCount = ta_errCount + 1
+      End If
+    End If
+    Return
+  End If
+
   If k = NodeKind.NdIf Then
     Dim condTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
     If Not (((condTy.arrLen = 0) And (condTy.kind = TypeKind.TyBoolean)) Or TaIsIntType(condTy)) Then
@@ -1860,6 +1880,15 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
         j = j + 1
       End While
       fi = fi + 1
+    End If
+    If dk = NodeKind.NdTestDef Then
+      ta_curRetTy = TaMakePrim(TypeKind.TyNothing)
+      ta_localCount = 0
+      Dim j As Integer = 0
+      While j < g_nodes(d).childCount Do
+        TaCheckStmt(g_kids(g_nodes(d).firstChild + j))
+        j = j + 1
+      End While
     End If
     i = i + 1
   End While

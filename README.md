@@ -9,7 +9,7 @@ Just Another Human-Readable Systems Programming Language — inspired by Visual 
 VerBose-Lang combines classic Visual Basic readability with deterministic, C-speed systems programming on top of LLVM:
 - **Zero GC**: Stack values, `Static` storage, explicit `HeapAlloc`/`HeapFree`, and a first-class deterministic `Arena` bump allocator.
 - **Native C FFI**: Direct `Declare Function`/`Sub` bindings with SysV x86-64 ByVal struct ABI lowering (including Raylib 5.x).
-- **100% Self-Hosted (`./verbose`)**: The compiler (`src/`) is written entirely in VerBose-Lang itself, includes a full semantic Type Analyzer and direct compile-and-run CLI, compiles itself to a byte-for-byte Stage 3 fixpoint, and passes **105/105** tests. The archival OCaml bootstrap compiler is preserved on the `stage0` branch.
+- **100% Self-Hosted (`./verbose`)**: The compiler (`src/`) is written entirely in VerBose-Lang itself, includes a full semantic Type Analyzer, built-in `Test`/`Assure` test runner (`./verbose test`), and direct compile-and-run CLI, compiles itself to a byte-for-byte Stage 3 fixpoint, and passes **10/10** pure-VerBose test suites (**105** `Test` blocks, zero Python). The archival OCaml bootstrap compiler is preserved on the `stage0` branch.
 
 See **[Features.md](Features.md)** for the full list of implemented language, compiler, and tooling features.
 
@@ -138,7 +138,7 @@ verbose-lang/
 
 ## Usage
 
-**Prerequisites**: `clang` (LLVM 19+ recommended), `python3` (for test runners), and `curl` (only if bootstrapping without an existing `verbose` binary).
+**Prerequisites**: `clang` (LLVM 19+ recommended) and `curl` (only if bootstrapping without an existing `verbose` binary). No OCaml or Python required!
 
 ```bash
 # Build & verify the self-hosted compiler (./verbose) via Stage 1 -> Stage 2 -> Stage 3 fixpoint
@@ -147,6 +147,10 @@ make build
 
 # Compile and execute any .vb file directly (default mode)
 ./verbose your_file.vb
+
+# Run built-in Test/Assure blocks in a file or directory (default: test/)
+./verbose test your_tests.vb
+./verbose test test/
 
 # Build and run prototype.vb with ./verbose
 make
@@ -158,8 +162,8 @@ make dist             # builds stripped dist/verbose, dist/verbose-linux-x86_64,
 # Run all examples
 make demo
 
-# Run test suites
-make test             # 105/105 self-hosted ./verbose CLI, examples, and full regression suites
+# Run pure-VerBose test suites (zero Python!)
+make test             # runs ./verbose test test/ (10/10 suites, 105 Test blocks)
 make test-all         # Full pipeline: Stage 1-3 build fixpoint + make test + make demo
 ```
 
@@ -168,6 +172,8 @@ make test-all         # Full pipeline: Stage 1-3 build fixpoint + make test + ma
 | Flag | Description |
 | --- | --- |
 | `verbose <file.vb>` | Type-check, emit `.ll`, compile with `clang -O2`, and **execute directly** |
+| `verbose test [file.vb \| dir]` | Compile & run built-in `Test`/`Assure` blocks (auto-discovers `test_*.vb`/`*_test.vb` in directories; default `test`) |
+| `--test` | Alias for `verbose test` |
 | `--ast` | Pretty-print the parsed AST |
 | `--ir` | Print the generated LLVM IR to stdout |
 | `--ta` | Verbose semantic Type Analyzer output (runs automatically before codegen) |
@@ -202,6 +208,7 @@ All implemented language, memory, FFI, compiler, and tooling features are docume
 - [x] **Self-Hosted Type Analyzer & CLI**: Ported semantic Type Analyzer (`--ta`/`--no-ta`), AST printer (`--ast`), IR printer (`--ir`), and full driver flags (`-o`, `-I`, `-l`, `-L`, `--emit-only`, `--no-run`, direct compile & execute) into `src/`
 - [x] **Tooling & CI**: `make install`/`uninstall`/`dist` packaging, GitHub Actions CI (`ci.yml`), and automated Linux x86-64 binary releases (`release.yml`)
 - [x] **Brace-Free Syntax & Stage 0 Retirement**: Unified array literals to `(..)` across Stage 0 & self-hosted compilers, archived `stage0/` to the `stage0` branch, consolidated `raylib/` into `examples/raylib/`, and extracted `Features.md`
+- [x] **Built-in `Test` / `Assure` & Zero-Python Test Suite**: Added first-class `Test "name" ... End Test` blocks, `Assure cond [, "msg"]` assertions, and `./verbose test [file.vb | dir]` runner; ported all test suites to VerBose-Lang and removed all Python test runners & `python3` CI dependencies
 - [ ] **Syntax Compression & Compiler Ergonomics**: Grouped same-type `Dim`/`Static` declarations, shared constants module for compiler diagnostics, and native string concatenation
 - [ ] **Target Triples & Cross-Compilation**: Emit explicit LLVM target triples and data layouts for Linux x86-64, macOS arm64, and bare-metal ARM-M (`Volatile`, fixed/deterministic memory regions)
 - [ ] **Standard Library (`std/`)**: Core modules (`strings`, `math`, `collections`, `io`) built with `Include` + `Arena`

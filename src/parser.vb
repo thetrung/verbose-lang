@@ -678,6 +678,23 @@ Public Function ParseStmt() As Integer
     Return id
   End If
 
+  ' Assure cond [, msg]
+  If k = TokenKind.TkAssure Then
+    Dim lineNum As Integer = g_tokens(p_pos).line
+    PAdvance()
+    Dim condId As Integer = ParseExpr()
+    Dim msgId As Integer = -1
+    If PPeekKind() = TokenKind.TkComma Then
+      PAdvance()
+      msgId = ParseExpr()
+    End If
+    Dim id As Integer = NewNode(NodeKind.NdAssure)
+    g_nodes(id).intVal = lineNum
+    g_nodes(id).left = condId
+    g_nodes(id).right = msgId
+    Return id
+  End If
+
   ' If cond Then ... [Else ...] End If
   If k = TokenKind.TkIf Then
     PAdvance()
@@ -1161,6 +1178,26 @@ Private Function PParseDef() As Integer
       i = i + 1
     End While
     Return ex
+  End If
+
+  ' Test "name" ... End Test
+  If k = TokenKind.TkTest Then
+    PAdvance()
+    Dim tPos As Integer = g_tokens(p_pos).pos
+    Dim tLen As Integer = g_tokens(p_pos).len
+    PExpect(TokenKind.TkStrLit)
+    Dim bodyStart As Integer = 0
+    Dim bodyCount As Integer = 0
+    PParseBlock(0, ByRef bodyStart, ByRef bodyCount)
+    PExpect(TokenKind.TkEnd)
+    PExpect(TokenKind.TkTest)
+    Dim td As Integer = NewNode(NodeKind.NdTestDef)
+    g_nodes(td).modId = defModId
+    g_nodes(td).intVal = tPos
+    g_nodes(td).lenVal = tLen
+    g_nodes(td).firstChild = bodyStart
+    g_nodes(td).childCount = bodyCount
+    Return td
   End If
 
   ' Function / Sub definition

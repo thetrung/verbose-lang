@@ -163,6 +163,12 @@ Private Function LxClassifyKeyword(pos As Integer, slen As Integer) As Integer
   If SliceEqualsStr(pos, slen, "Return", 6) Then
     Return TokenKind.TkReturn
   End If
+  If SliceEqualsStr(pos, slen, "Test", 4) Then
+    Return TokenKind.TkTest
+  End If
+  If SliceEqualsStr(pos, slen, "Assure", 6) Then
+    Return TokenKind.TkAssure
+  End If
   If SliceEqualsStr(pos, slen, "Integer", 7) Then
     Return TokenKind.TkInteger
   End If

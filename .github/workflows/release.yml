@@ -20,10 +20,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install toolchain (clang, python3, curl)
+      - name: Install toolchain (clang, curl)
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang python3 curl
+          sudo apt-get install -y clang curl
 
       - name: Build Self-Hosted Compiler + Full Test Suite
         run: |

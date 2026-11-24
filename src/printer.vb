@@ -305,6 +305,16 @@ Private Sub PrStmt(id As Integer, depth As Integer)
     Printf("\n")
     Return
   End If
+  If k = NodeKind.NdAssure Then
+    Printf("Assure ")
+    PrExpr(g_nodes(id).left)
+    If g_nodes(id).right >= 0 Then
+      Printf(", ")
+      PrExpr(g_nodes(id).right)
+    End If
+    Printf("\n")
+    Return
+  End If
   If k = NodeKind.NdIf Then
     Printf("If ")
     PrExpr(g_nodes(id).left)
@@ -522,6 +532,17 @@ Public Sub PrintProgramAst(progRoot As Integer)
       Else
         Printf("End Function\n\n")
       End If
+    End If
+    If dk = NodeKind.NdTestDef Then
+      Printf("Test \"")
+      PrSlice(g_nodes(d).intVal, g_nodes(d).lenVal)
+      Printf("\"\n")
+      Dim j As Integer = 0
+      While j < g_nodes(d).childCount Do
+        PrStmt(g_kids(g_nodes(d).firstChild + j), 1)
+        j = j + 1
+      End While
+      Printf("End Test\n\n")
     End If
     i = i + 1
   End While

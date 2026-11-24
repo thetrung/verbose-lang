@@ -1,7 +1,7 @@
 TARGET=prototype
 PREFIX ?= /usr/local
 DESTDIR ?=
-VERSION ?= 0.2.0
+VERSION ?= 0.3.0
 BOOTSTRAP ?=
 RELEASE_URL ?= https://github.com/thetrung/verbose-lang/releases/latest/download/verbose
 
@@ -42,7 +42,7 @@ build:
 	diff -u verbose2.ll verbose3.ll && echo "[OK] Stage 3 self-hosting fixpoint verified (byte-for-byte identical)!"
 	@rm -f ./.verbose.boot verbose1 src/verbose.ll verbose.ll verbose1.ll verbose2.ll verbose3.ll
 	@echo "=== Running Self-Hosting Feature Suite ==="
-	VERBOSE_COMPILER=./verbose python3 test/run_bootstrap_tests.py
+	VERBOSE_COMPILER=./verbose ./verbose test test/bootstrap_suite.vb
 	@echo "[READY] Self-hosted compiler binary built at ./verbose"
 
 # Compile and directly execute $(TARGET).vb using self-hosted ./verbose
@@ -73,18 +73,10 @@ demo:
 	done
 	@rm -f /tmp/vb_demo
 
-# Full self-hosted ./verbose test suite (CLI + 14 examples + all 8 regression suites = 105 tests)
+# Full self-hosted ./verbose test suite (built-in Test/Assure runner, zero Python)
 test:
 	@if [ ! -x ./verbose ]; then $(MAKE) build; fi
-	VERBOSE_COMPILER=./verbose python3 test/run_verbose_tests.py
-	VERBOSE_COMPILER=./verbose python3 test/run_syntax_tests.py
-	VERBOSE_COMPILER=./verbose python3 test/run_byref_tests.py
-	VERBOSE_COMPILER=./verbose python3 test/run_array_tests.py
-	VERBOSE_COMPILER=./verbose python3 test/run_static_heap_tests.py
-	VERBOSE_COMPILER=./verbose python3 test/run_arena_tests.py
-	VERBOSE_COMPILER=./verbose python3 test/run_ta_tests.py
-	VERBOSE_COMPILER=./verbose python3 test/run_module_tests.py
-	VERBOSE_COMPILER=./verbose python3 test/run_c_interop_tests.py
+	VERBOSE_COMPILER=./verbose ./verbose test test/
 
 # Full verification: self-hosted build fixpoint + ./verbose test suite + standalone demos
 test-all: build test demo
