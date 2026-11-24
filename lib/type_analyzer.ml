@@ -65,14 +65,24 @@ let rec types_equal env t1 t2 =
   | Array (e1, n1), Array (e2, n2) -> n1 = n2 && types_equal env e1 e2
   | a, b -> a = b
 
-let is_lvalue = function
-  | Id _ | FieldAccess _ | IndexAccess _ -> true
-  | _ -> false
-
 let lookup_var env name =
   match Hashtbl.find_opt env.locals name with
   | Some dt -> Some dt
   | None -> Hashtbl.find_opt env.globals name
+
+let is_var_index_call env name args =
+  match args with
+  | [(ByVal, _)] ->
+      (match lookup_var env name with
+       | Some (Array _ | Pointer) -> true
+       | Some _ -> not (Hashtbl.mem env.functions name) && not (Hashtbl.mem env.structs name)
+       | None -> false)
+  | _ -> false
+
+let is_lvalue env = function
+  | Id _ | FieldAccess _ | IndexAccess _ -> true
+  | Call (name, args) -> is_var_index_call env name args
+  | _ -> false
 
 let check_not_private env kind name =
   if Hashtbl.mem env.private_symbols name then
@@ -143,7 +153,7 @@ let rec is_const_expr env dt = function
 let rec check_arena_arg env fn_name mode arg_expr =
   if mode <> ByRef then
     raise (TypeError (fn_name ^ " expects ByRef arena"));
-  if not (is_lvalue arg_expr) then
+  if not (is_lvalue env arg_expr) then
     raise (TypeError "ByRef argument must be a variable, struct field, or array element");
   let dt = type_of_expr env arg_expr in
   if dt <> Arena then
@@ -282,7 +292,7 @@ and type_of_expr env = function
   | ArenaAlloc (mode, arena_expr, dt, count_expr) ->
       if mode <> ByRef then
         raise (TypeError "ArenaAlloc expects ByRef arena as argument 1");
-      if not (is_lvalue arena_expr) then
+      if not (is_lvalue env arena_expr) then
         raise (TypeError "ByRef argument must be a variable, struct field, or array element");
       let adt = type_of_expr env arena_expr in
       if adt <> Arena then
@@ -314,7 +324,7 @@ and type_of_expr env = function
   | Call ("ArenaFromBuffer", [(buf_mode, buf_expr); (ByVal, cap_expr)]) ->
       if buf_mode <> ByRef then
         raise (TypeError "ArenaFromBuffer expects ByRef buffer as argument 1");
-      if not (is_lvalue buf_expr) then
+      if not (is_lvalue env buf_expr) then
         raise (TypeError "ByRef argument must be a variable, struct field, or array element");
       ignore (type_of_expr env buf_expr);
       let ct = type_of_expr env cap_expr in
@@ -327,7 +337,7 @@ and type_of_expr env = function
   | Call ("ArenaAllocBytes", [(a_mode, a_expr); (ByVal, bytes_expr)]) ->
       if a_mode <> ByRef then
         raise (TypeError "ArenaAllocBytes expects ByRef arena as argument 1");
-      if not (is_lvalue a_expr) then
+      if not (is_lvalue env a_expr) then
         raise (TypeError "ByRef argument must be a variable, struct field, or array element");
       if type_of_expr env a_expr <> Arena then
         raise (TypeError "ArenaAllocBytes argument 1 must be an Arena variable");
@@ -352,7 +362,7 @@ and type_of_expr env = function
 
   | Call ("ArenaRewind", [(a_mode, a_expr); (ByVal, mark_expr)]) ->
       if a_mode <> ByRef then raise (TypeError "ArenaRewind expects ByRef arena");
-      if not (is_lvalue a_expr) then
+      if not (is_lvalue env a_expr) then
         raise (TypeError "ByRef argument must be a variable, struct field, or array element");
       if type_of_expr env a_expr <> Arena then
         raise (TypeError "ArenaRewind argument 1 must be an Arena variable");
@@ -404,7 +414,7 @@ and type_of_expr env = function
       raise (TypeError "HeapFree() expects exactly one ByVal pointer/array argument")
 
   | Call ("Len", [(ByVal, arg_expr)]) ->
-      if not (is_lvalue arg_expr) then
+      if not (is_lvalue env arg_expr) then
         raise (TypeError "Len() requires a fixed-size array");
       (match type_of_expr env arg_expr with
        | Array (_, n) when n > 0 -> Int
@@ -418,6 +428,9 @@ and type_of_expr env = function
         ignore (type_of_expr env e)
       ) args;
       Int
+
+  | Call (name, [(ByVal, idx_expr)]) when is_var_index_call env name [(ByVal, idx_expr)] ->
+      type_of_expr env (IndexAccess (Id name, idx_expr))
 
   | Call (name, args) ->
       if Hashtbl.mem env.structs name then begin
@@ -448,7 +461,7 @@ and type_of_expr env = function
           | Some (ByRef, param_dt) ->
               if arg_mode <> ByRef then
                 raise (TypeError (Printf.sprintf "Argument %d of '%s' expects ByRef at call site" (idx + 1) name));
-              if not (is_lvalue arg_expr) then
+              if not (is_lvalue env arg_expr) then
                 raise (TypeError "ByRef argument must be a variable, struct field, or array element");
               if not (is_assignable env param_dt actual_dt arg_expr) then
                 raise (TypeError (Printf.sprintf "Argument %d of '%s' type mismatch: expected %s, got %s"
@@ -461,7 +474,7 @@ and type_of_expr env = function
                                     (idx + 1) name (Printer.string_of_dt param_dt) (Printer.string_of_dt actual_dt)))
           | None ->
               if sig_.is_variadic && arg_mode = ByRef then begin
-                if not (is_lvalue arg_expr) then
+                if not (is_lvalue env arg_expr) then
                   raise (TypeError "ByRef argument must be a variable, struct field, or array element")
               end else if arg_mode = ByRef then
                 raise (TypeError (Printf.sprintf "Argument %d of '%s' is ByVal and cannot be passed ByRef" (idx + 1) name))

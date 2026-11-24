@@ -307,6 +307,15 @@ let lookup_var ctx name =
   else
     None
 
+let is_var_index_call ctx name args =
+  match args with
+  | [(ByVal, _)] ->
+      (match lookup_var ctx name with
+       | Some (_, (Array _ | Pointer), _) -> true
+       | Some _ -> not (Hashtbl.mem ret_types name) && not (Hashtbl.mem struct_fields name)
+       | None -> false)
+  | _ -> false
+
 let zero_llvm_value = function
   | Int | Byte | Short | Long -> "0"
   | Single | Double -> "0.0"
@@ -836,6 +845,9 @@ let rec codegen_expr ctx = function
       emit ctx (Printf.sprintf "  %s = call i32 (ptr, ...) @printf(%s)" res_reg args_joined);
       (res_reg, "i32")
  
+  | Call (name, [(ByVal, idx_expr)]) when is_var_index_call ctx name [(ByVal, idx_expr)] ->
+      codegen_expr ctx (IndexAccess (Id name, idx_expr))
+
   | Call (name, args) ->
       if Hashtbl.mem struct_fields name then begin
         let struct_type_str = Printf.sprintf "%%struct.%s" name in
@@ -888,6 +900,9 @@ let rec codegen_expr ctx = function
                    raise (Error ("Undefined variable reference for ByRef argument: " ^ var_name)))
           | FieldAccess _ | IndexAccess _ ->
               let lval_ptr, _ = get_lvalue_ptr ctx arg_expr in
+              (lval_ptr, "ptr")
+          | Call (vname, [(ByVal, idx_e)]) when is_var_index_call ctx vname [(ByVal, idx_e)] ->
+              let lval_ptr, _ = get_lvalue_ptr ctx (IndexAccess (Id vname, idx_e)) in
               (lval_ptr, "ptr")
           | _ ->
               raise (Error "ByRef argument must be a variable, struct field, or array element")
@@ -1045,9 +1060,16 @@ and get_lvalue_ptr ctx = function
                  field_ptr struct_type_str parent_ptr field_index);
       (field_ptr, actual_dt)
 
+  | Call (name, [(ByVal, idx_expr)]) when is_var_index_call ctx name [(ByVal, idx_expr)] ->
+      get_lvalue_ptr ctx (IndexAccess (Id name, idx_expr))
+
   | IndexAccess (base_expr, idx_expr) ->
       let idx64 = widen_index_to_i64 ctx idx_expr in
-      let is_lval = match base_expr with Id _ | FieldAccess _ | IndexAccess _ -> true | _ -> false in
+      let is_lval = match base_expr with
+        | Id _ | FieldAccess _ | IndexAccess _ -> true
+        | Call (n, args) -> is_var_index_call ctx n args
+        | _ -> false
+      in
       if is_lval then begin
         let base_ptr, base_dt = get_lvalue_ptr ctx base_expr in
         match base_dt with

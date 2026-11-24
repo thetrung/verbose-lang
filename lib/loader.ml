@@ -114,7 +114,10 @@ let rename_module_privates mod_id defs =
             | None ->
                 (match Hashtbl.find_opt priv_types name with
                  | Some n' -> n'
-                 | None -> name)
+                 | None ->
+                     if not (List.mem name shadowed) && Hashtbl.mem priv_vars name then
+                       Hashtbl.find priv_vars name
+                     else name)
           in
           Call (name', List.map (fun (m, e) -> (m, map_expr shadowed e)) args)
       | FieldAccess (Id ename, field) when Hashtbl.mem priv_enums ename && not (List.mem ename shadowed) ->

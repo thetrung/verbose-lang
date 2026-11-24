@@ -28,7 +28,7 @@ CASES = [
     ("06_sizeof_types.vb", "SizeOf() on primitives & ABI-aligned structs", None, ["b=1 s=2 i=4 l=8 f=4 d=8 p=8 st=16"], False),
     ("07_heap_alloc_primitives_and_realloc.vb", "HeapAlloc zero-init, HeapRealloc growth, HeapFree", None, ["zero=0,0", "grown=5,20,25,30"], False),
     ("08_heap_alloc_structs_and_byref.vb", "HeapAlloc struct array, ByRef element, slice pass", None, ["p1=15,26 sumX=116"], False),
-    ("09_heap_global_slice_and_bytes.vb", "Global heap slice Static g_pool[] & HeapAllocBytes", None, ["pool=11,44 raw=OK"], False),
+    ("09_heap_global_slice_and_bytes.vb", "Global heap slice Static g_pool() & HeapAllocBytes", None, ["pool=11,44 raw=OK"], False),
     ("10_static_nonconst_init_err.vb", "Reject non-constant Static global initializer", None, ["compile-time constant"], True),
     ("11_heap_free_nonptr_err.vb", "Reject HeapFree on non-pointer scalar", None, ["HeapFree expects a Pointer or heap array"], True),
 ]

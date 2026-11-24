@@ -1,10 +1,10 @@
 Static g_arena As Arena
 
 Private Function AllocAndSum(ByRef a As Arena, v0 As Integer, v1 As Integer) As Integer
-  Dim pair[] As Integer = ArenaAlloc(ByRef a, Integer, 2)
-  pair[0] = v0
-  pair[1] = v1
-  Return pair[0] + pair[1]
+  Dim pair() As Integer = ArenaAlloc(ByRef a, Integer, 2)
+  pair(0) = v0
+  pair(1) = v1
+  Return pair(0) + pair(1)
 End Function
 
 Public Function main() As Integer

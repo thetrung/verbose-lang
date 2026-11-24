@@ -31,10 +31,10 @@ Public Structure AstNode
   Dim extraCount As Integer
 End Structure
 
-Public Static g_nodes[] As AstNode
+Public Static g_nodes() As AstNode
 Public Static g_nodeCount As Integer
 Public Static g_nodeCap As Integer
-Public Static g_kids[] As Integer
+Public Static g_kids() As Integer
 Public Static g_kidCount As Integer
 Public Static g_kidCap As Integer
 
@@ -49,7 +49,7 @@ End Sub
 
 Public Function NewNode(kind As Integer) As Integer
   Dim id As Integer = g_nodeCount
-  g_nodes[id] = AstNode With {
+  g_nodes(id) = AstNode With {
     kind = kind,
     op = 0,
     intVal = 0,
@@ -67,7 +67,7 @@ End Function
 
 Public Function PushKid(nodeId As Integer) As Integer
   Dim idx As Integer = g_kidCount
-  g_kids[idx] = nodeId
+  g_kids(idx) = nodeId
   g_kidCount = g_kidCount + 1
   Return idx
 End Function

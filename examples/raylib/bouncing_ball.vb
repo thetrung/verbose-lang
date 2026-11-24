@@ -70,13 +70,13 @@ Public Function main() As Integer
     pad.x = mouse.x - 50.0
 
     ' Allocate per-frame trail snapshot in scratch arena
-    Dim trail[] As Vector2 = ArenaAlloc(ByRef frameArena, Vector2, 1)
-    trail[0] = ball.pos
+    Dim trail() As Vector2 = ArenaAlloc(ByRef frameArena, Vector2, 1)
+    trail(0) = ball.pos
 
     BeginDrawing()
     ClearBackground(bg)
     DrawRectangleRec(pad, padColor)
-    DrawCircleV(trail[0], ball.radius, ballColor)
+    DrawCircleV(trail(0), ball.radius, ballColor)
     DrawText("VerBose-Lang + Raylib", 16, 16, 20, textColor)
     EndDrawing()
   End While

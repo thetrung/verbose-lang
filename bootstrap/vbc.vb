@@ -8,14 +8,14 @@ Declare Function fseek(fp As Pointer, offset As Long, whence As Integer) As Inte
 Declare Function ftell(fp As Pointer) As Long
 Declare Function fread(buf As Pointer, size As Long, count As Long, fp As Pointer) As Long
 
-Public Function main(argc As Integer, argv[] As Pointer) As Integer
+Public Function main(argc As Integer, argv() As Pointer) As Integer
   If argc < 3 Then
     printf("Usage: vbc <input.vb> <output.ll>\n")
     Return 1
   End If
 
-  Dim inPath As Pointer = argv[1]
-  Dim outPath As Pointer = argv[2]
+  Dim inPath As Pointer = argv(1)
+  Dim outPath As Pointer = argv(2)
 
   Dim fp As Pointer = fopen(inPath, "rb")
   If IsNull(fp) Then

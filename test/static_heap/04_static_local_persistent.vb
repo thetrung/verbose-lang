@@ -1,8 +1,8 @@
 Private Function NextVal() As Integer
   Static count As Integer = 0
-  Static hist[3] As Integer
-  hist[count] = (count + 1) * 10
-  Dim out As Integer = hist[count]
+  Static hist(3) As Integer
+  hist(count) = (count + 1) * 10
+  Dim out As Integer = hist(count)
   count = count + 1
   Return out
 End Function

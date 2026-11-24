@@ -4,7 +4,7 @@ Include "token.vb"
 
 Public Static g_src As Pointer
 Public Static g_srcLen As Integer
-Public Static g_tokens[] As Token
+Public Static g_tokens() As Token
 Public Static g_tokCount As Integer
 Public Static g_tokCap As Integer
 
@@ -35,8 +35,8 @@ Public Function SliceEqualsStr(pos As Integer, slen As Integer, lit As Pointer, 
   End If
   Dim i As Integer = 0
   While i < slen Do
-    Dim a As Integer = g_src[pos + i]
-    Dim b As Integer = lit[i]
+    Dim a As Integer = g_src(pos + i)
+    Dim b As Integer = lit(i)
     If a <> b Then
       Return False
     End If
@@ -51,8 +51,8 @@ Public Function SlicesEqual(p1 As Integer, l1 As Integer, p2 As Integer, l2 As I
   End If
   Dim i As Integer = 0
   While i < l1 Do
-    Dim a As Integer = g_src[p1 + i]
-    Dim b As Integer = g_src[p2 + i]
+    Dim a As Integer = g_src(p1 + i)
+    Dim b As Integer = g_src(p2 + i)
     If a <> b Then
       Return False
     End If
@@ -106,7 +106,7 @@ End Function
 
 Private Sub EmitTok(kind As Integer, pos As Integer, slen As Integer, ival As Integer, line As Integer)
   If g_tokCount < g_tokCap Then
-    g_tokens[g_tokCount] = Token With {
+    g_tokens(g_tokCount) = Token With {
       kind = kind,
       pos = pos,
       len = slen,
@@ -128,7 +128,7 @@ Public Function TokenizeAll(ByRef arena As Arena, src As Pointer, srcLen As Inte
   Dim line As Integer = 1
 
   While pos < srcLen Do
-    Dim c As Integer = src[pos]
+    Dim c As Integer = src(pos)
 
     ' Skip spaces, tabs, CR
     If (c = 32) Or (c = 9) Or (c = 13) Then
@@ -141,7 +141,7 @@ Public Function TokenizeAll(ByRef arena As Arena, src As Pointer, srcLen As Inte
       Else
         ' Single-quote comment until newline
         If c = 39 Then
-          While (pos < srcLen) And (src[pos] <> 10) Do
+          While (pos < srcLen) And (src(pos) <> 10) Do
             pos = pos + 1
           End While
         Else
@@ -149,8 +149,8 @@ Public Function TokenizeAll(ByRef arena As Arena, src As Pointer, srcLen As Inte
           If c = 34 Then
             pos = pos + 1
             Dim sStart As Integer = pos
-            While (pos < srcLen) And (src[pos] <> 34) Do
-              Dim sc As Integer = src[pos]
+            While (pos < srcLen) And (src(pos) <> 34) Do
+              Dim sc As Integer = src(pos)
               If (sc = 92) And ((pos + 1) < srcLen) Then
                 pos = pos + 2
               Else
@@ -166,7 +166,7 @@ Public Function TokenizeAll(ByRef arena As Arena, src As Pointer, srcLen As Inte
             ' Identifier or keyword
             If IsAlpha(c) Then
               Dim idStart As Integer = pos
-              While (pos < srcLen) And IsAlnum(src[pos]) Do
+              While (pos < srcLen) And IsAlnum(src(pos)) Do
                 pos = pos + 1
               End While
               Dim idLen As Integer = pos - idStart
@@ -177,8 +177,8 @@ Public Function TokenizeAll(ByRef arena As Arena, src As Pointer, srcLen As Inte
               If IsDigit(c) Then
                 Dim nStart As Integer = pos
                 Dim acc As Integer = 0
-                While (pos < srcLen) And IsDigit(src[pos]) Do
-                  Dim d As Integer = src[pos]
+                While (pos < srcLen) And IsDigit(src(pos)) Do
+                  Dim d As Integer = src(pos)
                   acc = acc * 10 + (d - 48)
                   pos = pos + 1
                 End While
@@ -187,7 +187,7 @@ Public Function TokenizeAll(ByRef arena As Arena, src As Pointer, srcLen As Inte
                 ' Operators & punctuation
                 Dim nextC As Integer = 0
                 If (pos + 1) < srcLen Then
-                  nextC = src[pos + 1]
+                  nextC = src(pos + 1)
                 End If
                 If (c = 60) And (nextC = 62) Then
                   EmitTok(TokenKind.TkNeq, pos, 2, 0, line)

@@ -12,7 +12,7 @@ open Ast
 (* Core structural tokens *)
 %token INCLUDE PUBLIC PRIVATE DECLARE WITH STATIC SIZEOF HEAP_ALLOC HEAP_REALLOC ARENA_TYPE ARENA_ALLOC STRUCTURE FUNCTION SUB BYVAL BYREF END AS DIM RETURN 
 %token NOTHING POINTER_TYPE ENUM INT_TYPE BYTE_TYPE SHORT_TYPE LONG_TYPE SINGLE_TYPE DOUBLE_TYPE BOOLEAN_TYPE 
-%token EOF LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET COMMA NEWLINE DOT ELLIPSIS
+%token EOF LPAREN RPAREN LBRACE RBRACE COMMA NEWLINE DOT ELLIPSIS
 
 (* Operators and Control Flow *)
 %token IF THEN ELSE SELECT CASE WHILE DO FOR TO
@@ -28,7 +28,6 @@ open Ast
 %left PLUS MINUS
 %left TIMES DIVIDE MOD
 %nonassoc UMINUS
-%left DOT LBRACKET
 
 (* Program Entry Point *)
 %start <Ast.program> program
@@ -55,12 +54,12 @@ param:
   | BYVAL name=ID AS t=data_type                                 { (Ast.ByVal, name, t) }
   | BYREF name=ID AS t=data_type                                 { (Ast.ByRef, name, t) }
   | name=ID       AS t=data_type                                 { (Ast.ByVal, name, t) } (*Default: ByVal to Copy *)
-  | BYVAL name=ID LBRACKET RBRACKET AS t=data_type               { (Ast.ByVal, name, Ast.Array(t, -1)) }
-  | BYREF name=ID LBRACKET RBRACKET AS t=data_type               { (Ast.ByRef, name, Ast.Array(t, -1)) }
-  | name=ID       LBRACKET RBRACKET AS t=data_type               { (Ast.ByVal, name, Ast.Array(t, -1)) }
-  | BYVAL name=ID LBRACKET size=INT_LIT RBRACKET AS t=data_type  { (Ast.ByVal, name, Ast.Array(t, size)) }
-  | BYREF name=ID LBRACKET size=INT_LIT RBRACKET AS t=data_type  { (Ast.ByRef, name, Ast.Array(t, size)) }
-  | name=ID       LBRACKET size=INT_LIT RBRACKET AS t=data_type  { (Ast.ByVal, name, Ast.Array(t, size)) }
+  | BYVAL name=ID LPAREN RPAREN AS t=data_type                   { (Ast.ByVal, name, Ast.Array(t, -1)) }
+  | BYREF name=ID LPAREN RPAREN AS t=data_type                   { (Ast.ByRef, name, Ast.Array(t, -1)) }
+  | name=ID       LPAREN RPAREN AS t=data_type                   { (Ast.ByVal, name, Ast.Array(t, -1)) }
+  | BYVAL name=ID LPAREN size=INT_LIT RPAREN AS t=data_type      { (Ast.ByVal, name, Ast.Array(t, size)) }
+  | BYREF name=ID LPAREN size=INT_LIT RPAREN AS t=data_type      { (Ast.ByRef, name, Ast.Array(t, size)) }
+  | name=ID       LPAREN size=INT_LIT RPAREN AS t=data_type      { (Ast.ByVal, name, Ast.Array(t, size)) }
 ;
 
 extern_params:
@@ -91,13 +90,13 @@ definition:
     { Ast.GlobalVar(vis, name, t, Some(e)) }
   | vis=visibility STATIC name=ID AS struct_name=ID WITH LBRACE optional_newlines inits=field_init_list RBRACE mandatory_newlines
     { Ast.GlobalVar(vis, name, Ast.Custom(struct_name), Some(Ast.StructInit(struct_name, inits))) }
-  | vis=visibility STATIC name=ID LBRACKET size=INT_LIT RBRACKET AS t=data_type mandatory_newlines
+  | vis=visibility STATIC name=ID LPAREN size=INT_LIT RPAREN AS t=data_type mandatory_newlines
     { Ast.GlobalVar(vis, name, Ast.Array(t, size), None) }
-  | vis=visibility STATIC name=ID LBRACKET size=INT_LIT RBRACKET AS t=data_type EQUALS e=expr mandatory_newlines
+  | vis=visibility STATIC name=ID LPAREN size=INT_LIT RPAREN AS t=data_type EQUALS e=expr mandatory_newlines
     { Ast.GlobalVar(vis, name, Ast.Array(t, size), Some(e)) }
-  | vis=visibility STATIC name=ID LBRACKET RBRACKET AS t=data_type mandatory_newlines
+  | vis=visibility STATIC name=ID LPAREN RPAREN AS t=data_type mandatory_newlines
     { Ast.GlobalVar(vis, name, Ast.Array(t, -1), None) }
-  | vis=visibility STATIC name=ID LBRACKET RBRACKET AS t=data_type EQUALS e=expr mandatory_newlines
+  | vis=visibility STATIC name=ID LPAREN RPAREN AS t=data_type EQUALS e=expr mandatory_newlines
     {
       match e with
       | Ast.ArrayLit elems -> Ast.GlobalVar(vis, name, Ast.Array(t, List.length elems), Some(e))
@@ -123,7 +122,7 @@ enum_member:
 
 struct_field:
   | DIM name=ID AS t=data_type mandatory_newlines                               { (name, t) }
-  | DIM name=ID LBRACKET size=INT_LIT RBRACKET AS t=data_type mandatory_newlines { (name, Ast.Array(t, size)) }
+  | DIM name=ID LPAREN size=INT_LIT RPAREN AS t=data_type mandatory_newlines    { (name, Ast.Array(t, size)) }
 ;
 
 
@@ -158,11 +157,13 @@ stmt:
 code_stmt:
   | DIM name=ID AS t=data_type               { Ast.Dim(name, t, None)}
   | DIM name=ID AS t=data_type EQUALS e=expr { Ast.Dim(name, t, Some(e)) }
-  | DIM name=ID LBRACKET size=INT_LIT RBRACKET AS t=data_type
+  | DIM name=ID LPAREN size=INT_LIT RPAREN AS t=data_type
     { Ast.Dim(name, Ast.Array(t, size), None) }
-  | DIM name=ID LBRACKET size=INT_LIT RBRACKET AS t=data_type EQUALS e=expr
+  | DIM name=ID LPAREN size=INT_LIT RPAREN AS t=data_type EQUALS e=expr
     { Ast.Dim(name, Ast.Array(t, size), Some(e)) }
-  | DIM name=ID LBRACKET RBRACKET AS t=data_type EQUALS e=expr
+  | DIM name=ID LPAREN RPAREN AS t=data_type
+    { Ast.Dim(name, Ast.Array(t, -1), None) }
+  | DIM name=ID LPAREN RPAREN AS t=data_type EQUALS e=expr
     {
       match e with
       | Ast.ArrayLit elems -> Ast.Dim(name, Ast.Array(t, List.length elems), Some(e))
@@ -180,22 +181,28 @@ code_stmt:
     { Ast.StaticDim(name, t, Some(e)) }
   | STATIC name=ID AS struct_name=ID WITH LBRACE optional_newlines inits=field_init_list RBRACE
     { Ast.StaticDim(name, Ast.Custom(struct_name), Some(Ast.StructInit(struct_name, inits))) }
-  | STATIC name=ID LBRACKET size=INT_LIT RBRACKET AS t=data_type
+  | STATIC name=ID LPAREN size=INT_LIT RPAREN AS t=data_type
     { Ast.StaticDim(name, Ast.Array(t, size), None) }
-  | STATIC name=ID LBRACKET size=INT_LIT RBRACKET AS t=data_type EQUALS e=expr
+  | STATIC name=ID LPAREN size=INT_LIT RPAREN AS t=data_type EQUALS e=expr
     { Ast.StaticDim(name, Ast.Array(t, size), Some(e)) }
-  | STATIC name=ID LBRACKET RBRACKET AS t=data_type
+  | STATIC name=ID LPAREN RPAREN AS t=data_type
     { Ast.StaticDim(name, Ast.Array(t, -1), None) }
-  | STATIC name=ID LBRACKET RBRACKET AS t=data_type EQUALS e=expr
+  | STATIC name=ID LPAREN RPAREN AS t=data_type EQUALS e=expr
     {
       match e with
       | Ast.ArrayLit elems -> Ast.StaticDim(name, Ast.Array(t, List.length elems), Some(e))
       | _ -> Ast.StaticDim(name, Ast.Array(t, -1), Some(e))
     }
 
-  | obj=expr; DOT; field=ID; EQUALS; e=expr                  { Ast.FieldAssign(obj, field, e) }
-  | base=expr; LBRACKET; idx=expr; RBRACKET; EQUALS; e=expr  { Ast.IndexAssign(base, idx, e) }
-  | name=ID EQUALS e=expr                                    { Ast.Assign(name, e) }
+  | lhs=postfix_expr EQUALS e=expr
+    {
+      match lhs with
+      | Ast.Id name -> Ast.Assign(name, e)
+      | Ast.FieldAccess(obj, field) -> Ast.FieldAssign(obj, field, e)
+      | Ast.IndexAccess(base, idx) -> Ast.IndexAssign(base, idx, e)
+      | Ast.Call(name, [(Ast.ByVal, idx)]) -> Ast.IndexAssign(Ast.Id(name), idx, e)
+      | _ -> Ast.AssignExpr(lhs, e)
+    }
   | e=expr                                    { Ast.ExprStatement(e) }
   | RETURN e=option(expr)                     { Ast.Return(e) }
   
@@ -249,8 +256,15 @@ field_init_list:
   | fi=field_init optional_newlines COMMA optional_newlines rest=field_init_list { fi :: rest }
 ;
 
+postfix_expr:
+  | id=ID                                                         { Ast.Id(id) }
+  | name=ID LPAREN args=separated_list(COMMA, call_arg) RPAREN    { Ast.Call(name, args) }
+  | e1=postfix_expr DOT field=ID                                  { Ast.FieldAccess(e1, field) }
+  | e1=postfix_expr DOT field=ID LPAREN idx=expr RPAREN           { Ast.IndexAccess(Ast.FieldAccess(e1, field), idx) }
+;
+
 expr:
-  | id=ID                                                   { Ast.Id(id) }
+  | p=postfix_expr                                          { p }
   | i=INT_LIT                                               { Ast.IntLit(i) }
   | f=FLOAT_LIT                                             { Ast.FloatLit(f) }
   | b=BOOLEAN_LIT                                           { Ast.BooleanLit(b) }
@@ -258,7 +272,6 @@ expr:
   | LPAREN e=expr RPAREN                                    { e }
   | NOT e=expr                                              { Ast.UnaryOp("Not", e) }
   | MINUS e=expr %prec UMINUS                               { Ast.UnaryOp("Neg", e) }
-  | name=ID LPAREN args=separated_list(COMMA, call_arg) RPAREN  { Ast.Call(name, args) }
   | name=ID WITH LBRACE optional_newlines inits=field_init_list RBRACE { Ast.StructInit(name, inits) }
   | SIZEOF LPAREN t=data_type RPAREN { Ast.SizeOf(t) }
   | HEAP_ALLOC LPAREN t=data_type RPAREN { Ast.HeapAlloc(t, Ast.IntLit(1)) }
@@ -266,11 +279,8 @@ expr:
   | HEAP_REALLOC LPAREN p=expr COMMA t=data_type COMMA count=expr RPAREN { Ast.HeapRealloc(p, t, count) }
   | ARENA_ALLOC LPAREN a=call_arg COMMA t=data_type RPAREN { Ast.ArenaAlloc(fst a, snd a, t, Ast.IntLit(1)) }
   | ARENA_ALLOC LPAREN a=call_arg COMMA t=data_type COMMA count=expr RPAREN { Ast.ArenaAlloc(fst a, snd a, t, count) }
-  | LBRACKET optional_newlines elems=separated_list(COMMA, expr) optional_newlines RBRACKET { Ast.ArrayLit(elems) }
+  | LBRACE optional_newlines elems=separated_list(COMMA, expr) optional_newlines RBRACE { Ast.ArrayLit(elems) }
   
-  /* FieldAccess & IndexAccess */
-  | e1=expr DOT field=ID              { Ast.FieldAccess(e1, field) }
-  | e1=expr LBRACKET e2=expr RBRACKET { Ast.IndexAccess(e1, e2) }
   | e1=expr PLUS e2=expr           { Ast.BinOp(e1, Ast.Add, e2) }
   | e1=expr MINUS e2=expr          { Ast.BinOp(e1, Ast.Sub, e2) }
   | e1=expr TIMES e2=expr          { Ast.BinOp(e1, Ast.Mul, e2) }
