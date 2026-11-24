@@ -839,12 +839,14 @@ Private Function PParseParam() As Integer
 End Function
 
 Private Function PParseDef() As Integer
-  Dim isPublic As Integer = 0
+  Dim defModId As Integer = g_tokens(p_pos).modId
+  Dim vis As Integer = 0
   If PPeekKind() = TokenKind.TkPublic Then
-    isPublic = 1
+    vis = 1
     PAdvance()
   Else
     If PPeekKind() = TokenKind.TkPrivate Then
+      vis = 2
       PAdvance()
     End If
   End If
@@ -891,7 +893,8 @@ Private Function PParseDef() As Integer
     PExpect(TokenKind.TkEnd)
     PExpect(TokenKind.TkStructure)
     Dim sd As Integer = NewNode(NodeKind.NdStructDef)
-    g_nodes(sd).op = isPublic
+    g_nodes(sd).op = vis
+    g_nodes(sd).modId = defModId
     g_nodes(sd).intVal = sPos
     g_nodes(sd).lenVal = sLen
     g_nodes(sd).firstChild = g_kidCount
@@ -936,7 +939,8 @@ Private Function PParseDef() As Integer
     PExpect(TokenKind.TkEnd)
     PExpect(TokenKind.TkEnum)
     Dim ed As Integer = NewNode(NodeKind.NdEnumDef)
-    g_nodes(ed).op = isPublic
+    g_nodes(ed).op = vis
+    g_nodes(ed).modId = defModId
     g_nodes(ed).intVal = ePos
     g_nodes(ed).lenVal = eLen
     g_nodes(ed).firstChild = g_kidCount
@@ -1015,7 +1019,8 @@ Private Function PParseDef() As Integer
       End If
     End If
     Dim gv As Integer = NewNode(NodeKind.NdGlobalVar)
-    g_nodes(gv).op = isPublic
+    g_nodes(gv).op = vis
+    g_nodes(gv).modId = defModId
     g_nodes(gv).intVal = gPos
     g_nodes(gv).lenVal = gLen
     g_nodes(gv).left = initNode
@@ -1134,7 +1139,8 @@ Private Function PParseDef() As Integer
   End If
 
   Dim fnId As Integer = NewNode(NodeKind.NdFuncDef)
-  g_nodes(fnId).op = isPublic
+  g_nodes(fnId).op = vis
+  g_nodes(fnId).modId = defModId
   g_nodes(fnId).intVal = namePos
   g_nodes(fnId).lenVal = nameLen
   g_nodes(fnId).tyKind = retKind

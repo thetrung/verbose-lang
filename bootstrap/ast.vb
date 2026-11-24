@@ -87,6 +87,7 @@ Public Structure AstNode
   Dim tyArrLen As Integer   ' 0, -1, or N
   Dim tyNamePos As Integer  ' custom type name offset in g_srcPool
   Dim tyNameLen As Integer
+  Dim modId As Integer      ' source module id for Private isolation
 End Structure
 
 Public Static g_nodes() As AstNode

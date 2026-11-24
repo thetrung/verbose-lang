@@ -22,6 +22,7 @@ End Structure
 
 Private Static lx_loaded(64) As LoadedFile
 Private Static lx_loadedCount As Integer = 0
+Private Static lx_curModId As Integer = 0
 
 Private Function LxIsAlpha(c As Integer) As Boolean
   If (c >= 65) And (c <= 90) Then
@@ -245,7 +246,8 @@ Private Sub LxEmitTok(kind As Integer, pos As Integer, slen As Integer, ival As 
       pos = pos,
       len = slen,
       intVal = ival,
-      line = line
+      line = line,
+      modId = lx_curModId
     }
     g_tokCount = g_tokCount + 1
   End If
@@ -276,6 +278,82 @@ Private Function LxCopyCStringToPool(s As Pointer) As Integer
       i = i + 1
     End If
   End While
+  g_srcPool(g_srcPoolLen) = 0
+  g_srcPoolLen = g_srcPoolLen + 1
+  Return startPos
+End Function
+
+' Canonicalize path (collapse '.' and '..') into g_srcPool
+Private Function LxNormalizePath(rawPos As Integer, rawLen As Integer, ByRef outLen As Integer) As Integer
+  Dim segPos(64) As Integer
+  Dim segLen(64) As Integer
+  Dim segCnt As Integer = 0
+  Dim isAbs As Boolean = False
+  If (rawLen > 0) And (g_srcPool(rawPos) = 47) Then
+    isAbs = True
+  End If
+  Dim i As Integer = 0
+  While i < rawLen Do
+    While (i < rawLen) And (g_srcPool(rawPos + i) = 47) Do
+      i = i + 1
+    End While
+    Dim sStart As Integer = i
+    While (i < rawLen) And (g_srcPool(rawPos + i) <> 47) Do
+      i = i + 1
+    End While
+    Dim sLen As Integer = i - sStart
+    If sLen > 0 Then
+      Dim isDot As Boolean = (sLen = 1) And (g_srcPool(rawPos + sStart) = 46)
+      Dim isDotDot As Boolean = (sLen = 2) And (g_srcPool(rawPos + sStart) = 46) And (g_srcPool(rawPos + sStart + 1) = 46)
+      If Not isDot Then
+        If isDotDot Then
+          Dim canPop As Boolean = False
+          If segCnt > 0 Then
+            Dim topLen As Integer = segLen(segCnt - 1)
+            Dim topPos As Integer = segPos(segCnt - 1)
+            Dim topIsDD As Boolean = (topLen = 2) And (g_srcPool(topPos) = 46) And (g_srcPool(topPos + 1) = 46)
+            If Not topIsDD Then
+              canPop = True
+            End If
+          End If
+          If canPop Then
+            segCnt = segCnt - 1
+          Else
+            If Not isAbs Then
+              segPos(segCnt) = rawPos + sStart
+              segLen(segCnt) = sLen
+              segCnt = segCnt + 1
+            End If
+          End If
+        Else
+          segPos(segCnt) = rawPos + sStart
+          segLen(segCnt) = sLen
+          segCnt = segCnt + 1
+        End If
+      End If
+    End If
+  End While
+
+  Dim startPos As Integer = g_srcPoolLen
+  If isAbs Then
+    g_srcPool(g_srcPoolLen) = 47
+    g_srcPoolLen = g_srcPoolLen + 1
+  End If
+  Dim k As Integer = 0
+  While k < segCnt Do
+    If k > 0 Then
+      g_srcPool(g_srcPoolLen) = 47
+      g_srcPoolLen = g_srcPoolLen + 1
+    End If
+    Dim j As Integer = 0
+    While j < segLen(k) Do
+      g_srcPool(g_srcPoolLen) = g_srcPool(segPos(k) + j)
+      g_srcPoolLen = g_srcPoolLen + 1
+      j = j + 1
+    End While
+    k = k + 1
+  End While
+  outLen = g_srcPoolLen - startPos
   g_srcPool(g_srcPoolLen) = 0
   g_srcPoolLen = g_srcPoolLen + 1
   Return startPos
@@ -313,16 +391,18 @@ Private Function LxResolveRelPath(curPos As Integer, curLen As Integer, relPos A
     g_srcPoolLen = g_srcPoolLen + 1
     k = k + 1
   End While
-  outLen = g_srcPoolLen - startPos
+  Dim rawLen As Integer = g_srcPoolLen - startPos
   g_srcPool(g_srcPoolLen) = 0
   g_srcPoolLen = g_srcPoolLen + 1
-  Return startPos
+  Return LxNormalizePath(startPos, rawLen, ByRef outLen)
 End Function
 
 Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen As Integer) As Integer
   If LxIsLoaded(pathPos, pathLen) Then
     Return 0
   End If
+  Dim savedModId As Integer = lx_curModId
+  lx_curModId = lx_loadedCount
   lx_loaded(lx_loadedCount) = LoadedFile With { pathPos = pathPos, pathLen = pathLen }
   lx_loadedCount = lx_loadedCount + 1
 
@@ -540,6 +620,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
   End While
 
   LxEmitTok(TokenKind.TkNewline, fileEnd, 1, 0, line)
+  lx_curModId = savedModId
   Return 0
 End Function
 
@@ -551,9 +632,12 @@ Public Function LexerLoadEntry(ByRef arena As Arena, entryPath As Pointer) As In
   g_tokCount = 0
   g_tokens = ArenaAlloc(ByRef arena, Token, g_tokCap)
   lx_loadedCount = 0
+  lx_curModId = 0
 
-  Dim pPos As Integer = LxCopyCStringToPool(entryPath)
-  Dim pLen As Integer = g_srcPoolLen - pPos - 1
+  Dim rawPos As Integer = LxCopyCStringToPool(entryPath)
+  Dim rawLen As Integer = g_srcPoolLen - rawPos - 1
+  Dim pLen As Integer = 0
+  Dim pPos As Integer = LxNormalizePath(rawPos, rawLen, ByRef pLen)
   Dim rc As Integer = LexerLoadFile(ByRef arena, pPos, pLen)
   If rc < 0 Then
     Return -1

@@ -89,4 +89,5 @@ Public Structure Token
   Dim len As Integer
   Dim intVal As Integer
   Dim line As Integer
+  Dim modId As Integer
 End Structure

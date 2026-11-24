@@ -37,6 +37,8 @@ Structure CgGlobalInfo
   Dim namePos As Integer
   Dim nameLen As Integer
   Dim isPublic As Integer
+  Dim isPrivate As Integer
+  Dim modId As Integer
   Dim ty As TypeInfo
   Dim initNode As Integer
 End Structure
@@ -54,6 +56,8 @@ Structure CgFuncInfo
   Dim isExtern As Integer
   Dim isVariadic As Integer
   Dim isPublic As Integer
+  Dim isPrivate As Integer
+  Dim modId As Integer
   Dim retTy As TypeInfo
   Dim paramStart As Integer
   Dim paramCount As Integer
@@ -83,6 +87,7 @@ Private Static cg_out As Pointer
 Private Static cg_reg As Integer = 1
 Private Static cg_lbl As Integer = 1
 Private Static cg_usesArena As Integer = 0
+Private Static cg_curModId As Integer = 0
 Private Static cg_curRetTy As TypeInfo
 
 Private Static cg_enums() As CgEnumInfo
@@ -131,6 +136,13 @@ Private Sub CgEmitSlice(pos As Integer, slen As Integer)
     fputc(ch, cg_out)
     i = i + 1
   End While
+End Sub
+
+Private Sub CgEmitSymName(pos As Integer, slen As Integer, modId As Integer, isPrivate As Integer)
+  If isPrivate = 1 Then
+    fprintf(cg_out, "__mod%d_", modId)
+  End If
+  CgEmitSlice(pos, slen)
 End Sub
 
 Private Function CgFindEnum(pos As Integer, slen As Integer) As Integer
@@ -186,7 +198,14 @@ End Function
 Private Function CgFindGlobal(pos As Integer, slen As Integer) As Integer
   Dim i As Integer = 0
   While i < cg_globalCount Do
-    If SlicesEqual(cg_globals(i).namePos, cg_globals(i).nameLen, pos, slen) Then
+    If (cg_globals(i).isPrivate = 1) And (cg_globals(i).modId = cg_curModId) And SlicesEqual(cg_globals(i).namePos, cg_globals(i).nameLen, pos, slen) Then
+      Return i
+    End If
+    i = i + 1
+  End While
+  i = 0
+  While i < cg_globalCount Do
+    If (cg_globals(i).isPrivate = 0) And SlicesEqual(cg_globals(i).namePos, cg_globals(i).nameLen, pos, slen) Then
       Return i
     End If
     i = i + 1
@@ -197,7 +216,14 @@ End Function
 Private Function CgFindFunc(pos As Integer, slen As Integer) As Integer
   Dim i As Integer = 0
   While i < cg_funcCount Do
-    If SlicesEqual(cg_funcs(i).namePos, cg_funcs(i).nameLen, pos, slen) Then
+    If (cg_funcs(i).isPrivate = 1) And (cg_funcs(i).modId = cg_curModId) And SlicesEqual(cg_funcs(i).namePos, cg_funcs(i).nameLen, pos, slen) Then
+      Return i
+    End If
+    i = i + 1
+  End While
+  i = 0
+  While i < cg_funcCount Do
+    If (cg_funcs(i).isPrivate = 0) And SlicesEqual(cg_funcs(i).namePos, cg_funcs(i).nameLen, pos, slen) Then
       Return i
     End If
     i = i + 1
@@ -840,7 +866,7 @@ Private Function CgEmitLValuePtr(id As Integer, ByRef outTy As TypeInfo, ByRef o
       End If
       Dim r As Integer = CgNextReg()
       fprintf(cg_out, "  %%r%d = getelementptr i8, ptr @", r)
-      CgEmitSlice(pos, slen)
+      CgEmitSymName(pos, slen, cg_globals(gIdx).modId, cg_globals(gIdx).isPrivate)
       fprintf(cg_out, ", i64 0\n")
       Return r
     End If
@@ -1664,7 +1690,11 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
   End If
 
   fprintf(cg_out, " @")
-  CgEmitSlice(nPos, nLen)
+  If fnIdx >= 0 Then
+    CgEmitSymName(nPos, nLen, cg_funcs(fnIdx).modId, cg_funcs(fnIdx).isPrivate)
+  Else
+    CgEmitSlice(nPos, nLen)
+  End If
   fprintf(cg_out, "(")
   Dim j As Integer = 0
   While j < aCount Do
@@ -2081,6 +2111,7 @@ Private Sub CgEmitFunc(fnNodeId As Integer, fnIdx As Integer)
   cg_localCount = 0
   Dim fi As CgFuncInfo = cg_funcs(fnIdx)
   cg_curRetTy = fi.retTy
+  cg_curModId = fi.modId
 
   If fi.isPublic = 1 Then
     fprintf(cg_out, "define ")
@@ -2089,7 +2120,7 @@ Private Sub CgEmitFunc(fnNodeId As Integer, fnIdx As Integer)
   End If
   CgEmitLlvmType(fi.retTy)
   fprintf(cg_out, " @")
-  CgEmitSlice(fi.namePos, fi.nameLen)
+  CgEmitSymName(fi.namePos, fi.nameLen, fi.modId, fi.isPrivate)
   fprintf(cg_out, "(")
   Dim i As Integer = 0
   While i < fi.paramCount Do
@@ -2395,10 +2426,20 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
     Dim d As Integer = g_kids(defStart + i)
     Dim dk As Integer = g_nodes(d).kind
     If dk = NodeKind.NdGlobalVar Then
+      Dim gvPub As Integer = 0
+      Dim gvPriv As Integer = 0
+      If g_nodes(d).op = 1 Then
+        gvPub = 1
+      End If
+      If g_nodes(d).op = 2 Then
+        gvPriv = 1
+      End If
       cg_globals(cg_globalCount) = CgGlobalInfo With {
         namePos = g_nodes(d).intVal,
         nameLen = g_nodes(d).lenVal,
-        isPublic = g_nodes(d).op,
+        isPublic = gvPub,
+        isPrivate = gvPriv,
+        modId = g_nodes(d).modId,
         ty = CgResolveType(g_nodes(d).tyKind, g_nodes(d).tyArrLen, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen),
         initNode = g_nodes(d).left
       }
@@ -2421,21 +2462,33 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
       End While
       Dim isExt As Integer = 0
       Dim isVar As Integer = 0
-      Dim isPub As Integer = g_nodes(d).op
+      Dim isPub As Integer = 0
+      Dim isPriv As Integer = 0
       If dk = NodeKind.NdExternDecl Then
         isExt = 1
         isVar = g_nodes(d).op
         isPub = 1
+      Else
+        If g_nodes(d).op = 1 Then
+          isPub = 1
+        End If
+        If g_nodes(d).op = 2 Then
+          isPriv = 1
+        End If
       End If
       ' Avoid duplicate extern declarations
+      cg_curModId = g_nodes(d).modId
       Dim existing As Integer = CgFindFunc(g_nodes(d).intVal, g_nodes(d).lenVal)
       If (isExt = 0) Or (existing < 0) Then
+        g_nodes(d).third = cg_funcCount
         cg_funcs(cg_funcCount) = CgFuncInfo With {
           namePos = g_nodes(d).intVal,
           nameLen = g_nodes(d).lenVal,
           isExtern = isExt,
           isVariadic = isVar,
           isPublic = isPub,
+          isPrivate = isPriv,
+          modId = g_nodes(d).modId,
           retTy = CgResolveType(g_nodes(d).tyKind, 0, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen),
           paramStart = ps,
           paramCount = pc
@@ -2484,7 +2537,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   i = 0
   While i < cg_globalCount Do
     fprintf(cg_out, "@")
-    CgEmitSlice(cg_globals(i).namePos, cg_globals(i).nameLen)
+    CgEmitSymName(cg_globals(i).namePos, cg_globals(i).nameLen, cg_globals(i).modId, cg_globals(i).isPrivate)
     If cg_globals(i).isPublic = 1 Then
       fprintf(cg_out, " = global ")
     Else
@@ -2579,8 +2632,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   While i < defCount Do
     Dim d As Integer = g_kids(defStart + i)
     If g_nodes(d).kind = NodeKind.NdFuncDef Then
-      Dim fi As Integer = CgFindFunc(g_nodes(d).intVal, g_nodes(d).lenVal)
-      CgEmitFunc(d, fi)
+      CgEmitFunc(d, g_nodes(d).third)
     End If
     i = i + 1
   End While
