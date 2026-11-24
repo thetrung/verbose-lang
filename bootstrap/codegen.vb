@@ -4,6 +4,8 @@ Include "parser.vb"
 
 Declare Function fprintf(fp As Pointer, fmt As Pointer, ...) As Integer
 Declare Function fputc(c As Integer, fp As Pointer) As Integer
+Declare Function strtod(s As Pointer, endp As Pointer) As Double
+Declare Function memcpy(ByRef dst As Long, ByRef src As Double, n As Long) As Pointer
 
 Structure CgEnumInfo
   Dim namePos As Integer
@@ -259,9 +261,9 @@ Private Function CgBaseAlign(kind As Integer, typeIdx As Integer) As Integer
       Return 1
     Case TypeKind.TyShort
       Return 2
-    Case TypeKind.TyInt, TypeKind.TyEnum
+    Case TypeKind.TyInt, TypeKind.TyEnum, TypeKind.TySingle
       Return 4
-    Case TypeKind.TyLong, TypeKind.TyPointer, TypeKind.TyArena
+    Case TypeKind.TyLong, TypeKind.TyPointer, TypeKind.TyArena, TypeKind.TyDouble
       Return 8
     Case TypeKind.TyStruct
       If typeIdx < 0 Then
@@ -333,9 +335,9 @@ Private Function CgTypeSize(ty As TypeInfo) As Integer
       elemSz = 1
     Case TypeKind.TyShort
       elemSz = 2
-    Case TypeKind.TyInt, TypeKind.TyEnum
+    Case TypeKind.TyInt, TypeKind.TyEnum, TypeKind.TySingle
       elemSz = 4
-    Case TypeKind.TyLong, TypeKind.TyPointer
+    Case TypeKind.TyLong, TypeKind.TyPointer, TypeKind.TyDouble
       elemSz = 8
     Case TypeKind.TyArena
       elemSz = 24
@@ -362,6 +364,10 @@ Private Sub CgEmitBaseLlvmType(kind As Integer, typeIdx As Integer, nPos As Inte
       fprintf(cg_out, "i16")
     Case TypeKind.TyLong
       fprintf(cg_out, "i64")
+    Case TypeKind.TySingle
+      fprintf(cg_out, "float")
+    Case TypeKind.TyDouble
+      fprintf(cg_out, "double")
     Case TypeKind.TyBoolean
       fprintf(cg_out, "i1")
     Case TypeKind.TyPointer
@@ -415,6 +421,8 @@ Private Sub CgEmitZeroVal(ty As TypeInfo)
   Select Case ty.kind
     Case TypeKind.TyInt, TypeKind.TyByte, TypeKind.TyShort, TypeKind.TyLong, TypeKind.TyEnum
       fprintf(cg_out, "0")
+    Case TypeKind.TySingle, TypeKind.TyDouble
+      fprintf(cg_out, "0.0")
     Case TypeKind.TyBoolean
       fprintf(cg_out, "false")
     Case TypeKind.TyPointer
@@ -526,22 +534,66 @@ Private Sub CgEmitStringGlobals()
   End While
 End Sub
 
+Private Sub CgEmitSingleHexConst(pos As Integer, slen As Integer, isNeg As Integer)
+  Dim buf(64) As Byte
+  Dim bi As Integer = 0
+  If isNeg = 1 Then
+    buf(0) = 45
+    bi = 1
+  End If
+  Dim i As Integer = 0
+  While (i < slen) And (bi < 62) Do
+    buf(bi) = g_srcPool(pos + i)
+    bi = bi + 1
+    i = i + 1
+  End While
+  buf(bi) = 0
+  Dim nullP As Pointer
+  Dim d As Double = strtod(buf, nullP)
+  Dim f As Single = d
+  Dim d2 As Double = f
+  Dim bits As Long = 0
+  memcpy(ByRef bits, ByRef d2, 8)
+  fprintf(cg_out, "0x%016llX", bits)
+End Sub
+
 Private Sub CgEmitConstInit(ty As TypeInfo, exprId As Integer)
   If exprId < 0 Then
     CgEmitZeroVal(ty)
     Return
   End If
   Dim k As Integer = g_nodes(exprId).kind
+  If k = NodeKind.NdFloatLit Then
+    If ty.kind = TypeKind.TySingle Then
+      CgEmitSingleHexConst(g_nodes(exprId).intVal, g_nodes(exprId).lenVal, 0)
+    Else
+      CgEmitSlice(g_nodes(exprId).intVal, g_nodes(exprId).lenVal)
+    End If
+    Return
+  End If
   If k = NodeKind.NdIntLit Then
     If (ty.kind = TypeKind.TyPointer) Or (ty.arrLen < 0) Then
       fprintf(cg_out, "null")
     Else
-      fprintf(cg_out, "%d", g_nodes(exprId).intVal)
+      If (ty.kind = TypeKind.TySingle) Or (ty.kind = TypeKind.TyDouble) Then
+        fprintf(cg_out, "%d.0", g_nodes(exprId).intVal)
+      Else
+        fprintf(cg_out, "%d", g_nodes(exprId).intVal)
+      End If
     End If
     Return
   End If
   If (k = NodeKind.NdNeg) And (g_nodes(exprId).left >= 0) Then
     Dim inner As Integer = g_nodes(exprId).left
+    If g_nodes(inner).kind = NodeKind.NdFloatLit Then
+      If ty.kind = TypeKind.TySingle Then
+        CgEmitSingleHexConst(g_nodes(inner).intVal, g_nodes(inner).lenVal, 1)
+      Else
+        fprintf(cg_out, "-")
+        CgEmitSlice(g_nodes(inner).intVal, g_nodes(inner).lenVal)
+      End If
+      Return
+    End If
     fprintf(cg_out, "%d", -g_nodes(inner).intVal)
     Return
   End If
@@ -639,6 +691,10 @@ Private Function CgIntBits(kind As Integer) As Integer
   End Select
 End Function
 
+Private Function CgIsFloat(kind As Integer) As Boolean
+  Return (kind = TypeKind.TySingle) Or (kind = TypeKind.TyDouble)
+End Function
+
 Private Function CgCoerceScalar(valReg As Integer, fromTy As TypeInfo, toTy As TypeInfo) As Integer
   If (toTy.kind = TypeKind.TyPointer) Or (toTy.arrLen < 0) Then
     If (fromTy.kind = TypeKind.TyPointer) Or (fromTy.arrLen <> 0) Or (fromTy.kind = TypeKind.TyStruct) Or (fromTy.kind = TypeKind.TyArena) Then
@@ -653,8 +709,34 @@ Private Function CgCoerceScalar(valReg As Integer, fromTy As TypeInfo, toTy As T
     Return valReg
   End If
 
+  If (fromTy.kind = TypeKind.TyDouble) And (toTy.kind = TypeKind.TySingle) Then
+    Dim r As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = fptrunc double %%r%d to float\n", r, valReg)
+    Return r
+  End If
+  If (fromTy.kind = TypeKind.TySingle) And (toTy.kind = TypeKind.TyDouble) Then
+    Dim r As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = fpext float %%r%d to double\n", r, valReg)
+    Return r
+  End If
+
   Dim fromBits As Integer = CgIntBits(fromTy.kind)
   Dim toBits As Integer = CgIntBits(toTy.kind)
+  If (fromBits > 0) And CgIsFloat(toTy.kind) Then
+    Dim r As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = sitofp i%d %%r%d to ", r, fromBits, valReg)
+    CgEmitLlvmType(toTy)
+    fprintf(cg_out, "\n")
+    Return r
+  End If
+  If CgIsFloat(fromTy.kind) And (toBits > 0) Then
+    Dim r As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = fptosi ", r)
+    CgEmitLlvmType(fromTy)
+    fprintf(cg_out, " %%r%d to i%d\n", valReg, toBits)
+    Return r
+  End If
+
   If (fromBits > 0) And (toBits > 0) And (fromBits <> toBits) Then
     Dim r As Integer = CgNextReg()
     If toBits > fromBits Then
@@ -840,6 +922,15 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     Return r
   End If
 
+  If k = NodeKind.NdFloatLit Then
+    Dim r As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = fadd double 0.0, ", r)
+    CgEmitSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
+    fprintf(cg_out, "\n")
+    outTy = TypeInfo With { kind = TypeKind.TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    Return r
+  End If
+
   If k = NodeKind.NdBoolLit Then
     Dim r As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = add i1 0, %d\n", r, g_nodes(id).intVal)
@@ -930,9 +1021,15 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim t As TypeInfo
     Dim v As Integer = CgEmitExpr(g_nodes(id).left, ByRef t)
     Dim r As Integer = CgNextReg()
-    fprintf(cg_out, "  %%r%d = sub nsw ", r)
-    CgEmitLlvmType(t)
-    fprintf(cg_out, " 0, %%r%d\n", v)
+    If CgIsFloat(t.kind) Then
+      fprintf(cg_out, "  %%r%d = fneg ", r)
+      CgEmitLlvmType(t)
+      fprintf(cg_out, " %%r%d\n", v)
+    Else
+      fprintf(cg_out, "  %%r%d = sub nsw ", r)
+      CgEmitLlvmType(t)
+      fprintf(cg_out, " 0, %%r%d\n", v)
+    End If
     outTy = t
     Return r
   End If
@@ -953,25 +1050,47 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim t2 As TypeInfo
     Dim v1 As Integer = CgEmitExpr(g_nodes(id).left, ByRef t1)
     Dim v2 As Integer = CgEmitExpr(g_nodes(id).right, ByRef t2)
-    ' Contextual literal adaptation (e.g. Byte/Long op IntLit)
-    Dim b1 As Integer = CgIntBits(t1.kind)
-    Dim b2 As Integer = CgIntBits(t2.kind)
     Dim unified As TypeInfo = t1
-    If (b1 > 0) And (b2 > 0) And (b1 <> b2) Then
-      If g_nodes(g_nodes(id).right).kind = NodeKind.NdIntLit Then
+    If CgIsFloat(t1.kind) Or CgIsFloat(t2.kind) Then
+      If (t1.kind = TypeKind.TySingle) And (t2.kind = TypeKind.TyDouble) And (g_nodes(g_nodes(id).right).kind = NodeKind.NdFloatLit) Then
         v2 = CgCoerceScalar(v2, t2, t1)
         unified = t1
       Else
-        If g_nodes(g_nodes(id).left).kind = NodeKind.NdIntLit Then
+        If (t2.kind = TypeKind.TySingle) And (t1.kind = TypeKind.TyDouble) And (g_nodes(g_nodes(id).left).kind = NodeKind.NdFloatLit) Then
           v1 = CgCoerceScalar(v1, t1, t2)
           unified = t2
         Else
-          If b2 > b1 Then
+          If t1.kind <> t2.kind Then
+            If (t1.kind = TypeKind.TyDouble) Or (t2.kind = TypeKind.TyDouble) Then
+              unified = TypeInfo With { kind = TypeKind.TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+            Else
+              unified = TypeInfo With { kind = TypeKind.TySingle, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+            End If
+            v1 = CgCoerceScalar(v1, t1, unified)
+            v2 = CgCoerceScalar(v2, t2, unified)
+          End If
+        End If
+      End If
+    Else
+      ' Contextual literal adaptation (e.g. Byte/Long op IntLit)
+      Dim b1 As Integer = CgIntBits(t1.kind)
+      Dim b2 As Integer = CgIntBits(t2.kind)
+      If (b1 > 0) And (b2 > 0) And (b1 <> b2) Then
+        If g_nodes(g_nodes(id).right).kind = NodeKind.NdIntLit Then
+          v2 = CgCoerceScalar(v2, t2, t1)
+          unified = t1
+        Else
+          If g_nodes(g_nodes(id).left).kind = NodeKind.NdIntLit Then
             v1 = CgCoerceScalar(v1, t1, t2)
             unified = t2
           Else
-            v2 = CgCoerceScalar(v2, t2, t1)
-            unified = t1
+            If b2 > b1 Then
+              v1 = CgCoerceScalar(v1, t1, t2)
+              unified = t2
+            Else
+              v2 = CgCoerceScalar(v2, t2, t1)
+              unified = t1
+            End If
           End If
         End If
       End If
@@ -980,6 +1099,61 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim r As Integer = CgNextReg()
     Dim op As Integer = g_nodes(id).op
     outTy = unified
+    If CgIsFloat(unified.kind) Then
+      Select Case op
+        Case TokenKind.TkPlus
+          fprintf(cg_out, "  %%r%d = fadd ", r)
+          CgEmitLlvmType(unified)
+          fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
+        Case TokenKind.TkMinus
+          fprintf(cg_out, "  %%r%d = fsub ", r)
+          CgEmitLlvmType(unified)
+          fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
+        Case TokenKind.TkStar
+          fprintf(cg_out, "  %%r%d = fmul ", r)
+          CgEmitLlvmType(unified)
+          fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
+        Case TokenKind.TkSlash
+          fprintf(cg_out, "  %%r%d = fdiv ", r)
+          CgEmitLlvmType(unified)
+          fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
+        Case TokenKind.TkMod
+          fprintf(cg_out, "  %%r%d = frem ", r)
+          CgEmitLlvmType(unified)
+          fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
+        Case TokenKind.TkEq
+          fprintf(cg_out, "  %%r%d = fcmp oeq ", r)
+          CgEmitLlvmType(unified)
+          fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
+          outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+        Case TokenKind.TkNeq
+          fprintf(cg_out, "  %%r%d = fcmp one ", r)
+          CgEmitLlvmType(unified)
+          fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
+          outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+        Case TokenKind.TkLt
+          fprintf(cg_out, "  %%r%d = fcmp olt ", r)
+          CgEmitLlvmType(unified)
+          fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
+          outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+        Case TokenKind.TkGt
+          fprintf(cg_out, "  %%r%d = fcmp ogt ", r)
+          CgEmitLlvmType(unified)
+          fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
+          outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+        Case TokenKind.TkLe
+          fprintf(cg_out, "  %%r%d = fcmp ole ", r)
+          CgEmitLlvmType(unified)
+          fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
+          outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+        Case TokenKind.TkGe
+          fprintf(cg_out, "  %%r%d = fcmp oge ", r)
+          CgEmitLlvmType(unified)
+          fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
+          outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+      End Select
+      Return r
+    End If
     Select Case op
       Case TokenKind.TkPlus
         fprintf(cg_out, "  %%r%d = add nsw ", r)
@@ -1252,7 +1426,13 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     While i < aCount Do
       Dim aNode As Integer = g_kids(aStart + i)
       Dim aTy As TypeInfo
-      argRegs(i) = CgEmitExpr(g_nodes(aNode).left, ByRef aTy)
+      Dim aReg As Integer = CgEmitExpr(g_nodes(aNode).left, ByRef aTy)
+      If aTy.kind = TypeKind.TySingle Then
+        Dim dblTy As TypeInfo With { kind = TypeKind.TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+        aReg = CgCoerceScalar(aReg, aTy, dblTy)
+        aTy = dblTy
+      End If
+      argRegs(i) = aReg
       argTys(i) = aTy
       i = i + 1
     End While
@@ -1306,6 +1486,11 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
           argTys(i) = pInfo.ty
         End If
       Else
+        If (fnIdx >= 0) And (cg_funcs(fnIdx).isVariadic = 1) And (aTy.kind = TypeKind.TySingle) Then
+          Dim dblTy As TypeInfo With { kind = TypeKind.TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+          aReg = CgCoerceScalar(aReg, aTy, dblTy)
+          aTy = dblTy
+        End If
         argRegs(i) = aReg
         If CgIsAggregate(aTy) Or (aTy.arrLen < 0) Then
           argIsPtr(i) = 1

@@ -69,6 +69,12 @@ Private Sub PParseBaseType(ByRef outKind As Integer, ByRef outNamePos As Integer
     Case TokenKind.TkNothing
       outKind = TypeKind.TyNothing
       PAdvance()
+    Case TokenKind.TkSingle
+      outKind = TypeKind.TySingle
+      PAdvance()
+    Case TokenKind.TkDouble
+      outKind = TypeKind.TyDouble
+      PAdvance()
     Case TokenKind.TkIdent
       outKind = TypeKind.TyStruct
       outNamePos = g_tokens(p_pos).pos
@@ -144,6 +150,14 @@ Private Function PParsePrimary() As Integer
   If k = TokenKind.TkIntLit Then
     Dim id As Integer = NewNode(NodeKind.NdIntLit)
     g_nodes(id).intVal = g_tokens(p_pos).intVal
+    PAdvance()
+    Return id
+  End If
+
+  If k = TokenKind.TkFloatLit Then
+    Dim id As Integer = NewNode(NodeKind.NdFloatLit)
+    g_nodes(id).intVal = g_tokens(p_pos).pos
+    g_nodes(id).lenVal = g_tokens(p_pos).len
     PAdvance()
     Return id
   End If

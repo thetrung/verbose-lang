@@ -11,6 +11,8 @@ Public Enum TypeKind
   TyArena = 7
   TyStruct = 8
   TyEnum = 9
+  TySingle = 10
+  TyDouble = 11
 End Enum
 
 Public Structure TypeInfo
@@ -39,6 +41,7 @@ Public Enum NodeKind
   NdArenaAlloc = 14
   NdFieldInit = 15
   NdArg = 16
+  NdFloatLit = 17
 
   ' Statements
   NdDim = 20

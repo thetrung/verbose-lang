@@ -172,6 +172,12 @@ Private Function LxClassifyKeyword(pos As Integer, slen As Integer) As Integer
   If SliceEqualsStr(pos, slen, "Nothing", 7) Then
     Return TokenKind.TkNothing
   End If
+  If SliceEqualsStr(pos, slen, "Single", 6) Then
+    Return TokenKind.TkSingle
+  End If
+  If SliceEqualsStr(pos, slen, "Double", 6) Then
+    Return TokenKind.TkDouble
+  End If
   If SliceEqualsStr(pos, slen, "True", 4) Then
     Return TokenKind.TkTrue
   End If
@@ -437,14 +443,27 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
                     acc = acc * 16 + LxHexVal(g_srcPool(pos))
                     pos = pos + 1
                   End While
+                  LxEmitTok(TokenKind.TkIntLit, nStart, pos - nStart, acc, line)
                 Else
                   While (pos < fileEnd) And LxIsDigit(g_srcPool(pos)) Do
                     Dim d As Integer = g_srcPool(pos)
                     acc = acc * 10 + (d - 48)
                     pos = pos + 1
                   End While
+                  Dim isFloat As Boolean = False
+                  If (pos + 1 < fileEnd) And (g_srcPool(pos) = 46) And LxIsDigit(g_srcPool(pos + 1)) Then
+                    isFloat = True
+                    pos = pos + 1
+                    While (pos < fileEnd) And LxIsDigit(g_srcPool(pos)) Do
+                      pos = pos + 1
+                    End While
+                  End If
+                  If isFloat Then
+                    LxEmitTok(TokenKind.TkFloatLit, nStart, pos - nStart, 0, line)
+                  Else
+                    LxEmitTok(TokenKind.TkIntLit, nStart, pos - nStart, acc, line)
+                  End If
                 End If
-                LxEmitTok(TokenKind.TkIntLit, nStart, pos - nStart, acc, line)
               Else
                 Dim nc1 As Integer = 0
                 Dim nc2 As Integer = 0

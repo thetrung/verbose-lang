@@ -6,6 +6,7 @@ Public Enum TokenKind
   TkIdent = 2
   TkIntLit = 3
   TkStrLit = 4
+  TkFloatLit = 5
 
   ' Keywords
   TkInclude = 10
@@ -34,6 +35,8 @@ Public Enum TokenKind
   TkPointer = 35
   TkArena = 36
   TkNothing = 37
+  TkSingle = 38
+  TkDouble = 39
 
   ' Literals & Builtin keywords
   TkTrue = 40
