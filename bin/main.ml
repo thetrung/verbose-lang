@@ -11,6 +11,7 @@ type cli_config = {
   mutable output_bin: string option;
   mutable include_dirs: string list;
   mutable clang_flags: string list;
+  mutable extra_inputs: string list;
 }
 
 let usage =
@@ -24,7 +25,8 @@ let usage =
   "  -I <dir>     Add module Include search directory\n" ^
   "  -o <path>    Specify output binary path\n" ^
   "  -l<lib>      Link external C library (e.g. -lm, -lraylib)\n" ^
-  "  -L<dir>      Add library search path for clang\n"
+  "  -L<dir>      Add library search path for clang\n" ^
+  "  <file.c/.o>  Additional C/object files to compile and link with clang\n"
 
 let parse_args argv =
   let cfg = {
@@ -38,6 +40,7 @@ let parse_args argv =
     output_bin = None;
     include_dirs = [];
     clang_flags = [];
+    extra_inputs = [];
   } in
   let n = Array.length argv in
   let i = ref 1 in
@@ -65,6 +68,8 @@ let parse_args argv =
          exit 1
      | s ->
          if cfg.filename = None then cfg.filename <- Some s
+         else if Filename.check_suffix s ".c" || Filename.check_suffix s ".o" || Filename.check_suffix s ".a" then
+           cfg.extra_inputs <- cfg.extra_inputs @ [s]
          else begin
            Printf.eprintf "Unexpected argument: %s\n%s" s usage;
            exit 1
@@ -130,11 +135,15 @@ let () =
     );
 
     if not cfg.emit_only then begin
+      let extra_files =
+        if cfg.extra_inputs = [] then ""
+        else " " ^ String.concat " " (List.map Filename.quote cfg.extra_inputs)
+      in
       let extra =
         if cfg.clang_flags = [] then ""
         else " " ^ String.concat " " (List.map Filename.quote cfg.clang_flags)
       in
-      let clang_cmd = Printf.sprintf "clang -O2 %s -o %s%s" (Filename.quote f_output) (Filename.quote binary) extra in
+      let clang_cmd = Printf.sprintf "clang -O2 %s%s -o %s%s" (Filename.quote f_output) extra_files (Filename.quote binary) extra in
       let clang = Sys.command clang_cmd in
       if cfg.no_run then begin
         if clang <> 0 then begin

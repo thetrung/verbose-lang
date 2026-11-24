@@ -168,23 +168,33 @@ and type_of_expr env = function
   | UnaryOp (op, e) ->
       let t = type_of_expr env e in
       if op = "Not" && (t = Boolean || is_int_type env t) then t
+      else if op = "Neg" && (is_int_type env t || is_float_type t) then t
       else raise (TypeError ("Invalid unary operation '" ^ op ^ "' on type " ^ Printer.string_of_dt t))
 
   | BinOp (e1, op, e2) ->
       let t1 = normalize_type env (type_of_expr env e1) in
       let t2 = normalize_type env (type_of_expr env e2) in
-      if not (types_equal env t1 t2) then
-        raise (TypeError (Printf.sprintf "Type mismatch in binary operation: %s vs %s"
-                            (Printer.string_of_dt t1) (Printer.string_of_dt t2)));
-      if is_float_type t1 then begin
+      let is_int_lit = function IntLit _ | UnaryOp ("Neg", IntLit _) -> true | _ -> false in
+      let is_float_lit = function FloatLit _ | UnaryOp ("Neg", FloatLit _) -> true | _ -> false in
+      let unified_t =
+        if types_equal env t1 t2 then t1
+        else if is_int_type env t1 && is_int_lit e2 then t1
+        else if is_int_type env t2 && is_int_lit e1 then t2
+        else if is_float_type t1 && is_float_lit e2 then t1
+        else if is_float_type t2 && is_float_lit e1 then t2
+        else
+          raise (TypeError (Printf.sprintf "Type mismatch in binary operation: %s vs %s"
+                              (Printer.string_of_dt t1) (Printer.string_of_dt t2)))
+      in
+      if is_float_type unified_t then begin
         match op with
-        | Add | Sub | Mul | Div | Mod -> t1
+        | Add | Sub | Mul | Div | Mod -> unified_t
         | Equal | Greater | Less | GreaterEqual | LessEqual | NotEqual -> Boolean
         | _ -> raise (TypeError "Unsupported bitwise operation on floating point values")
       end else begin
         match op with
         | Equal | Greater | Less | GreaterEqual | LessEqual | NotEqual -> Boolean
-        | _ -> t1
+        | _ -> unified_t
       end
 
   | FieldAccess (base_expr, field_name) ->

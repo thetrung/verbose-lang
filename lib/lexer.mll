@@ -107,4 +107,10 @@ and comment = parse
 and string_literal buf = parse
   | '"'           { STRING_LIT(Buffer.contents buf) }
   | '\\' 'n'      { Buffer.add_char buf '\n'; string_literal buf lexbuf }
+  | '\\' 'r'      { Buffer.add_char buf '\r'; string_literal buf lexbuf }
+  | '\\' 't'      { Buffer.add_char buf '\t'; string_literal buf lexbuf }
+  | '\\' '"'      { Buffer.add_char buf '"'; string_literal buf lexbuf }
+  | '\\' '\\'     { Buffer.add_char buf '\\'; string_literal buf lexbuf }
+  | '\\' '0'      { Buffer.add_char buf '\000'; string_literal buf lexbuf }
+  | eof           { raise (SyntaxError "Unterminated string literal") }
   | _ as c        { Buffer.add_char buf c; string_literal buf lexbuf }

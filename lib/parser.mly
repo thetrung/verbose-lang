@@ -27,6 +27,7 @@ open Ast
 %left SHL SHR
 %left PLUS MINUS
 %left TIMES DIVIDE MOD
+%nonassoc UMINUS
 %left DOT LBRACKET
 
 (* Program Entry Point *)
@@ -256,6 +257,7 @@ expr:
   | s=STRING_LIT                                            { Ast.StringLit(s) }
   | LPAREN e=expr RPAREN                                    { e }
   | NOT e=expr                                              { Ast.UnaryOp("Not", e) }
+  | MINUS e=expr %prec UMINUS                               { Ast.UnaryOp("Neg", e) }
   | name=ID LPAREN args=separated_list(COMMA, call_arg) RPAREN  { Ast.Call(name, args) }
   | name=ID WITH LBRACE optional_newlines inits=field_init_list RBRACE { Ast.StructInit(name, inits) }
   | SIZEOF LPAREN t=data_type RPAREN { Ast.SizeOf(t) }

@@ -19,11 +19,13 @@ let create_context () = {
   variables = Hashtbl.create 50;
   globals = [];
 }
-(* Track per-function parameter passing modes (ByVal / ByRef) *)
+(* Track per-function parameter passing modes (ByVal / ByRef) & AST types *)
 let func_param_modes : (string, param_mode list) Hashtbl.t = Hashtbl.create 32
+let func_param_specs : (string, (param_mode * data_type) list) Hashtbl.t = Hashtbl.create 32
 (* Track user-declared external FFI functions *)
 let extern_decls : (string, string) Hashtbl.t = Hashtbl.create 32
 let extern_order : string list ref = ref []
+let extern_ret_ast : (string, data_type) Hashtbl.t = Hashtbl.create 16
 let variadic_funcs : (string, string list) Hashtbl.t = Hashtbl.create 16
 (* Track visibility of structures/enums *)
 let visibility_table : (string, bool) Hashtbl.t = Hashtbl.create 16
@@ -142,6 +144,142 @@ and get_struct_size struct_name =
     if total = 0 then 8 else total
   else 16
 
+let escape_llvm_string s =
+  let buf = Buffer.create (String.length s * 2) in
+  String.iter (fun c ->
+    let code = Char.code c in
+    if code >= 32 && code <= 126 && c <> '"' && c <> '\\' then
+      Buffer.add_char buf c
+    else
+      Buffer.add_string buf (Printf.sprintf "\\%02X" code)
+  ) s;
+  Buffer.contents buf
+
+type c_struct_abi =
+  | CCoerced of string list (* 1 or 2 eightbyte LLVM types, e.g. ["i32"], ["<2 x float>"], ["<2 x float>"; "<2 x float>"] *)
+  | CByValPtr of string     (* > 16 bytes: passed as ptr byval(%struct.Name) *)
+
+let classify_c_struct struct_name =
+  let total_size = get_struct_size struct_name in
+  if total_size > 16 then CByValPtr struct_name
+  else begin
+    (* Collect flattened (byte_offset, leaf_dt) pairs *)
+    let align_up off a = if a <= 1 then off else ((off + a - 1) / a) * a in
+    let rec flatten base_off dt =
+      match dt with
+      | Custom sn when Hashtbl.mem struct_field_types sn ->
+          let fields = Hashtbl.find struct_field_types sn in
+          let off = ref base_off in
+          let acc = ref [] in
+          List.iter (fun (_, fdt) ->
+            let a = get_type_align fdt in
+            off := align_up !off a;
+            acc := !acc @ flatten !off fdt;
+            off := !off + get_type_size fdt
+          ) fields;
+          !acc
+      | Array (et, n) when n > 0 ->
+          let esz = get_type_size et in
+          let acc = ref [] in
+          for i = 0 to n - 1 do
+            acc := !acc @ flatten (base_off + i * esz) et
+          done;
+          !acc
+      | _ -> [(base_off, dt)]
+    in
+    let leaves = flatten 0 (Custom struct_name) in
+    let classify_chunk start_off chunk_bytes =
+      let in_chunk = List.filter (fun (o, dt) ->
+        let sz = max 1 (get_type_size dt) in
+        o < start_off + 8 && o + sz > start_off
+      ) leaves in
+      let all_sse = in_chunk <> [] && List.for_all (fun (_, dt) -> dt = Single || dt = Double) in_chunk in
+      if all_sse then begin
+        match in_chunk with
+        | [(_, Single)] -> "float"
+        | [(_, Double)] -> "double"
+        | [(_, Single); (_, Single)] -> "<2 x float>"
+        | _ -> if chunk_bytes <= 4 then "float" else "<2 x float>"
+      end else begin
+        if chunk_bytes <= 1 then "i8"
+        else if chunk_bytes <= 2 then "i16"
+        else if chunk_bytes <= 4 then "i32"
+        else "i64"
+      end
+    in
+    if total_size <= 8 then
+      CCoerced [classify_chunk 0 total_size]
+    else
+      CCoerced [classify_chunk 0 8; classify_chunk 8 (total_size - 8)]
+  end
+
+let extern_llvm_param_types (mode, _, dt) =
+  match dt with
+  | Custom name when mode = ByVal && Hashtbl.mem struct_fields name ->
+      (match classify_c_struct name with
+       | CCoerced ts -> ts
+       | CByValPtr sn -> [Printf.sprintf "ptr byval(%%struct.%s)" sn])
+  | _ -> [llvm_param_type (mode, "", dt)]
+
+let extern_llvm_ret_type dt =
+  match dt with
+  | Custom name when Hashtbl.mem struct_fields name ->
+      (match classify_c_struct name with
+       | CCoerced [t0] -> t0
+       | CCoerced [t0; t1] -> Printf.sprintf "{ %s, %s }" t0 t1
+       | _ -> string_of_dt dt)
+  | _ -> string_of_dt dt
+
+let coerce_value_to_llvm ctx expected_dt v dt_str =
+  let expected_dt_str = string_of_dt expected_dt in
+  if expected_dt_str = dt_str then (v, dt_str)
+  else
+    let is_reg = String.length v > 0 && (v.[0] = '%' || v.[0] = '@') in
+    if expected_dt_str = "ptr" && dt_str = "i32" then begin
+      if v = "0" then ("null", "ptr")
+      else begin
+        let cast_reg = next_reg ctx in
+        emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
+        (cast_reg, "ptr")
+      end
+    end else if expected_dt_str = "float" && dt_str = "double" && is_reg then begin
+      let cast_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = fptrunc double %s to float" cast_reg v);
+      (cast_reg, "float")
+    end else if expected_dt_str = "double" && dt_str = "float" && is_reg then begin
+      let cast_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = fpext float %s to double" cast_reg v);
+      (cast_reg, "double")
+    end else if expected_dt_str = "float" && dt_str = "double" && not is_reg then begin
+      let f = float_of_string v in
+      let f32 = Int32.float_of_bits (Int32.bits_of_float f) in
+      let hex_bits = Printf.sprintf "0x%016LX" (Int64.bits_of_float f32) in
+      (hex_bits, "float")
+    end else if expected_dt_str = "i8" && (dt_str = "i32" || dt_str = "i64" || dt_str = "i16") && is_reg then begin
+      let cast_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = trunc %s %s to i8" cast_reg dt_str v);
+      (cast_reg, "i8")
+    end else if expected_dt_str = "i16" && (dt_str = "i32" || dt_str = "i64") && is_reg then begin
+      let cast_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = trunc %s %s to i16" cast_reg dt_str v);
+      (cast_reg, "i16")
+    end else if expected_dt_str = "i64" && (dt_str = "i32" || dt_str = "i16" || dt_str = "i8") && is_reg then begin
+      let cast_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = sext %s %s to i64" cast_reg dt_str v);
+      (cast_reg, "i64")
+    end else if expected_dt_str = "i32" && (dt_str = "i8" || dt_str = "i16") && is_reg then begin
+      let cast_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = sext %s %s to i32" cast_reg dt_str v);
+      (cast_reg, "i32")
+    end else if expected_dt_str = "i32" && dt_str = "i64" && is_reg then begin
+      let cast_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = trunc i64 %s to i32" cast_reg v);
+      (cast_reg, "i32")
+    end else if (expected_dt_str = "i8" || expected_dt_str = "i16" || expected_dt_str = "i64" || expected_dt_str = "i32") && not is_reg then
+      (v, expected_dt_str)
+    else
+      (v, dt_str)
+
 let emit_store_typed ctx expected_dt v dt_str target_ptr =
   if is_aggregate_dt expected_dt then begin
     let byte_size = get_type_size expected_dt in
@@ -230,10 +368,16 @@ let rec const_llvm_value ctx dt = function
            incr static_counter;
            let global_reg = Printf.sprintf "@.str_g_%d" !static_counter in
            let len = String.length s + 1 in
+           let esc = escape_llvm_string s in
            let decl = Printf.sprintf "%s = private unnamed_addr constant [%d x i8] c\"%s\\00\", align 1"
-                        global_reg len s in
+                        global_reg len esc in
            ctx.globals <- decl :: ctx.globals;
            global_reg
+       | (Int | Byte | Short | Long), UnaryOp ("Neg", IntLit i) -> string_of_int (-i)
+       | Single, UnaryOp ("Neg", FloatLit f) ->
+           let f32 = Int32.float_of_bits (Int32.bits_of_float (-.f)) in
+           Printf.sprintf "0x%016LX" (Int64.bits_of_float f32)
+       | Double, UnaryOp ("Neg", FloatLit f) -> string_of_float (-.f)
        | (Int | Byte | Short | Long | Custom _), FieldAccess (Id ename, mname)
          when Hashtbl.mem enum_values (ename ^ "." ^ mname) ->
            string_of_int (Hashtbl.find enum_values (ename ^ "." ^ mname))
@@ -286,9 +430,10 @@ let rec codegen_expr ctx = function
       ctx.reg_counter <- ctx.reg_counter + 1;
       
       let len = String.length s + 1 in
+      let esc = escape_llvm_string s in
       (* Safely store the global definition for the final output wrapper *)
       let decl = Printf.sprintf "%s = private unnamed_addr constant [%d x i8] c\"%s\\00\", align 1" 
-                   global_reg len s in
+                   global_reg len esc in
       ctx.globals <- decl :: ctx.globals;
       (global_reg, "ptr")
 
@@ -357,15 +502,35 @@ let rec codegen_expr ctx = function
       (* Bitwise XOR with -1 flips all bits, achieving a logical/bitwise 'Not' *)
       emit ctx (Printf.sprintf "  %s = xor %s %s, -1" res_reg t v);
       (res_reg, t)
+  | UnaryOp ("Neg", e) ->
+      let v, t = codegen_expr ctx e in
+      let res_reg = next_reg ctx in
+      if t = "float" || t = "double" then
+        emit ctx (Printf.sprintf "  %s = fneg %s %s" res_reg t v)
+      else
+        emit ctx (Printf.sprintf "  %s = sub nsw %s 0, %s" res_reg t v);
+      (res_reg, t)
   | UnaryOp (_, _) -> raise (Error "Unsupported unary operation")
 
  
   | BinOp (e1, op, e2) ->
       let v1, t1 = codegen_expr ctx e1 in
       let v2, t2 = codegen_expr ctx e2 in
-      
-      (* ⚠️ No hidden casting: types must align exactly *)
-      if t1 <> t2 then raise (Error ("Type mismatch in binary operation: " ^ t1 ^ " vs " ^ t2));
+      let is_reg s = String.length s > 0 && (s.[0] = '%' || s.[0] = '@') in
+      let float32_hex s =
+        let f = float_of_string s in
+        let f32 = Int32.float_of_bits (Int32.bits_of_float f) in
+        Printf.sprintf "0x%016LX" (Int64.bits_of_float f32)
+      in
+      let is_int_llvm = function "i8" | "i16" | "i32" | "i64" -> true | _ -> false in
+      let v1, v2, t1 =
+        if t1 = t2 then (v1, v2, t1)
+        else if t1 = "float" && t2 = "double" && not (is_reg v2) then (v1, float32_hex v2, "float")
+        else if t2 = "float" && t1 = "double" && not (is_reg v1) then (float32_hex v1, v2, "float")
+        else if is_int_llvm t1 && t2 = "i32" && not (is_reg v2) then (v1, v2, t1)
+        else if is_int_llvm t2 && t1 = "i32" && not (is_reg v1) then (v1, v2, t2)
+        else raise (Error ("Type mismatch in binary operation: " ^ t1 ^ " vs " ^ t2))
+      in
       
       let res_reg = next_reg ctx in
       let is_fp = (t1 = "float" || t1 = "double") in
@@ -743,7 +908,8 @@ let rec codegen_expr ctx = function
         (alloca_reg, "ptr")
       end else begin
         (* Evaluate call arguments requiring explicit call-site ByRef matching callee signature *)
-        let param_modes = Hashtbl.find_opt func_param_modes name in
+        let param_specs = Hashtbl.find_opt func_param_specs name in
+        let is_extern = Hashtbl.mem extern_decls name in
         let eval_byref_arg arg_expr =
           match arg_expr with
           | Id var_name ->
@@ -762,20 +928,46 @@ let rec codegen_expr ctx = function
               raise (Error "ByRef argument must be a variable, struct field, or array element")
         in
         let is_var = Hashtbl.mem variadic_funcs name in
-        let evaluated_args = List.mapi (fun idx (arg_mode, arg_expr) ->
-          match param_modes with
-          | Some modes ->
-              (match List.nth_opt modes idx with
-               | Some ByRef ->
-                   if arg_mode = ByRef then eval_byref_arg arg_expr
+        let evaluated_args = List.concat (List.mapi (fun idx (arg_mode, arg_expr) ->
+          match param_specs with
+          | Some specs ->
+              (match List.nth_opt specs idx with
+               | Some (ByRef, _) ->
+                   if arg_mode = ByRef then [eval_byref_arg arg_expr]
                    else raise (Error (Printf.sprintf "Argument %d of '%s' expects ByRef at call site" (idx + 1) name))
-               | Some ByVal ->
+               | Some (ByVal, param_dt) ->
                    if arg_mode = ByRef then
                      raise (Error (Printf.sprintf "Argument %d of '%s' is ByVal and cannot be passed ByRef" (idx + 1) name))
-                   else codegen_expr ctx arg_expr
+                   else begin
+                     match param_dt with
+                     | Custom sn when is_extern && Hashtbl.mem struct_fields sn ->
+                         let sv, _ = codegen_expr ctx arg_expr in
+                         (match classify_c_struct sn with
+                          | CCoerced [t0] ->
+                              let r0 = next_reg ctx in
+                              emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align 4" r0 t0 sv);
+                              [(r0, t0)]
+                          | CCoerced [t0; t1] ->
+                              let r0 = next_reg ctx in
+                              emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align 4" r0 t0 sv);
+                              let p1 = next_reg ctx in
+                              emit ctx (Printf.sprintf "  %s = getelementptr inbounds i8, ptr %s, i64 8" p1 sv);
+                              let r1 = next_reg ctx in
+                              emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align 4" r1 t1 p1);
+                              [(r0, t0); (r1, t1)]
+                          | _ ->
+                              [(sv, Printf.sprintf "ptr byval(%%struct.%s)" sn)])
+                     | _ when is_aggregate_dt param_dt ->
+                         [codegen_expr ctx arg_expr]
+                     | Array (_, -1) ->
+                         [codegen_expr ctx arg_expr]
+                     | _ ->
+                         let v, t = codegen_expr ctx arg_expr in
+                         [coerce_value_to_llvm ctx param_dt v t]
+                   end
                | None ->
                    (* Variadic tail argument: allow ByRef for out-pointers, promote float->double for ByVal *)
-                   if is_var && arg_mode = ByRef then eval_byref_arg arg_expr
+                   if is_var && arg_mode = ByRef then [eval_byref_arg arg_expr]
                    else if arg_mode = ByRef then
                      raise (Error (Printf.sprintf "Argument %d of '%s' is ByVal and cannot be passed ByRef" (idx + 1) name))
                    else
@@ -783,12 +975,12 @@ let rec codegen_expr ctx = function
                      if is_var && t = "float" then begin
                        let cast_reg = next_reg ctx in
                        emit ctx (Printf.sprintf "  %s = fpext float %s to double" cast_reg v);
-                       (cast_reg, "double")
-                     end else (v, t))
+                       [(cast_reg, "double")]
+                     end else [(v, t)])
           | None ->
-              if arg_mode = ByRef then eval_byref_arg arg_expr
-              else codegen_expr ctx arg_expr
-        ) args in
+              if arg_mode = ByRef then [eval_byref_arg arg_expr]
+              else [codegen_expr ctx arg_expr]
+        ) args) in
         let arg_strs = List.map (fun (v, t) -> 
           let checked_type = if name = "free" then "ptr" else t in
           checked_type ^ " " ^ v) evaluated_args in
@@ -816,15 +1008,36 @@ let rec codegen_expr ctx = function
         if ret_type = "void" then begin
           emit ctx (Printf.sprintf "  call void%s @%s(%s)" var_sig_prefix name args_joined);
           ("", "void")
-        end else if String.length ret_type > 0 && (ret_type.[0] = '%' || ret_type.[0] = '[') then begin
-          emit ctx (Printf.sprintf "  %s = call %s%s @%s(%s)" res_reg ret_type var_sig_prefix name args_joined);
-          let tmp_slot = next_reg ctx in
-          emit ctx (Printf.sprintf "  %s = alloca %s, align 8" tmp_slot ret_type);
-          emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 8" ret_type res_reg tmp_slot);
-          (tmp_slot, "ptr")
         end else begin
-          emit ctx (Printf.sprintf "  %s = call %s%s @%s(%s)" res_reg ret_type var_sig_prefix name args_joined);
-          (res_reg, ret_type)
+          match Hashtbl.find_opt extern_ret_ast name with
+          | Some (Custom sn) when Hashtbl.mem struct_fields sn ->
+              emit ctx (Printf.sprintf "  %s = call %s%s @%s(%s)" res_reg ret_type var_sig_prefix name args_joined);
+              let tmp_slot = next_reg ctx in
+              emit ctx (Printf.sprintf "  %s = alloca %%struct.%s, align 8" tmp_slot sn);
+              (match classify_c_struct sn with
+               | CCoerced [t0] ->
+                   emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" t0 res_reg tmp_slot)
+               | CCoerced [t0; t1] ->
+                   let e0 = next_reg ctx in
+                   let e1 = next_reg ctx in
+                   emit ctx (Printf.sprintf "  %s = extractvalue %s %s, 0" e0 ret_type res_reg);
+                   emit ctx (Printf.sprintf "  %s = extractvalue %s %s, 1" e1 ret_type res_reg);
+                   emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" t0 e0 tmp_slot);
+                   let p1 = next_reg ctx in
+                   emit ctx (Printf.sprintf "  %s = getelementptr inbounds i8, ptr %s, i64 8" p1 tmp_slot);
+                   emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" t1 e1 p1)
+               | _ ->
+                   emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 8" ret_type res_reg tmp_slot));
+              (tmp_slot, "ptr")
+          | _ when String.length ret_type > 0 && (ret_type.[0] = '%' || ret_type.[0] = '[') ->
+              emit ctx (Printf.sprintf "  %s = call %s%s @%s(%s)" res_reg ret_type var_sig_prefix name args_joined);
+              let tmp_slot = next_reg ctx in
+              emit ctx (Printf.sprintf "  %s = alloca %s, align 8" tmp_slot ret_type);
+              emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 8" ret_type res_reg tmp_slot);
+              (tmp_slot, "ptr")
+          | _ ->
+              emit ctx (Printf.sprintf "  %s = call %s%s @%s(%s)" res_reg ret_type var_sig_prefix name args_joined);
+              (res_reg, ret_type)
         end
       end
 
@@ -1132,11 +1345,15 @@ let rec codegen_stmt ctx = function
   | SelectCase (target_exp, cases, default_stmts_opt) ->
       let target_val, t = codegen_expr ctx target_exp in
       let label_exit = next_label ctx "select_exit" in
+      let ends_with_return stmts =
+        List.exists (function Return _ -> true | _ -> false) stmts
+      in
+      let any_falls_through = ref false in
       
       (* Determine where to branch if ALL explicit checks fail *)
       let label_default = match default_stmts_opt with
         | Some _ -> next_label ctx "case_default"
-        | None -> label_exit
+        | None -> any_falls_through := true; label_exit
       in
 
       let rec emit_cases = function
@@ -1153,7 +1370,10 @@ let rec codegen_stmt ctx = function
             let cond_reg = build_or_chain expr_list in
             emit ctx (Printf.sprintf "  br i1 %s, label %%%s, label %%%s" cond_reg label_match label_next);
             emit ctx (Printf.sprintf "\n%s:" label_match); List.iter (codegen_stmt ctx) stmts;
-            emit ctx (Printf.sprintf "  br label %%%s" label_exit);
+            if not (ends_with_return stmts) then begin
+              any_falls_through := true;
+              emit ctx (Printf.sprintf "  br label %%%s" label_exit)
+            end;
             emit ctx (Printf.sprintf "\n%s:" label_next); emit_cases next_cases
       in 
       emit_cases cases;
@@ -1163,10 +1383,14 @@ let rec codegen_stmt ctx = function
        | Some stmts ->
            emit ctx (Printf.sprintf "\n%s:" label_default);
            List.iter (codegen_stmt ctx) stmts;
-           emit ctx (Printf.sprintf "  br label %%%s" label_exit)
+           if not (ends_with_return stmts) then begin
+             any_falls_through := true;
+             emit ctx (Printf.sprintf "  br label %%%s" label_exit)
+           end
        | None -> ());
 
-      emit ctx (Printf.sprintf "\n%s:" label_exit)
+      if !any_falls_through then
+        emit ctx (Printf.sprintf "\n%s:" label_exit)
  
   | For (var_name, start_exp, finish_exp, body_stmts) ->
       let label_cond = next_label ctx "for_cond" in
@@ -1350,13 +1574,16 @@ let register_definition ctx = function
       
   | FuncDef (_, name, params, ret_type, _) ->
       Hashtbl.replace ret_types name (string_of_dt ret_type);
-      Hashtbl.replace func_param_modes name (List.map (fun (mode, _, _) -> mode) params)
+      Hashtbl.replace func_param_modes name (List.map (fun (mode, _, _) -> mode) params);
+      Hashtbl.replace func_param_specs name (List.map (fun (mode, _, dt) -> (mode, dt)) params)
 
   | ExternDecl (_, name, params, ret_type, is_variadic) ->
-      let ret_str = string_of_dt ret_type in
+      let ret_str = extern_llvm_ret_type ret_type in
       Hashtbl.replace ret_types name ret_str;
+      Hashtbl.replace extern_ret_ast name ret_type;
       Hashtbl.replace func_param_modes name (List.map (fun (mode, _, _) -> mode) params);
-      let param_type_strs = List.map llvm_param_type params in
+      Hashtbl.replace func_param_specs name (List.map (fun (mode, _, dt) -> (mode, dt)) params);
+      let param_type_strs = List.concat (List.map extern_llvm_param_types params) in
       if is_variadic then Hashtbl.replace variadic_funcs name param_type_strs;
       let sig_params =
         match param_type_strs, is_variadic with
@@ -1372,8 +1599,10 @@ let register_definition ctx = function
 let generate_program prog =
   let ctx = create_context () in
   Hashtbl.clear func_param_modes;
+  Hashtbl.clear func_param_specs;
   Hashtbl.clear extern_decls;
   extern_order := [];
+  Hashtbl.clear extern_ret_ast;
   Hashtbl.clear variadic_funcs;
   Hashtbl.clear visibility_table;
   Hashtbl.clear struct_fields;
@@ -1390,8 +1619,16 @@ let generate_program prog =
   uses_arena := false;
   Hashtbl.clear enum_values;
   
-  (* Step 0: Populate structural metadata indices first *)
-  List.iter (register_definition ctx) prog;
+  (* Step 0a: Populate Structure & Enum metadata first so ExternDecl C ABI classification sees all structs *)
+  List.iter (function
+    | (Structure _ | EnumDef _) as d -> register_definition ctx d
+    | _ -> ()
+  ) prog;
+  (* Step 0b: Register Globals, Functions, and ExternDecls *)
+  List.iter (function
+    | Structure _ | EnumDef _ -> ()
+    | d -> register_definition ctx d
+  ) prog;
   
   (* Step 1: Generate dynamic LLVM struct type layout strings (safe for nested models) *)
   List.iter (function
