@@ -1,4 +1,6 @@
 _build
-bootstrap/vbc
-bootstrap/vbc1
-bootstrap/*.ll
+stage0/_build
+/vbc
+/vbc1
+/vbc.new
+/vbc*.ll

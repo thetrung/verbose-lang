@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-COMPILER = REPO / "verbose"
+COMPILER = REPO / "stage0" / "verbose"
 TEST_DIR = Path(__file__).resolve().parent / "syntax"
 
 # (filename, description, extra_flag, expected_lines, expect_error)
@@ -98,9 +98,9 @@ CLANG_STATUS_RE = re.compile(r"Status:\s*clang/exec\s*=\s*(-?\d+)\s+(-?\d+)")
 def run_case(vb_path: Path, extra_flag=None):
     tmp = tempfile.mkdtemp(prefix="vbsyn_")
     try:
-        lib_dir = REPO / "lib"
-        if lib_dir.is_dir():
-            os.symlink(lib_dir, Path(tmp) / "lib")
+        stage0_dir = REPO / "stage0"
+        if stage0_dir.is_dir():
+            os.symlink(stage0_dir, Path(tmp) / "stage0")
         shutil.copyfile(vb_path, Path(tmp) / "target.vb")
         argv = [str(COMPILER), "target.vb"]
         if extra_flag:

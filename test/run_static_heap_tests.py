@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-COMPILER = REPO / "verbose"
+COMPILER = REPO / "stage0" / "verbose"
 TEST_DIR = Path(__file__).resolve().parent / "static_heap"
 
 # (filename, description, extra_flag, expected_lines, expect_error)

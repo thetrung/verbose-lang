@@ -8,8 +8,8 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-COMPILER = REPO / "verbose"
-VBC_SRC = REPO / "bootstrap" / "vbc.vb"
+COMPILER = REPO / "stage0" / "verbose"
+VBC_SRC = REPO / "vbc.vb"
 
 PROGRAMS = [
     (
@@ -152,7 +152,7 @@ def main():
         failed = 0
         total = 3 + len(PROGRAMS)
 
-        # Stage 1: OCaml verbose compiles bootstrap/vbc.vb -> vbc1
+        # Stage 1: Stage 0 OCaml compiler compiles vbc.vb -> vbc1
         s1 = subprocess.run(
             [str(COMPILER), str(VBC_SRC), "--no-run", "-o", str(vbc1)],
             cwd=str(tmp),
@@ -164,17 +164,17 @@ def main():
         if vbc_ll_cleanup.exists():
             vbc_ll_cleanup.unlink()
         if s1.returncode != 0:
-            print("[FAIL] (STAGE-1) OCaml verbose failed to compile bootstrap/vbc.vb")
+            print("[FAIL] (STAGE-1) stage0/verbose failed to compile vbc.vb")
             print(s1.stdout)
             print(s1.stderr)
             return 1
         passed += 1
-        print("[PASS] (STAGE-1) verbose compiled bootstrap/vbc.vb -> vbc1")
+        print("[PASS] (STAGE-1) stage0/verbose compiled vbc.vb -> vbc1")
 
-        # Stage 2: vbc1 compiles bootstrap/vbc.vb -> vbc2.ll -> clang -O2 -> vbc2
+        # Stage 2: vbc1 compiles vbc.vb -> vbc2.ll -> clang -O2 -> vbc2
         s2_emit = subprocess.run([str(vbc1), str(VBC_SRC), str(vbc2_ll)], capture_output=True, text=True, timeout=30)
         if s2_emit.returncode != 0:
-            print("[FAIL] (STAGE-2) vbc1 failed to compile bootstrap/vbc.vb")
+            print("[FAIL] (STAGE-2) vbc1 failed to compile vbc.vb")
             print(s2_emit.stdout)
             print(s2_emit.stderr)
             return 1
@@ -185,12 +185,12 @@ def main():
             print(s2_cc.stderr)
             return 1
         passed += 1
-        print(f"[PASS] (STAGE-2) vbc1 self-compiled bootstrap/vbc.vb -> vbc2 [{s2_emit.stdout.strip()}]")
+        print(f"[PASS] (STAGE-2) vbc1 self-compiled vbc.vb -> vbc2 [{s2_emit.stdout.strip()}]")
 
-        # Stage 3: vbc2 compiles bootstrap/vbc.vb -> vbc3.ll and verifies byte-for-byte fixpoint!
+        # Stage 3: vbc2 compiles vbc.vb -> vbc3.ll and verifies byte-for-byte fixpoint!
         s3_emit = subprocess.run([str(vbc2), str(VBC_SRC), str(vbc3_ll)], capture_output=True, text=True, timeout=30)
         if s3_emit.returncode != 0:
-            print("[FAIL] (STAGE-3) vbc2 failed to compile bootstrap/vbc.vb")
+            print("[FAIL] (STAGE-3) vbc2 failed to compile vbc.vb")
             print(s3_emit.stdout)
             print(s3_emit.stderr)
             return 1

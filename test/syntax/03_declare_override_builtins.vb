@@ -9,7 +9,7 @@ Declare Function fclose(fp As Pointer) As Integer
 Public Function main() As Integer
   Dim buf As Pointer = malloc(64)
   free(buf)
-  Dim fp As Pointer = fopen("lib/ast.ml", "r")
+  Dim fp As Pointer = fopen("stage0/lib/ast.ml", "r")
   Dim first As Integer = getc(fp)
   Dim closed As Integer = fclose(fp)
   printf("first=%d closed=%d\n", first, closed)

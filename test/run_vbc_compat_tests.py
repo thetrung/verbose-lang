@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the self-hosted VerBose compiler (bootstrap/vbc) across ALL positive testcases & examples."""
+"""Run the self-hosted VerBose compiler (./vbc) across ALL positive testcases & examples."""
 
 import os
 import shutil
@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-VBC = REPO / "bootstrap" / "vbc"
+VBC = REPO / "vbc"
 
 # Each entry: (suite, rel_path, expected_substrings, extra_clang_args, needs_repo_cwd)
 CASES = [
@@ -136,7 +136,7 @@ def run_one(vb_path: Path, expected: list, extra_clang: list, needs_repo_cwd: bo
 
 def main():
     if not VBC.is_file():
-        print(f"Error: {VBC} not found. Run 'make bootstrap' first.", file=sys.stderr)
+        print(f"Error: {VBC} not found. Run 'make build' or 'make bootstrap' first.", file=sys.stderr)
         return 1
 
     suite_stats = {}
