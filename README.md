@@ -136,12 +136,16 @@ See **[LAYOUT.md](LAYOUT.md)** for the complete repository structure and directo
 # Uses existing ./verbose, `verbose` in PATH, BOOTSTRAP=/path/to/verbose, or downloads the latest GitHub Release binary
 make build
 
-# Compile and execute any .vb file directly (default mode)
+# Compile and execute any .vb file with a main() function (default mode)
 ./verbose your_file.vb
 
-# Run built-in Test/Assert blocks in a file or directory (default: tests/)
-./verbose test your_tests.vb
-./verbose test
+# Link against C source/object files or system/static libraries (flags pass through to clang)
+./verbose tests/raylib/bouncing_ball.vb tests/raylib/raylib_headless_shim.c -lm
+./verbose tests/raylib/bouncing_ball.vb -lraylib -lm
+
+# Run built-in Test/Assert blocks (required for test files without a main() function)
+./verbose test tests/test_std_io.vb   # run a single test file
+./verbose test                        # run all tests/test_*.vb suites
 
 # Cross-compile for bare-metal ARM-M, Linux arm64, macOS arm64, or Windows x86-64 to object file
 ./verbose --target arm-m -c your_file.vb -o your_file.o
