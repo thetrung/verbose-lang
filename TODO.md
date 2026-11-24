@@ -4,7 +4,7 @@ Active roadmap and future extensions for **VerBose-Lang**. Completed tasks and m
 
 ## Active TODO
 
-1. [ ] **Language Syntax / Semantic Compression** : analyze whole codebase to suggest new features or combine any unnecessary features to shorten amount of keyword/lines of code in codebase.
+_All current core language tasks are complete and archived in **[LOGS.md](LOGS.md)**._
 
 ## Extensions
 

@@ -43,40 +43,37 @@ End Structure
 ' Module-level Static global (Public / Private / Default visibility)
 Private Static g_ticks As Long = 0
 
-' Function-local persistent Static + ByVal/ByRef parameters
-Private Sub StepEntity(ByRef e As Entity, ByVal dt As Single)
+' Function-local persistent Static + value/ByRef parameters
+Private Sub StepEntity(ByRef e As Entity, dt As Single)
   Static calls As Integer = 0
   calls = calls + 1
   g_ticks = g_ticks + 1
 
-  e.pos.x = e.pos.x + 10.5 * dt
-  e.pos.y = e.pos.y - 2.25 * dt
+  With e
+    .pos.x = .pos.x + 10.5 * dt
+    .pos.y = .pos.y - 2.25 * dt
 
-  Select Case e.state
-    Case Status.Idle
-      e.state = Status.Active
-    Case Status.Active
-      If calls >= 2 Then
-        e.state = Status.Done
-      End If
-    Case Else
-      e.state = Status.Done
-  End Select
+    Match .state With
+      Case Idle Then .state = Active
+      Case Active When calls >= 2 Then .state = Done
+      Case _ Then .state = Done
+    End Match
+  End With
 End Sub
 
 Private Function SumSlice(nums() As Integer, count As Integer) As Integer
   Dim total As Integer = 0
-  For i = 0 To count - 1
+  For i = 0 To count - 1 Do
     total = total + nums(i)
   End For
   Return total
 End Function
 
 Public Function main() As Integer
-  ' Named With ( ... ) initializer + nested struct + fixed VB () array
+  ' Named With ( ... ) initializer + nested struct + fixed VB () array + unqualified Enum
   Dim hero As Entity With (
     id = 42,
-    state = Status.Idle,
+    state = Idle,
     pos = Vec2 With ( x = 1.5, y = 4.0 )
   )
   hero.tags(0) = 7
