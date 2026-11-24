@@ -5,7 +5,7 @@ Active roadmap and completed milestones for **VerBose-Lang**.
 ## Active TODO
 _All planned roadmap milestones are complete! New ideas and next-phase items will be tracked here.
 
-1. [ ] **Explain how `verbose test`** work : in **FEATURES.md** (how it link c-lib too) along how to write one (usage).
+1. [x] **Explain how `verbose test`** work : in **FEATURES.md** (how it link c-lib too) along how to write one (usage).
 2. [ ] **Refine `tests/raylib/`** : refactor the demo to be compile-able with comment/note text file along.
 3. [ ] **String Interpolation** : alike to **VBNET 14+** style: `Dim result As String = $"{ quantity } x { item_names }"`, add & test feature.
 4. [ ] **Pattern Matching** : like OCAML, it could either match value, variable, Conditional statement.. etc like : 
