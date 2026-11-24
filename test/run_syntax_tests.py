@@ -38,7 +38,7 @@ CASES = [
         "03_declare_override_builtins.vb",
         "Declare deduplication with built-in C functions + fclose",
         None,
-        ["first=116 closed=0"],
+        ["first=39 closed=0"],
         False,
     ),
     (
@@ -98,9 +98,9 @@ CLANG_STATUS_RE = re.compile(r"Status:\s*clang/exec\s*=\s*(-?\d+)\s+(-?\d+)")
 def run_case(vb_path: Path, extra_flag=None):
     tmp = tempfile.mkdtemp(prefix="vbsyn_")
     try:
-        stage0_dir = REPO / "stage0"
-        if stage0_dir.is_dir():
-            os.symlink(stage0_dir, Path(tmp) / "stage0")
+        src_dir = REPO / "src"
+        if src_dir.is_dir():
+            os.symlink(src_dir, Path(tmp) / "src")
         shutil.copyfile(vb_path, Path(tmp) / "target.vb")
         argv = [str(COMPILER), "target.vb"]
         if extra_flag:

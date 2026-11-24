@@ -1,6 +1,6 @@
 # VerBose Language
 
-Just Another Human-Readable Systems Programming Language — inspired by Visual Basic 6.0 / VB.NET, compiled directly to LLVM IR without a garbage collector, and **fully self-hosted**!
+Just Another Human-Readable Systems Programming Language — inspired by Visual Basic 6.0 / VB.NET, compiled directly to LLVM IR without a garbage collector, **brace-free**, and **100% self-hosted**!
 
 ---
 
@@ -9,7 +9,9 @@ Just Another Human-Readable Systems Programming Language — inspired by Visual 
 VerBose-Lang combines classic Visual Basic readability with deterministic, C-speed systems programming on top of LLVM:
 - **Zero GC**: Stack values, `Static` storage, explicit `HeapAlloc`/`HeapFree`, and a first-class deterministic `Arena` bump allocator.
 - **Native C FFI**: Direct `Declare Function`/`Sub` bindings with SysV x86-64 ByVal struct ABI lowering (including Raylib 5.x).
-- **Self-Hosted Compiler (`./verbose`)**: The primary compiler (`src/verbose.vb`, `src/token.vb`, `src/lexer.vb`, `src/ast.vb`, `src/printer.vb`, `src/parser.vb`, `src/type_analyzer.vb`, `src/codegen.vb`) is written in VerBose-Lang itself, includes a full semantic Type Analyzer and direct compile-and-run CLI, compiles itself to a byte-for-byte Stage 3 fixpoint, and passes **105/105** self-hosted tests & examples.
+- **100% Self-Hosted (`./verbose`)**: The compiler (`src/`) is written entirely in VerBose-Lang itself, includes a full semantic Type Analyzer and direct compile-and-run CLI, compiles itself to a byte-for-byte Stage 3 fixpoint, and passes **105/105** tests. The archival OCaml bootstrap compiler is preserved on the `stage0` branch.
+
+See **[Features.md](Features.md)** for the full list of implemented language, compiler, and tooling features.
 
 ---
 
@@ -81,8 +83,8 @@ Public Function main() As Integer
   StepEntity(ByRef hero, 0.5)
   StepEntity(ByRef hero, 0.5)
 
-  ' Authentic VB () array literals & Len()
-  Dim fixed(4) As Integer = {10, 20, 30, 40}
+  ' Authentic brace-free VB () array literals & Len()
+  Dim fixed(4) As Integer = (10, 20, 30, 40)
   Dim mask As Integer = (1 Shl 4) Or (8 Shr 1) Xor (Not 0)
   Dim root As Double = sqrt(16.0)
 
@@ -121,24 +123,26 @@ End Function
 verbose-lang/
 ├── .github/workflows/          # GitHub Actions CI & Release workflows (ci.yml, release.yml)
 ├── src/                        # Self-hosted VerBose compiler (verbose, token, lexer, ast, printer, parser, type_analyzer, codegen)
-├── stage0/                     # Stage 0 OCaml bootstrap compiler (bin/, lib/, verbose)
-├── examples/                   # Standalone language examples + Raylib 5.x demo
-├── raylib/                     # Raylib header/binding playground
-├── test/                       # Automated test suites for ./verbose & stage0/verbose
+├── examples/                   # Standalone language examples + Raylib 5.x demo (examples/raylib/)
+├── test/                       # Automated CLI, example, bootstrap & regression test suites
 ├── prototype.vb                # Scratch prototype
 ├── makefile                    # Build, demo, test, install, and dist targets
+├── Features.md                 # Full list of implemented language & compiler features
 ├── STATE.md                    # Detailed technical state & verification metrics
 └── README.md
 ```
+
+> **Stage 0 archive**: The original OCaml bootstrap compiler (`stage0/`) has been moved off `main` into the [`stage0`](../../tree/stage0) branch.
 
 ---
 
 ## Usage
 
-**Prerequisites**: `clang` (LLVM 19+ recommended) and `python3` for test runners (`ocaml`/`dune`/`menhir` only needed if rebuilding `stage0/verbose`).
+**Prerequisites**: `clang` (LLVM 19+ recommended), `python3` (for test runners), and `curl` (only if bootstrapping without an existing `verbose` binary).
 
 ```bash
 # Build & verify the self-hosted compiler (./verbose) via Stage 1 -> Stage 2 -> Stage 3 fixpoint
+# Uses existing ./verbose, `verbose` in PATH, BOOTSTRAP=/path/to/verbose, or downloads the latest GitHub Release binary
 make build
 
 # Compile and execute any .vb file directly (default mode)
@@ -155,9 +159,8 @@ make dist             # builds stripped dist/verbose, dist/verbose-linux-x86_64,
 make demo
 
 # Run test suites
-make test          # 105/105 self-hosted ./verbose CLI, examples, and full regression suites
-make test-stage0   # 92/92 Stage 0 OCaml compiler + Type Analyzer regression suites
-make test-all      # Full pipeline: Stage 1-3 build fixpoint + make test + make test-stage0
+make test             # 105/105 self-hosted ./verbose CLI, examples, and full regression suites
+make test-all         # Full pipeline: Stage 1-3 build fixpoint + make test + make demo
 ```
 
 ### Compiler CLI Flags (`./verbose`)
@@ -179,25 +182,16 @@ make test-all      # Full pipeline: Stage 1-3 build fixpoint + make test + make 
 
 ---
 
-## Implemented Features
+## Features
 
-- **Types & Expressions**: `Byte`, `Short`, `Integer`, `Long`, `Single`, `Double`, `Boolean`, `Pointer`, `Nothing`, hex literals (`0x...`), unary `-`, contextual literal typing, arithmetic/comparison/logical/bitwise operators (`And`, `Or`, `Xor`, `Not`, `Shl`, `Shr`, `Mod`)
-- **Control Flow**: `If / Then / Else`, `While ... Do`, `For ... To`, multi-value `Select Case ... Case Else` with early `Return`
-- **Functions & Parameters**: `Function` / `Sub`, `ByVal` / `ByRef` parameters, explicit call-site `ByRef`, ABI-aligned struct returns
-- **Structs & Enums**: `Structure` (nested structs, deep `.` field access/assignment), `Enum`, `With ( ... )` named initializers, positional struct constructors
-- **Authentic VB `()` Arrays**: Fixed arrays `Dim a(N) As T`, unsized slices `a() As T`, array literals `{1, 2, 3}`, `a(i)` indexing, `Pointer` byte indexing, `Len()`
-- **Static, Heap & Deterministic Arena Memory**: Module & function-local `Static`, `SizeOf(Type)`, `HeapAlloc` / `HeapRealloc` / `HeapAllocBytes` / `HeapFree`, and built-in `Arena` (`ArenaCreate`, `ArenaFromBuffer`, `ArenaAlloc`, `ArenaAllocBytes`, `ArenaReset`, `ArenaMark`, `ArenaRewind`, `ArenaUsed`, `ArenaRemaining`, `ArenaCapacity`, `ArenaDestroy`, `IsNull`)
-- **Modules & Encapsulation**: `Include "path.vb"`, `.`/`..` path normalization, diamond include-once deduplication, `Public` / `Private` / `Default` visibility & module-scoped `Private` isolation
-- **Native C Interop (FFI)**: `Declare Function` / `Sub`, variadic `...`, `ByRef` out-pointers, SysV x86-64 ByVal struct lowering, string escapes (`\n`, `\r`, `\t`, `\"`, `\\`, `\0`), plus working Raylib 5.x demo (`examples/raylib/bouncing_ball.vb`)
-- **Self-Hosting, Type Analyzer & CLI**: 8-module compiler in `src/` with full semantic Type Analyzer (`--ta`/`--no-ta`), AST printer (`--ast`), IR printer (`--ir`), direct compile-and-run (`./verbose file.vb`), full clang/linker flags (`-o`, `-I`, `-l`, `-L`, `.c/.o/.a`), Stage 1 → Stage 2 → Stage 3 byte-for-byte fixpoint, and **105/105** tests
-- **Tooling & CI**: `make install` / `uninstall` / `dist` packaging plus GitHub Actions CI (`.github/workflows/ci.yml`) and Release automation (`.github/workflows/release.yml`)
+All implemented language, memory, FFI, compiler, and tooling features are documented in **[Features.md](Features.md)**.
 
 ---
 
 ## Design Goals
 
-- Bootstrap minimally and stay self-hosted.
-- Human-readable VB6/VB.NET-inspired syntax that fits in your head (case-sensitive to eliminate C/DLL `Alias` boilerplate).
+- Bootstrap minimally and stay 100% self-hosted.
+- Human-readable, brace-free VB6/VB.NET-inspired syntax that fits in your head (case-sensitive to eliminate C/DLL `Alias` boilerplate).
 - Fast as C/Rust with zero GC, native C interop, and deterministic memory (`Arena`, `Static`, `Heap`, raw `Pointer`).
 - Portable across LLVM targets — Linux x86-64, macOS arm64, and bare-metal 32-bit ARM-M microcontrollers.
 
@@ -205,8 +199,10 @@ make test-all      # Full pipeline: Stage 1-3 build fixpoint + make test + make 
 
 ## Roadmap / TODO
 
-- [x] **Self-Hosted Type Analyzer & CLI**: Ported Stage 0's semantic Type Analyzer (`--ta`/`--no-ta`), AST printer (`--ast`), IR printer (`--ir`), and full driver flags (`-o`, `-I`, `-l`, `-L`, `--emit-only`, `--no-run`, direct compile & execute) into `src/`
+- [x] **Self-Hosted Type Analyzer & CLI**: Ported semantic Type Analyzer (`--ta`/`--no-ta`), AST printer (`--ast`), IR printer (`--ir`), and full driver flags (`-o`, `-I`, `-l`, `-L`, `--emit-only`, `--no-run`, direct compile & execute) into `src/`
 - [x] **Tooling & CI**: `make install`/`uninstall`/`dist` packaging, GitHub Actions CI (`ci.yml`), and automated Linux x86-64 binary releases (`release.yml`)
+- [x] **Brace-Free Syntax & Stage 0 Retirement**: Unified array literals to `(..)` across Stage 0 & self-hosted compilers, archived `stage0/` to the `stage0` branch, consolidated `raylib/` into `examples/raylib/`, and extracted `Features.md`
+- [ ] **Syntax Compression & Compiler Ergonomics**: Grouped same-type `Dim`/`Static` declarations, shared constants module for compiler diagnostics, and native string concatenation
 - [ ] **Target Triples & Cross-Compilation**: Emit explicit LLVM target triples and data layouts for Linux x86-64, macOS arm64, and bare-metal ARM-M (`Volatile`, fixed/deterministic memory regions)
 - [ ] **Standard Library (`std/`)**: Core modules (`strings`, `math`, `collections`, `io`) built with `Include` + `Arena`
 - [ ] **Language Extensions**: `Async`/`Await` and low-level label/address/raw memory primitives

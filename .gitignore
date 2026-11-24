@@ -1,8 +1,8 @@
 _build
-stage0/_build
 dist
 /verbose
 /verbose1
 /verbose.new
+/.verbose.boot
 /verbose*.ll
 src/*.ll

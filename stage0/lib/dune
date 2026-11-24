@@ -1,8 +1,0 @@
-
-(menhir (modules parser))
-
-(ocamllex lexer)
-
-(library
- (name VerboseLang)
- (modules lexer parser ast printer codegen type_analyzer loader))

@@ -13,22 +13,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install toolchain (clang, OCaml/dune/menhir, python3)
+      - name: Install toolchain (clang, python3, curl)
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang ocaml ocaml-dune menhir python3
-
-      - name: Build Stage 0 bootstrap compiler
-        run: make build-stage0
+          sudo apt-get install -y clang python3 curl
 
       - name: Build self-hosted compiler (Stage 1 -> Stage 2 -> Stage 3 fixpoint)
         run: make build
 
       - name: Run self-hosted compiler test suite (CLI, examples, semantic & negative checks)
         run: make test
-
-      - name: Run Stage 0 regression suite
-        run: make test-stage0
 
       - name: Run all standalone examples via ./verbose
         run: make demo

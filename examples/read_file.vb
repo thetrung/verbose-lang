@@ -8,7 +8,7 @@ Declare Function getc(fp As Pointer) As Integer
 Public Function main() As Integer
   ' 1. Memory and I/O initialization via C hooks
   Dim buffer As Pointer = malloc(512)
-  Dim fileHandle As Pointer = fopen("stage0/lib/ast.ml", "r")
+  Dim fileHandle As Pointer = fopen("src/ast.vb", "r")
 
   For i = 0 To 100
     Dim charCode As Integer = getc(fileHandle)

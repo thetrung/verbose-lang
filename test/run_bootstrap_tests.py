@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Self-hosting Stage 1 -> Stage 2 -> Stage 3 fixpoint & feature test runner for verbose."""
 
+import os
 import shutil
 import subprocess
 import sys
@@ -8,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-COMPILER = REPO / "stage0" / "verbose"
+COMPILER = Path(os.environ.get("VERBOSE_COMPILER", str(REPO / "verbose"))).resolve()
 SRC_ENTRY = REPO / "src" / "verbose.vb"
 
 PROGRAMS = [
@@ -152,7 +153,7 @@ def main():
         failed = 0
         total = 3 + len(PROGRAMS)
 
-        # Stage 1: Stage 0 OCaml compiler compiles src/verbose.vb -> verbose1
+        # Stage 1: bootstrap ./verbose compiles src/verbose.vb -> verbose1
         s1 = subprocess.run(
             [str(COMPILER), str(SRC_ENTRY), "--no-run", "-o", str(verbose1)],
             cwd=str(tmp),
@@ -164,12 +165,12 @@ def main():
         if ll_cleanup.exists():
             ll_cleanup.unlink()
         if s1.returncode != 0:
-            print("[FAIL] (STAGE-1) stage0/verbose failed to compile src/verbose.vb")
+            print(f"[FAIL] (STAGE-1) {COMPILER.name} failed to compile src/verbose.vb")
             print(s1.stdout)
             print(s1.stderr)
             return 1
         passed += 1
-        print("[PASS] (STAGE-1) stage0/verbose compiled src/verbose.vb -> verbose1")
+        print(f"[PASS] (STAGE-1) {COMPILER.name} compiled src/verbose.vb -> verbose1")
 
         # Stage 2: verbose1 compiles src/verbose.vb -> verbose2.ll -> clang -O2 -> verbose2
         s2_emit = subprocess.run([str(verbose1), str(SRC_ENTRY), str(verbose2_ll)], capture_output=True, text=True, timeout=30)

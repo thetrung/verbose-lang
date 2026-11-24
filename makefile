@@ -2,31 +2,48 @@ TARGET=prototype
 PREFIX ?= /usr/local
 DESTDIR ?=
 VERSION ?= 0.2.0
+BOOTSTRAP ?=
+RELEASE_URL ?= https://github.com/thetrung/verbose-lang/releases/latest/download/verbose
 
-.PHONY: default build build-stage0 run demo test test-stage0 test-all install uninstall dist clean
+.PHONY: default build run demo test test-all install uninstall dist clean
 
 default: build run
 
-# Build self-hosted ./verbose via Stage 0 -> Stage 1 -> Stage 2 -> Stage 3 fixpoint verification
+# Build self-hosted ./verbose via Stage 1 -> Stage 2 -> Stage 3 fixpoint verification
+# Uses BOOTSTRAP if set, else existing ./verbose, else `verbose` in PATH, else downloads the latest release binary.
+# (To rebuild from the archival OCaml Stage 0 compiler, see the `stage0` git branch.)
 build:
-	@if [ ! -x stage0/verbose ]; then $(MAKE) build-stage0; fi
-	@echo "=== Stage 1: stage0/verbose -> ./verbose1 ==="
-	./stage0/verbose src/verbose.vb --no-run -o verbose1
+	@BOOT="$(BOOTSTRAP)"; \
+	if [ -n "$$BOOT" ] && [ -x "$$BOOT" ]; then \
+		echo "=== Bootstrap compiler: $$BOOT ==="; \
+	elif [ -x ./verbose ]; then \
+		cp ./verbose ./.verbose.boot; \
+		BOOT="./.verbose.boot"; \
+		echo "=== Bootstrap compiler: existing ./verbose ==="; \
+	elif command -v verbose >/dev/null 2>&1; then \
+		BOOT="$$(command -v verbose)"; \
+		echo "=== Bootstrap compiler: $$BOOT (from PATH) ==="; \
+	else \
+		echo "=== Downloading bootstrap compiler from $(RELEASE_URL) ==="; \
+		curl -fsSL "$(RELEASE_URL)" -o ./.verbose.boot || { \
+			echo "Error: failed to download bootstrap binary. Pass BOOTSTRAP=/path/to/verbose or build from the 'stage0' branch."; \
+			exit 1; \
+		}; \
+		chmod +x ./.verbose.boot; \
+		BOOT="./.verbose.boot"; \
+	fi; \
+	echo "=== Stage 1: $$BOOT -> ./verbose1 ==="; \
+	"$$BOOT" src/verbose.vb --emit-only -o verbose1.ll && clang -O2 verbose1.ll -o verbose1 || exit 1
 	@echo "=== Stage 2: verbose1 self-compiles src/verbose.vb -> ./verbose (Stage 2) ==="
 	./verbose1 src/verbose.vb --emit-only -o verbose2.ll
 	clang -O2 verbose2.ll -o verbose
 	@echo "=== Stage 3: Fixpoint check (verbose2.ll == verbose3.ll) ==="
 	./verbose src/verbose.vb --emit-only -o verbose3.ll
 	diff -u verbose2.ll verbose3.ll && echo "[OK] Stage 3 self-hosting fixpoint verified (byte-for-byte identical)!"
-	@rm -f verbose1 src/verbose.ll verbose.ll verbose2.ll verbose3.ll
+	@rm -f ./.verbose.boot verbose1 src/verbose.ll verbose.ll verbose1.ll verbose2.ll verbose3.ll
 	@echo "=== Running Self-Hosting Feature Suite ==="
-	python3 test/run_bootstrap_tests.py
+	VERBOSE_COMPILER=./verbose python3 test/run_bootstrap_tests.py
 	@echo "[READY] Self-hosted compiler binary built at ./verbose"
-
-# Rebuild the Stage 0 OCaml compiler into stage0/verbose
-build-stage0:
-	cd stage0 && dune build --profile release
-	mv -f stage0/_build/default/bin/main.exe stage0/verbose
 
 # Compile and directly execute $(TARGET).vb using self-hosted ./verbose
 run:
@@ -69,21 +86,8 @@ test:
 	VERBOSE_COMPILER=./verbose python3 test/run_module_tests.py
 	VERBOSE_COMPILER=./verbose python3 test/run_c_interop_tests.py
 
-# Test Stage 0 OCaml compiler across all 9 regression suites (92 tests)
-test-stage0:
-	@if [ ! -x stage0/verbose ]; then $(MAKE) build-stage0; fi
-	VERBOSE_COMPILER=./stage0/verbose python3 test/run_syntax_tests.py
-	VERBOSE_COMPILER=./stage0/verbose python3 test/run_byref_tests.py
-	VERBOSE_COMPILER=./stage0/verbose python3 test/run_array_tests.py
-	VERBOSE_COMPILER=./stage0/verbose python3 test/run_static_heap_tests.py
-	VERBOSE_COMPILER=./stage0/verbose python3 test/run_arena_tests.py
-	VERBOSE_COMPILER=./stage0/verbose python3 test/run_ta_tests.py
-	VERBOSE_COMPILER=./stage0/verbose python3 test/run_module_tests.py
-	VERBOSE_COMPILER=./stage0/verbose python3 test/run_c_interop_tests.py
-	python3 test/run_bootstrap_tests.py
-
-# Full verification: self-hosted build + ./verbose suite + Stage 0 suites
-test-all: build test test-stage0
+# Full verification: self-hosted build fixpoint + ./verbose test suite + standalone demos
+test-all: build test demo
 
 # Install ./verbose into $(DESTDIR)$(PREFIX)/bin/verbose
 install:
@@ -106,10 +110,10 @@ dist:
 	@ls -lh dist/
 
 clean:
-	rm -rf _build stage0/_build dist \
-		verbose verbose1 verbose.new verbose*.ll src/*.ll \
+	rm -rf _build dist \
+		verbose verbose1 verbose.new .verbose.boot verbose*.ll src/*.ll \
 		${TARGET}.ll ${TARGET}.s ${TARGET} \
-		examples/*.ll examples/raylib/*.ll examples/raylib/bouncing_ball
+		examples/*.ll examples/raylib/bouncing_ball.ll examples/raylib/raylib.ll examples/raylib/bouncing_ball
 	@for dir in test/byref test/syntax test/arrays test/static_heap test/arena test/type_analyzer test/modules test/c_interop; do \
 		if [ -d "$$dir" ]; then \
 			find "$$dir" -maxdepth 1 -type f ! -name '*.vb' ! -name '*.c' -delete; \
