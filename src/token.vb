@@ -1,4 +1,4 @@
-' VerBose Self-Hosting Compiler (vbc) - Tokens & Type Tags
+' VerBose Self-Hosting Compiler (verbose) - Tokens & Type Tags
 
 Public Enum TokenKind
   TkEof = 0

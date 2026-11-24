@@ -1,4 +1,4 @@
-' VerBose Self-Hosting Compiler (vbc) - Multi-File Lexer & Include Module Loader
+' VerBose Self-Hosting Compiler (verbose) - Multi-File Lexer & Include Module Loader
 
 Include "token.vb"
 
@@ -426,7 +426,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
 
   Dim fp As Pointer = fopen(pathBuf, "rb")
   If IsNull(fp) Then
-    printf("vbc error: cannot open file '%s'\n", pathBuf)
+    printf("verbose error: cannot open file '%s'\n", pathBuf)
     Return -1
   End If
 
@@ -439,7 +439,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
   Dim tmpBuf As Pointer = ArenaAllocBytes(ByRef arena, fsize + 1)
   If IsNull(tmpBuf) Then
     fclose(fp)
-    printf("vbc error: arena OOM reading file\n")
+    printf("verbose error: arena OOM reading file\n")
     Return -1
   End If
   fread(tmpBuf, 1, fsizeLong, fp)
@@ -612,7 +612,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
                           Case 47
                             LxEmitTok(TokenKind.TkSlash, pos, 1, 0, line)
                           Case Else
-                            printf("vbc lexer error: unexpected char %d at line %d\n", c, line)
+                            printf("verbose lexer error: unexpected char %d at line %d\n", c, line)
                             Return -1
                         End Select
                         pos = pos + 1

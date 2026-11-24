@@ -1,6 +1,7 @@
 _build
 stage0/_build
-/vbc
-/vbc1
-/vbc.new
-/vbc*.ll
+/verbose
+/verbose1
+/verbose.new
+/verbose*.ll
+src/*.ll

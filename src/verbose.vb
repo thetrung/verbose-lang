@@ -1,4 +1,4 @@
-' VerBose Self-Hosting Compiler (vbc) - CLI Driver
+' VerBose Self-Hosting Compiler (verbose) - CLI Driver
 ' Compiles multi-file VerBose-Lang programs (.vb) directly into LLVM IR (.ll).
 ' Written in VerBose-Lang and capable of compiling itself (Stage 1 -> Stage 2 -> Stage 3 fixpoint).
 
@@ -6,7 +6,7 @@ Include "codegen.vb"
 
 Public Function main(argc As Integer, argv() As Pointer) As Integer
   If argc < 3 Then
-    printf("Usage: vbc <input.vb> <output.ll>\n")
+    printf("Usage: verbose <input.vb> <output.ll>\n")
     Return 1
   End If
 
@@ -24,7 +24,7 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
   AstInit(ByRef arena)
   Dim progRoot As Integer = ParseProgram()
   If g_nodes(progRoot).op > 0 Then
-    printf("vbc: aborting due to %d parse error(s)\n", g_nodes(progRoot).op)
+    printf("verbose: aborting due to %d parse error(s)\n", g_nodes(progRoot).op)
     ArenaDestroy(ByRef arena)
     Return 1
   End If
@@ -37,6 +37,6 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
     Return 1
   End If
 
-  printf("vbc: compiled %s -> %s (bytes=%d tokens=%d nodes=%d arena=%ld)\n", inPath, outPath, g_srcPoolLen, tokCount, g_nodeCount, usedBytes)
+  printf("verbose: compiled %s -> %s (bytes=%d tokens=%d nodes=%d arena=%ld)\n", inPath, outPath, g_srcPoolLen, tokCount, g_nodeCount, usedBytes)
   Return 0
 End Function

@@ -1,4 +1,4 @@
-' VerBose Self-Hosting Compiler (vbc) - Arena-Allocated AST & Type Metadata
+' VerBose Self-Hosting Compiler (verbose) - Arena-Allocated AST & Type Metadata
 
 Public Enum TypeKind
   TyNothing = 0

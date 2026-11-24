@@ -9,7 +9,7 @@ Just Another Human-Readable Systems Programming Language — inspired by Visual 
 VerBose-Lang combines classic Visual Basic readability with deterministic, C-speed systems programming on top of LLVM:
 - **Zero GC**: Stack values, `Static` storage, explicit `HeapAlloc`/`HeapFree`, and a first-class deterministic `Arena` bump allocator.
 - **Native C FFI**: Direct `Declare Function`/`Sub` bindings with SysV x86-64 ByVal struct ABI lowering (including Raylib 5.x).
-- **Self-Hosted Compiler (`vbc`)**: The primary compiler (`vbc.vb`, `token.vb`, `lexer.vb`, `ast.vb`, `parser.vb`, `codegen.vb`) is written in VerBose-Lang itself, compiles itself to a byte-for-byte Stage 3 fixpoint, and passes all 68/68 compatibility tests & examples.
+- **Self-Hosted Compiler (`./verbose`)**: The primary compiler (`src/verbose.vb`, `src/token.vb`, `src/lexer.vb`, `src/ast.vb`, `src/parser.vb`, `src/codegen.vb`) is written in VerBose-Lang itself, compiles itself to a byte-for-byte Stage 3 fixpoint, and passes all 68/68 compatibility tests & examples.
 
 ---
 
@@ -119,13 +119,13 @@ End Function
 
 ```text
 verbose-lang/
-├── vbc.vb, token.vb, lexer.vb, ast.vb, parser.vb, codegen.vb   # Self-hosted compiler (vbc)
+├── src/                        # Self-hosted VerBose compiler (verbose.vb, token.vb, lexer.vb, ast.vb, parser.vb, codegen.vb)
 ├── stage0/                     # Stage 0 OCaml bootstrap compiler (bin/, lib/, verbose)
 ├── examples/                   # Standalone language examples + Raylib 5.x demo
 ├── raylib/                     # Raylib header/binding playground
-├── test/                       # Automated test suites for vbc & Stage 0
+├── test/                       # Automated test suites for ./verbose & stage0/verbose
 ├── prototype.vb / prototype.c  # Scratch prototype
-├── makefile                    # Build, bootstrap, demo, and test targets
+├── makefile                    # Build, demo, and test targets
 ├── STATE.md                    # Detailed technical state & verification metrics
 └── README.md
 ```
@@ -137,18 +137,14 @@ verbose-lang/
 **Prerequisites**: `clang` (LLVM 19+ recommended) and `python3` for test runners (`opam`/`dune` only needed if rebuilding `stage0/verbose`).
 
 ```bash
-# Build the self-hosted compiler (./vbc) — bootstraps from stage0/verbose on first run,
-# then self-compiles from vbc.vb on subsequent runs
+# Build & verify the self-hosted compiler (./verbose) via Stage 1 -> Stage 2 -> Stage 3 fixpoint
 make build
 
-# Build and run prototype.vb with ./vbc
+# Build and run prototype.vb with ./verbose
 make
 
-# Run full Stage 0 -> Stage 1 -> Stage 2 -> Stage 3 fixpoint verification
-make bootstrap
-
 # Compile any .vb file directly with the self-hosted compiler
-./vbc your_file.vb your_file.ll
+./verbose your_file.vb your_file.ll
 clang -O2 your_file.ll -o your_file
 ./your_file
 
@@ -156,9 +152,9 @@ clang -O2 your_file.ll -o your_file
 make demo
 
 # Run test suites
-make test-vbc      # 68/68 self-hosted vbc compatibility tests + examples
+make test          # 68/68 self-hosted ./verbose compatibility tests + examples
 make test-stage0   # 92/92 Stage 0 OCaml compiler + Type Analyzer regression suites
-make test          # Full pipeline: bootstrap fixpoint + test-vbc + test-stage0
+make test-all      # Full pipeline: Stage 1-3 build fixpoint + make test + make test-stage0
 ```
 
 ---
@@ -173,7 +169,7 @@ make test          # Full pipeline: bootstrap fixpoint + test-vbc + test-stage0
 - **Static, Heap & Deterministic Arena Memory**: Module & function-local `Static`, `SizeOf(Type)`, `HeapAlloc` / `HeapRealloc` / `HeapAllocBytes` / `HeapFree`, and built-in `Arena` (`ArenaCreate`, `ArenaFromBuffer`, `ArenaAlloc`, `ArenaAllocBytes`, `ArenaReset`, `ArenaMark`, `ArenaRewind`, `ArenaUsed`, `ArenaRemaining`, `ArenaCapacity`, `ArenaDestroy`, `IsNull`)
 - **Modules & Encapsulation**: `Include "path.vb"`, `.`/`..` path normalization, diamond include-once deduplication, `Public` / `Private` / `Default` visibility & module-scoped `Private` isolation
 - **Native C Interop (FFI)**: `Declare Function` / `Sub`, variadic `...`, `ByRef` out-pointers, SysV x86-64 ByVal struct lowering, string escapes (`\n`, `\r`, `\t`, `\"`, `\\`, `\0`), plus working Raylib 5.x demo (`examples/raylib/bouncing_ball.vb`)
-- **Self-Hosting**: 6-module compiler written in VerBose-Lang passing Stage 1 → Stage 2 → Stage 3 byte-for-byte fixpoint and 68/68 compatibility tests
+- **Self-Hosting**: 6-module compiler in `src/` passing Stage 1 → Stage 2 → Stage 3 byte-for-byte fixpoint and 68/68 compatibility tests
 
 ---
 
@@ -188,8 +184,8 @@ make test          # Full pipeline: bootstrap fixpoint + test-vbc + test-stage0
 
 ## Roadmap / TODO
 
-- [ ] **Self-Hosted Type Analyzer & CLI**: Port Stage 0's semantic Type Analyzer (`--ta`) and driver flags (`-o`, `-I`, `-l`, `-L`, `--emit-only`, direct `clang` linking) into `vbc`
+- [ ] **Self-Hosted Type Analyzer & CLI**: Port Stage 0's semantic Type Analyzer (`--ta`) and driver flags (`-o`, `-I`, `-l`, `-L`, `--emit-only`, direct `clang` linking) into `src/verbose.vb`
 - [ ] **Target Triples & Cross-Compilation**: Emit explicit LLVM target triples and data layouts for Linux x86-64, macOS arm64, and bare-metal ARM-M (`Volatile`, fixed/deterministic memory regions)
 - [ ] **Standard Library (`std/`)**: Core modules (`strings`, `math`, `collections`, `io`) built with `Include` + `Arena`
-- [ ] **Tooling & CI**: Package/build tooling and GitHub Actions CI running `make test`
+- [ ] **Tooling & CI**: Package/build tooling and GitHub Actions CI running `make test-all`
 - [ ] **Language Extensions**: `Async`/`Await` and low-level label/address/raw memory primitives

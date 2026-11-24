@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the self-hosted VerBose compiler (./vbc) across ALL positive testcases & examples."""
+"""Run the self-hosted VerBose compiler (./verbose) across ALL positive testcases & examples."""
 
 import os
 import shutil
@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-VBC = REPO / "vbc"
+COMPILER = REPO / "verbose"
 
 # Each entry: (suite, rel_path, expected_substrings, extra_clang_args, needs_repo_cwd)
 CASES = [
@@ -102,16 +102,16 @@ CASES = [
 
 
 def run_one(vb_path: Path, expected: list, extra_clang: list, needs_repo_cwd: bool):
-    tmp = Path(tempfile.mkdtemp(prefix="vbc_compat_"))
+    tmp = Path(tempfile.mkdtemp(prefix="verbose_test_"))
     try:
         ll_file = tmp / "out.ll"
         exe_file = tmp / "out_bin"
 
-        # 1. Compile with self-hosted vbc
-        r1 = subprocess.run([str(VBC), str(vb_path), str(ll_file)], capture_output=True, text=True, timeout=15)
+        # 1. Compile with self-hosted ./verbose
+        r1 = subprocess.run([str(COMPILER), str(vb_path), str(ll_file)], capture_output=True, text=True, timeout=15)
         if r1.returncode != 0 or not ll_file.exists():
             msg = (r1.stdout + "\n" + r1.stderr).strip().splitlines()
-            return False, "vbc", msg[-1] if msg else f"rc={r1.returncode}"
+            return False, "verbose", msg[-1] if msg else f"rc={r1.returncode}"
 
         # 2. Compile emitted LLVM IR with clang -O2
         clang_cmd = ["clang", "-O2", str(ll_file), "-o", str(exe_file)] + extra_clang
@@ -135,8 +135,8 @@ def run_one(vb_path: Path, expected: list, extra_clang: list, needs_repo_cwd: bo
 
 
 def main():
-    if not VBC.is_file():
-        print(f"Error: {VBC} not found. Run 'make build' or 'make bootstrap' first.", file=sys.stderr)
+    if not COMPILER.is_file():
+        print(f"Error: {COMPILER} not found. Run 'make build' first.", file=sys.stderr)
         return 1
 
     suite_stats = {}
@@ -156,10 +156,10 @@ def main():
             total_fail += 1
             print(f"[FAIL] ({suite}) {vb_path.name} [{stage}] {detail}")
 
-    print("\n--- Per-Suite vbc Compatibility Summary ---")
+    print("\n--- Per-Suite Self-Hosted Compiler Summary ---")
     for suite, (p, f) in suite_stats.items():
         print(f"  {suite:14s}: {p}/{p + f} passed")
-    print(f"\nOverall vbc compatibility: {total_pass}/{total_pass + total_fail} passed, {total_fail} failed.")
+    print(f"\nOverall ./verbose compatibility: {total_pass}/{total_pass + total_fail} passed, {total_fail} failed.")
     return 0 if total_fail == 0 else 1
 
 

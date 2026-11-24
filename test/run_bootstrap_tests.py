@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Self-hosting Stage 1 -> Stage 2 -> Stage 3 fixpoint & feature test runner for vbc."""
+"""Self-hosting Stage 1 -> Stage 2 -> Stage 3 fixpoint & feature test runner for verbose."""
 
 import shutil
 import subprocess
@@ -9,7 +9,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 COMPILER = REPO / "stage0" / "verbose"
-VBC_SRC = REPO / "vbc.vb"
+SRC_ENTRY = REPO / "src" / "verbose.vb"
 
 PROGRAMS = [
     (
@@ -143,76 +143,76 @@ def main():
             "Public Function DoubleIt(x As Integer) As Integer\n  Return x * 2\nEnd Function\n",
             encoding="utf-8",
         )
-        vbc1 = tmp / "vbc1"
-        vbc2_ll = tmp / "vbc2.ll"
-        vbc2 = tmp / "vbc2"
-        vbc3_ll = tmp / "vbc3.ll"
+        verbose1 = tmp / "verbose1"
+        verbose2_ll = tmp / "verbose2.ll"
+        verbose2 = tmp / "verbose2"
+        verbose3_ll = tmp / "verbose3.ll"
 
         passed = 0
         failed = 0
         total = 3 + len(PROGRAMS)
 
-        # Stage 1: Stage 0 OCaml compiler compiles vbc.vb -> vbc1
+        # Stage 1: Stage 0 OCaml compiler compiles src/verbose.vb -> verbose1
         s1 = subprocess.run(
-            [str(COMPILER), str(VBC_SRC), "--no-run", "-o", str(vbc1)],
+            [str(COMPILER), str(SRC_ENTRY), "--no-run", "-o", str(verbose1)],
             cwd=str(tmp),
             capture_output=True,
             text=True,
             timeout=30,
         )
-        vbc_ll_cleanup = VBC_SRC.with_suffix(".ll")
-        if vbc_ll_cleanup.exists():
-            vbc_ll_cleanup.unlink()
+        ll_cleanup = SRC_ENTRY.with_suffix(".ll")
+        if ll_cleanup.exists():
+            ll_cleanup.unlink()
         if s1.returncode != 0:
-            print("[FAIL] (STAGE-1) stage0/verbose failed to compile vbc.vb")
+            print("[FAIL] (STAGE-1) stage0/verbose failed to compile src/verbose.vb")
             print(s1.stdout)
             print(s1.stderr)
             return 1
         passed += 1
-        print("[PASS] (STAGE-1) stage0/verbose compiled vbc.vb -> vbc1")
+        print("[PASS] (STAGE-1) stage0/verbose compiled src/verbose.vb -> verbose1")
 
-        # Stage 2: vbc1 compiles vbc.vb -> vbc2.ll -> clang -O2 -> vbc2
-        s2_emit = subprocess.run([str(vbc1), str(VBC_SRC), str(vbc2_ll)], capture_output=True, text=True, timeout=30)
+        # Stage 2: verbose1 compiles src/verbose.vb -> verbose2.ll -> clang -O2 -> verbose2
+        s2_emit = subprocess.run([str(verbose1), str(SRC_ENTRY), str(verbose2_ll)], capture_output=True, text=True, timeout=30)
         if s2_emit.returncode != 0:
-            print("[FAIL] (STAGE-2) vbc1 failed to compile vbc.vb")
+            print("[FAIL] (STAGE-2) verbose1 failed to compile src/verbose.vb")
             print(s2_emit.stdout)
             print(s2_emit.stderr)
             return 1
-        s2_cc = subprocess.run(["clang", "-O2", str(vbc2_ll), "-o", str(vbc2)], capture_output=True, text=True, timeout=30)
+        s2_cc = subprocess.run(["clang", "-O2", str(verbose2_ll), "-o", str(verbose2)], capture_output=True, text=True, timeout=30)
         if s2_cc.returncode != 0:
-            print("[FAIL] (STAGE-2 CLANG) clang failed on vbc2.ll")
+            print("[FAIL] (STAGE-2 CLANG) clang failed on verbose2.ll")
             print(s2_cc.stdout)
             print(s2_cc.stderr)
             return 1
         passed += 1
-        print(f"[PASS] (STAGE-2) vbc1 self-compiled vbc.vb -> vbc2 [{s2_emit.stdout.strip()}]")
+        print(f"[PASS] (STAGE-2) verbose1 self-compiled src/verbose.vb -> verbose2 [{s2_emit.stdout.strip()}]")
 
-        # Stage 3: vbc2 compiles vbc.vb -> vbc3.ll and verifies byte-for-byte fixpoint!
-        s3_emit = subprocess.run([str(vbc2), str(VBC_SRC), str(vbc3_ll)], capture_output=True, text=True, timeout=30)
+        # Stage 3: verbose2 compiles src/verbose.vb -> verbose3.ll and verifies byte-for-byte fixpoint!
+        s3_emit = subprocess.run([str(verbose2), str(SRC_ENTRY), str(verbose3_ll)], capture_output=True, text=True, timeout=30)
         if s3_emit.returncode != 0:
-            print("[FAIL] (STAGE-3) vbc2 failed to compile vbc.vb")
+            print("[FAIL] (STAGE-3) verbose2 failed to compile src/verbose.vb")
             print(s3_emit.stdout)
             print(s3_emit.stderr)
             return 1
-        ir2 = vbc2_ll.read_text(encoding="utf-8")
-        ir3 = vbc3_ll.read_text(encoding="utf-8")
+        ir2 = verbose2_ll.read_text(encoding="utf-8")
+        ir3 = verbose3_ll.read_text(encoding="utf-8")
         if ir2 != ir3:
-            print(f"[FAIL] (STAGE-3 FIXPOINT) vbc2.ll ({len(ir2)}B) != vbc3.ll ({len(ir3)}B)")
+            print(f"[FAIL] (STAGE-3 FIXPOINT) verbose2.ll ({len(ir2)}B) != verbose3.ll ({len(ir3)}B)")
             return 1
         passed += 1
-        print(f"[PASS] (STAGE-3 FIXPOINT) vbc2.ll == vbc3.ll byte-for-byte identical ({len(ir3)} bytes)!")
+        print(f"[PASS] (STAGE-3 FIXPOINT) verbose2.ll == verbose3.ll byte-for-byte identical ({len(ir3)} bytes)!")
 
-        # Feature suite compiled by self-hosted Stage-2 vbc2!
+        # Feature suite compiled by self-hosted Stage-2 verbose2!
         for fname, desc, source, expected in PROGRAMS:
             src_file = tmp / fname
             ll_file = tmp / (Path(fname).stem + ".ll")
             exe_file = tmp / Path(fname).stem
             src_file.write_text(source, encoding="utf-8")
 
-            r1 = subprocess.run([str(vbc2), str(src_file), str(ll_file)], capture_output=True, text=True, timeout=15)
+            r1 = subprocess.run([str(verbose2), str(src_file), str(ll_file)], capture_output=True, text=True, timeout=15)
             if r1.returncode != 0:
                 failed += 1
-                print(f"[FAIL] (VBC2) {fname} — {desc}")
+                print(f"[FAIL] (STAGE-2) {fname} — {desc}")
                 print("    " + (r1.stdout + "\n" + r1.stderr).strip())
                 continue
 
@@ -228,7 +228,7 @@ def main():
             missing = [line for line in expected if line not in out]
             if r3.returncode == 0 and not missing:
                 passed += 1
-                print(f"[PASS] (VBC2) {fname} — {desc}")
+                print(f"[PASS] (STAGE-2) {fname} — {desc}")
             else:
                 failed += 1
                 print(f"[FAIL] (RUN) {fname} — {desc}")
