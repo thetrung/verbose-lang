@@ -1456,6 +1456,41 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Return r
   End If
 
+  ' Positional struct constructor: StructName(arg0, arg1, ...)
+  Dim ctorStructIdx As Integer = CgFindStruct(nPos, nLen)
+  If ctorStructIdx >= 0 Then
+    Dim sTy As TypeInfo With {
+      kind = TypeKind.TyStruct,
+      typeIdx = ctorStructIdx,
+      arrLen = 0,
+      namePos = nPos,
+      nameLen = nLen
+    }
+    Dim slot As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = alloca ", slot)
+    CgEmitLlvmType(sTy)
+    fprintf(cg_out, ", align 8\n")
+    fprintf(cg_out, "  store ")
+    CgEmitLlvmType(sTy)
+    fprintf(cg_out, " zeroinitializer, ptr %%r%d, align 8\n", slot)
+    Dim fst As Integer = cg_structs(ctorStructIdx).fieldStart
+    Dim ci As Integer = 0
+    While ci < aCount Do
+      Dim fTy As TypeInfo = cg_fields(fst + ci).ty
+      Dim aNode As Integer = g_kids(aStart + ci)
+      Dim valTy As TypeInfo
+      Dim valReg As Integer = CgEmitExpr(g_nodes(aNode).left, ByRef valTy)
+      Dim fPtr As Integer = CgNextReg()
+      fprintf(cg_out, "  %%r%d = getelementptr inbounds ", fPtr)
+      CgEmitLlvmType(sTy)
+      fprintf(cg_out, ", ptr %%r%d, i32 0, i32 %d\n", slot, ci)
+      CgEmitStoreTyped(fPtr, fTy, valReg, valTy)
+      ci = ci + 1
+    End While
+    outTy = sTy
+    Return slot
+  End If
+
   ' User Function / Sub / ExternDecl / C runtime builtin
   Dim fnIdx As Integer = CgFindFunc(nPos, nLen)
   Dim argRegs(32) As Integer
