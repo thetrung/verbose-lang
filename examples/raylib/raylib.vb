@@ -40,6 +40,6 @@ Declare Function GetMousePosition() As Vector2
 Declare Function IsKeyDown(key As Integer) As Boolean
 
 Public Function MakeColor(r As Byte, g As Byte, b As Byte, a As Byte) As Color
-  Dim c As Color With { r = r, g = g, b = b, a = a }
+  Dim c As Color With ( r = r, g = g, b = b, a = a )
   Return c
 End Function

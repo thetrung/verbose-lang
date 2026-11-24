@@ -46,7 +46,7 @@ let rec string_of_expr = function
   | ArrayLit elems -> "{" ^ String.concat ", " (List.map string_of_expr elems) ^ "}"
   | StructInit (name, inits) ->
       let fmt_init (f, e) = f ^ " = " ^ string_of_expr e in
-      name ^ " With { " ^ String.concat ", " (List.map fmt_init inits) ^ " }"
+      name ^ " With ( " ^ String.concat ", " (List.map fmt_init inits) ^ " )"
   | SizeOf dt -> "SizeOf(" ^ string_of_dt dt ^ ")"
   | HeapAlloc (dt, count) -> "HeapAlloc(" ^ string_of_dt dt ^ ", " ^ string_of_expr count ^ ")"
   | HeapRealloc (p, dt, count) -> "HeapRealloc(" ^ string_of_expr p ^ ", " ^ string_of_dt dt ^ ", " ^ string_of_expr count ^ ")"

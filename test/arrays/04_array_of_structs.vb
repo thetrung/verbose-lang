@@ -5,7 +5,7 @@ End Structure
 
 Public Function main() As Integer
   Dim pts(3) As Point
-  pts(0) = Point With { x = 10, y = 20 }
+  pts(0) = Point With ( x = 10, y = 20 )
   pts(1).x = 30
   pts(1).y = 40
   pts(2) = pts(0)

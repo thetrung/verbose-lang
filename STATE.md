@@ -22,7 +22,7 @@
 - **Stage 0 (`stage0/lib/lexer.mll`, `loader.ml`)**: `ocamllex` + Menhir parser (3 S/R conflicts via unified `postfix_expr`) + `-I` search path resolution, circular-include detection, and module-level `Private` alpha-renaming.
 
 ### 2. Parser & AST
-- **Self-hosted (`src/ast.vb`, `src/parser.vb`)**: Arena-allocated flat AST node & child-index pools (`g_nodes()`, `g_kids()`). Supports all statements, expressions, operator precedences (`Or`/`Xor`, `And`, `Not`, comparisons, `Shl`/`Shr`, `+/-`, `* / Mod`, unary `-`), authentic VB `()` array syntax, `With { ... }` named struct initializers, positional struct constructors, and `Declare` FFI signatures (including variadic `...`).
+- **Self-hosted (`src/ast.vb`, `src/parser.vb`)**: Arena-allocated flat AST node & child-index pools (`g_nodes()`, `g_kids()`). Supports all statements, expressions, operator precedences (`Or`/`Xor`, `And`, `Not`, comparisons, `Shl`/`Shr`, `+/-`, `* / Mod`, unary `-`), authentic VB `()` array syntax, `With ( ... )` named struct initializers, positional struct constructors, and `Declare` FFI signatures (including variadic `...`).
 - **Stage 0 (`stage0/lib/ast.ml`, `type_analyzer.ml`)**: Full semantic Type Analyzer running automatically before codegen (`--ta` verbose, `--no-ta` opt-out) validating variable/function/call disambiguation, numeric/pointer assignability, `ByRef` lvalue/mode rules, `Static` constant initializers, `Arena`/`Heap`/`Array` semantics, and cross-module `Private` encapsulation.
 
 ### 3. LLVM IR Codegen
@@ -37,7 +37,7 @@
 - [x] **Operators**: Arithmetic (`+`, `-`, `*`, `/`, `Mod`), Comparisons (`=`, `<>`, `<`, `>`, `<=`, `>=`), Boolean & Bitwise (`And`, `Or`, `Xor`, `Not`, `Shl`, `Shr`)
 - [x] **Control Flow**: `If / Then / Else / End If`, `While ... Do / End While`, `For ... To / End For`, multi-value `Select Case ... Case Else / End Select` with early `Return`
 - [x] **Functions & Procedures**: `Function` / `Sub`, forward registration, `ByVal` / `ByRef` parameters, explicit call-site `ByRef` (`foo(ByRef x)`), struct return values
-- [x] **Composite Types**: `Structure` (recursive ABI-aligned sizing, nested structs, deep `.` field access/assign through `ByRef`), `Enum` (lowered to `i32`), `With { field = expr, ... }` named initializers, positional struct constructors
+- [x] **Composite Types**: `Structure` (recursive ABI-aligned sizing, nested structs, deep `.` field access/assign through `ByRef`), `Enum` (lowered to `i32`), `With ( field = expr, ... )` named initializers, positional struct constructors
 - [x] **Authentic VB Arrays**: Fixed arrays `Dim arr(N) As T`, unsized slices `arr() As T`, array literals `{1, 2, 3}`, `arr(i)` indexing, `Pointer` byte indexing, `ByVal`/`ByRef` arrays, `Len()`
 - [x] **Static & Heap Memory**: Module-level & function-local `Static` globals, `SizeOf(Type)`, `HeapAlloc`, `HeapRealloc`, `HeapAllocBytes`, `HeapFree`
 - [x] **Deterministic Arena Allocator**: `Arena` type, `ArenaCreate`, `ArenaFromBuffer`, `ArenaAlloc`, `ArenaAllocBytes`, `ArenaReset`, `ArenaMark`, `ArenaRewind`, `ArenaUsed`, `ArenaRemaining`, `ArenaCapacity`, `ArenaDestroy`, `IsNull`

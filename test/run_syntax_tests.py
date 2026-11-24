@@ -50,7 +50,7 @@ CASES = [
     ),
     (
         "05_with_initializer_basic.vb",
-        "With { ... } multi-line, single-line, out-of-order, trailing comma, Single literal",
+        "With ( ... ) multi-line, single-line, out-of-order, trailing comma, Single literal",
         None,
         ["v1=3.14,2.75,9999999 v2=1.5,4.5,7"],
         False,

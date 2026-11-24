@@ -4,7 +4,7 @@ Structure Vec2
 End Structure
 
 Public Function VecAdd(a As Vec2, b As Vec2) As Vec2
-  Dim r As Vec2 With { x = a.x + b.x, y = a.y + b.y }
+  Dim r As Vec2 With ( x = a.x + b.x, y = a.y + b.y )
   Return r
 End Function
 

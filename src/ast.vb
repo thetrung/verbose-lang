@@ -108,7 +108,7 @@ End Sub
 
 Public Function NewNode(kind As Integer) As Integer
   Dim id As Integer = g_nodeCount
-  g_nodes(id) = AstNode With {
+  g_nodes(id) = AstNode With (
     kind = kind,
     op = 0,
     intVal = 0,
@@ -124,7 +124,7 @@ Public Function NewNode(kind As Integer) As Integer
     tyArrLen = 0,
     tyNamePos = 0,
     tyNameLen = 0
-  }
+  )
   g_nodeCount = g_nodeCount + 1
   Return id
 End Function

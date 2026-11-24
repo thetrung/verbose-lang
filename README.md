@@ -71,12 +71,12 @@ Private Function SumSlice(nums() As Integer, count As Integer) As Integer
 End Function
 
 Public Function main() As Integer
-  ' Named With { ... } initializer + nested struct + fixed VB () array
-  Dim hero As Entity With {
+  ' Named With ( ... ) initializer + nested struct + fixed VB () array
+  Dim hero As Entity With (
     id = 42,
     state = Status.Idle,
-    pos = Vec2 With { x = 1.5, y = 4.0 }
-  }
+    pos = Vec2 With ( x = 1.5, y = 4.0 )
+  )
   hero.tags(0) = 7
   StepEntity(ByRef hero, 0.5)
   StepEntity(ByRef hero, 0.5)
@@ -164,7 +164,7 @@ make test-all      # Full pipeline: Stage 1-3 build fixpoint + make test + make 
 - **Types & Expressions**: `Byte`, `Short`, `Integer`, `Long`, `Single`, `Double`, `Boolean`, `Pointer`, `Nothing`, hex literals (`0x...`), unary `-`, contextual literal typing, arithmetic/comparison/logical/bitwise operators (`And`, `Or`, `Xor`, `Not`, `Shl`, `Shr`, `Mod`)
 - **Control Flow**: `If / Then / Else`, `While ... Do`, `For ... To`, multi-value `Select Case ... Case Else` with early `Return`
 - **Functions & Parameters**: `Function` / `Sub`, `ByVal` / `ByRef` parameters, explicit call-site `ByRef`, ABI-aligned struct returns
-- **Structs & Enums**: `Structure` (nested structs, deep `.` field access/assignment), `Enum`, `With { ... }` named initializers, positional struct constructors
+- **Structs & Enums**: `Structure` (nested structs, deep `.` field access/assignment), `Enum`, `With ( ... )` named initializers, positional struct constructors
 - **Authentic VB `()` Arrays**: Fixed arrays `Dim a(N) As T`, unsized slices `a() As T`, array literals `{1, 2, 3}`, `a(i)` indexing, `Pointer` byte indexing, `Len()`
 - **Static, Heap & Deterministic Arena Memory**: Module & function-local `Static`, `SizeOf(Type)`, `HeapAlloc` / `HeapRealloc` / `HeapAllocBytes` / `HeapFree`, and built-in `Arena` (`ArenaCreate`, `ArenaFromBuffer`, `ArenaAlloc`, `ArenaAllocBytes`, `ArenaReset`, `ArenaMark`, `ArenaRewind`, `ArenaUsed`, `ArenaRemaining`, `ArenaCapacity`, `ArenaDestroy`, `IsNull`)
 - **Modules & Encapsulation**: `Include "path.vb"`, `.`/`..` path normalization, diamond include-once deduplication, `Public` / `Private` / `Default` visibility & module-scoped `Private` isolation

@@ -39,7 +39,7 @@ type expr =
   | FieldAccess of expr * string    (* variable.Kind *)
   | IndexAccess of expr * expr      (* arr[i] *)
   | ArrayLit of expr list           (* [1, 2, 3] *)
-  | StructInit of string * (string * expr) list (* Vector With { x = 1.0, y = 2.0 } *)
+  | StructInit of string * (string * expr) list (* Vector With ( x = 1.0, y = 2.0 ) *)
   | SizeOf of data_type             (* SizeOf(Point) *)
   | HeapAlloc of data_type * expr   (* HeapAlloc(Integer, 10) *)
   | HeapRealloc of expr * data_type * expr (* HeapRealloc(arr, Integer, 20) *)

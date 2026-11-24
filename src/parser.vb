@@ -107,11 +107,11 @@ End Function
 
 Private Function PParseWithInit(structNamePos As Integer, structNameLen As Integer) As Integer
   PExpect(TokenKind.TkWith)
-  PExpect(TokenKind.TkLBrace)
+  PExpect(TokenKind.TkLParen)
   PSkipNewlines()
   Dim fiBuf(64) As Integer
   Dim fiCount As Integer = 0
-  While (PPeekKind() <> TokenKind.TkRBrace) And (PPeekKind() <> TokenKind.TkEof) Do
+  While (PPeekKind() <> TokenKind.TkRParen) And (PPeekKind() <> TokenKind.TkEof) Do
     Dim fPos As Integer = g_tokens(p_pos).pos
     Dim fLen As Integer = g_tokens(p_pos).len
     PExpect(TokenKind.TkIdent)
@@ -129,7 +129,7 @@ Private Function PParseWithInit(structNamePos As Integer, structNameLen As Integ
       PSkipNewlines()
     End If
   End While
-  PExpect(TokenKind.TkRBrace)
+  PExpect(TokenKind.TkRParen)
 
   Dim initId As Integer = NewNode(NodeKind.NdStructInit)
   g_nodes(initId).intVal = structNamePos
@@ -550,7 +550,7 @@ End Sub
 Public Function ParseStmt() As Integer
   Dim k As Integer = PPeekKind()
 
-  ' Dim / Static name[(N | )] As Type [= expr | With { ... } | (args)]
+  ' Dim / Static name[(N | )] As Type [= expr | With ( ... ) | (args)]
   If (k = TokenKind.TkDim) Or (k = TokenKind.TkStatic) Then
     Dim isStat As Boolean = (k = TokenKind.TkStatic)
     PAdvance()
@@ -979,7 +979,7 @@ Private Function PParseDef() As Integer
     Return ed
   End If
 
-  ' Static name[(N | )] As T [= expr | With { ... }]
+  ' Static name[(N | )] As T [= expr | With ( ... )]
   If k = TokenKind.TkStatic Then
     PAdvance()
     Dim gPos As Integer = g_tokens(p_pos).pos

@@ -243,13 +243,13 @@ Private Function CgFindLocal(pos As Integer, slen As Integer) As Integer
 End Function
 
 Private Function CgResolveType(rawKind As Integer, arrLen As Integer, nPos As Integer, nLen As Integer) As TypeInfo
-  Dim res As TypeInfo With {
+  Dim res As TypeInfo With (
     kind = rawKind,
     typeIdx = -1,
     arrLen = arrLen,
     namePos = nPos,
     nameLen = nLen
-  }
+  )
   If rawKind = TypeKind.TyArena Then
     cg_usesArena = 1
   End If
@@ -280,13 +280,13 @@ Private Function CgIsAggregate(ty As TypeInfo) As Boolean
 End Function
 
 Private Function CgElemType(ty As TypeInfo) As TypeInfo
-  Dim e As TypeInfo With {
+  Dim e As TypeInfo With (
     kind = ty.kind,
     typeIdx = ty.typeIdx,
     arrLen = 0,
     namePos = ty.namePos,
     nameLen = ty.nameLen
-  }
+  )
   Return e
 End Function
 
@@ -546,13 +546,13 @@ Private Function CgClassifyCStruct(structIdx As Integer, ByRef outT0 As Integer,
   Dim leafKinds(64) As Integer
   Dim leafSizes(64) As Integer
   Dim leafCount As Integer = 0
-  Dim sTy As TypeInfo With {
+  Dim sTy As TypeInfo With (
     kind = TypeKind.TyStruct,
     typeIdx = structIdx,
     arrLen = 0,
     namePos = cg_structs(structIdx).namePos,
     nameLen = cg_structs(structIdx).nameLen
-  }
+  )
   CgFlattenStruct(0, sTy, leafOffs, leafKinds, leafSizes, ByRef leafCount)
   If totalSz <= 8 Then
     outT0 = CgClassifyChunk(0, totalSz, leafOffs, leafKinds, leafSizes, leafCount)
@@ -667,11 +667,11 @@ Private Function CgRegisterString(srcPos As Integer, srcLen As Integer) As Integ
       i = i + 1
     End If
   End While
-  cg_strs(idx) = CgStrConst With {
+  cg_strs(idx) = CgStrConst With (
     srcPos = srcPos,
     srcLen = srcLen,
     byteLen = bytes + 1
-  }
+  )
   cg_strCount = cg_strCount + 1
   Return idx
 End Function
@@ -689,10 +689,10 @@ Private Sub CgCollectStrings(id As Integer)
   If k = NodeKind.NdStaticDim Then
     Dim sid As Integer = cg_staticLocalCount
     g_nodes(id).op = sid
-    cg_staticLocals(sid) = CgStaticLocal With {
+    cg_staticLocals(sid) = CgStaticLocal With (
       ty = CgResolveType(g_nodes(id).tyKind, g_nodes(id).tyArrLen, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen),
       initNode = g_nodes(id).left
-    }
+    )
     cg_staticLocalCount = cg_staticLocalCount + 1
   End If
   If k = NodeKind.NdArenaAlloc Then
@@ -978,7 +978,7 @@ Private Function CgCoerceScalar(valReg As Integer, fromTy As TypeInfo, toTy As T
 End Function
 
 Private Function CgWidenToI64(valReg As Integer, fromTy As TypeInfo) As Integer
-  Dim longTy As TypeInfo With { kind = TypeKind.TyLong, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+  Dim longTy As TypeInfo With ( kind = TypeKind.TyLong, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
   Return CgCoerceScalar(valReg, fromTy, longTy)
 End Function
 
@@ -1124,7 +1124,7 @@ Private Function CgEmitLValuePtr(id As Integer, ByRef outTy As TypeInfo, ByRef o
       fprintf(cg_out, "  %%r%d = load ptr, ptr %%r%d, align 8\n", rawPtr, basePtr)
       Dim r As Integer = CgNextReg()
       fprintf(cg_out, "  %%r%d = getelementptr inbounds i8, ptr %%r%d, i64 %%r%d\n", r, rawPtr, idx64)
-      outTy = TypeInfo With { kind = TypeKind.TyByte, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+      outTy = TypeInfo With ( kind = TypeKind.TyByte, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
       Return r
     End If
   End If
@@ -1151,7 +1151,7 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
   If k = NodeKind.NdIntLit Then
     Dim r As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = add i32 0, %d\n", r, g_nodes(id).intVal)
-    outTy = TypeInfo With { kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
   End If
 
@@ -1160,14 +1160,14 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     fprintf(cg_out, "  %%r%d = fadd double 0.0, ", r)
     CgEmitSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
     fprintf(cg_out, "\n")
-    outTy = TypeInfo With { kind = TypeKind.TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
   End If
 
   If k = NodeKind.NdBoolLit Then
     Dim r As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = add i1 0, %d\n", r, g_nodes(id).intVal)
-    outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
   End If
 
@@ -1176,7 +1176,7 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim bl As Integer = cg_strs(sid).byteLen
     Dim r As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = getelementptr inbounds [%d x i8], ptr @.str_%d, i64 0, i64 0\n", r, bl, sid)
-    outTy = TypeInfo With { kind = TypeKind.TyPointer, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyPointer, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
   End If
 
@@ -1214,7 +1214,7 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
         If CgFindEnumVal(eIdx, g_nodes(id).intVal, g_nodes(id).lenVal, ByRef ev) Then
           Dim r As Integer = CgNextReg()
           fprintf(cg_out, "  %%r%d = add i32 0, %d\n", r, ev)
-          outTy = TypeInfo With { kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+          outTy = TypeInfo With ( kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
           Return r
         End If
       End If
@@ -1295,9 +1295,9 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
         Else
           If t1.kind <> t2.kind Then
             If (t1.kind = TypeKind.TyDouble) Or (t2.kind = TypeKind.TyDouble) Then
-              unified = TypeInfo With { kind = TypeKind.TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+              unified = TypeInfo With ( kind = TypeKind.TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
             Else
-              unified = TypeInfo With { kind = TypeKind.TySingle, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+              unified = TypeInfo With ( kind = TypeKind.TySingle, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
             End If
             v1 = CgCoerceScalar(v1, t1, unified)
             v2 = CgCoerceScalar(v2, t2, unified)
@@ -1358,32 +1358,32 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
           fprintf(cg_out, "  %%r%d = fcmp oeq ", r)
           CgEmitLlvmType(unified)
           fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
-          outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+          outTy = TypeInfo With ( kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
         Case TokenKind.TkNeq
           fprintf(cg_out, "  %%r%d = fcmp one ", r)
           CgEmitLlvmType(unified)
           fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
-          outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+          outTy = TypeInfo With ( kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
         Case TokenKind.TkLt
           fprintf(cg_out, "  %%r%d = fcmp olt ", r)
           CgEmitLlvmType(unified)
           fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
-          outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+          outTy = TypeInfo With ( kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
         Case TokenKind.TkGt
           fprintf(cg_out, "  %%r%d = fcmp ogt ", r)
           CgEmitLlvmType(unified)
           fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
-          outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+          outTy = TypeInfo With ( kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
         Case TokenKind.TkLe
           fprintf(cg_out, "  %%r%d = fcmp ole ", r)
           CgEmitLlvmType(unified)
           fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
-          outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+          outTy = TypeInfo With ( kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
         Case TokenKind.TkGe
           fprintf(cg_out, "  %%r%d = fcmp oge ", r)
           CgEmitLlvmType(unified)
           fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
-          outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+          outTy = TypeInfo With ( kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
       End Select
       Return r
     End If
@@ -1432,32 +1432,32 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
         fprintf(cg_out, "  %%r%d = icmp eq ", r)
         CgEmitLlvmType(unified)
         fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
-        outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+        outTy = TypeInfo With ( kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
       Case TokenKind.TkNeq
         fprintf(cg_out, "  %%r%d = icmp ne ", r)
         CgEmitLlvmType(unified)
         fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
-        outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+        outTy = TypeInfo With ( kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
       Case TokenKind.TkLt
         fprintf(cg_out, "  %%r%d = icmp slt ", r)
         CgEmitLlvmType(unified)
         fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
-        outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+        outTy = TypeInfo With ( kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
       Case TokenKind.TkGt
         fprintf(cg_out, "  %%r%d = icmp sgt ", r)
         CgEmitLlvmType(unified)
         fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
-        outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+        outTy = TypeInfo With ( kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
       Case TokenKind.TkLe
         fprintf(cg_out, "  %%r%d = icmp sle ", r)
         CgEmitLlvmType(unified)
         fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
-        outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+        outTy = TypeInfo With ( kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
       Case TokenKind.TkGe
         fprintf(cg_out, "  %%r%d = icmp sge ", r)
         CgEmitLlvmType(unified)
         fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
-        outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+        outTy = TypeInfo With ( kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     End Select
     Return r
   End If
@@ -1466,19 +1466,19 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim ty As TypeInfo = CgResolveType(g_nodes(id).tyKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
     Dim r As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = add i32 0, %d\n", r, CgTypeSize(ty))
-    outTy = TypeInfo With { kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
   End If
 
   If k = NodeKind.NdStructInit Then
     Dim sIdx As Integer = CgFindStruct(g_nodes(id).intVal, g_nodes(id).lenVal)
-    Dim sTy As TypeInfo With {
+    Dim sTy As TypeInfo With (
       kind = TypeKind.TyStruct,
       typeIdx = sIdx,
       arrLen = 0,
       namePos = g_nodes(id).intVal,
       nameLen = g_nodes(id).lenVal
-    }
+    )
     Dim slot As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = alloca ", slot)
     CgEmitLlvmType(sTy)
@@ -1519,13 +1519,13 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     fprintf(cg_out, "  %%r%d = mul i64 %%r%d, %d\n", bytesReg, cnt64, elemSz)
     Dim resReg As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = call ptr @__vb_arena_alloc(ptr %%r%d, i64 %%r%d)\n", resReg, arenaPtr, bytesReg)
-    outTy = TypeInfo With {
+    outTy = TypeInfo With (
       kind = elemTy.kind,
       typeIdx = elemTy.typeIdx,
       arrLen = -1,
       namePos = elemTy.namePos,
       nameLen = elemTy.nameLen
-    }
+    )
     Return resReg
   End If
 
@@ -1537,13 +1537,13 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim cnt64 As Integer = CgWidenToI64(cntReg, cntTy)
     Dim resReg As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = call ptr @calloc(i64 %%r%d, i64 %d)\n", resReg, cnt64, elemSz)
-    outTy = TypeInfo With {
+    outTy = TypeInfo With (
       kind = elemTy.kind,
       typeIdx = elemTy.typeIdx,
       arrLen = -1,
       namePos = elemTy.namePos,
       nameLen = elemTy.nameLen
-    }
+    )
     Return resReg
   End If
 
@@ -1559,13 +1559,13 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     fprintf(cg_out, "  %%r%d = mul i64 %%r%d, %d\n", bytesReg, cnt64, elemSz)
     Dim resReg As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = call ptr @realloc(ptr %%r%d, i64 %%r%d)\n", resReg, pReg, bytesReg)
-    outTy = TypeInfo With {
+    outTy = TypeInfo With (
       kind = elemTy.kind,
       typeIdx = elemTy.typeIdx,
       arrLen = -1,
       namePos = elemTy.namePos,
       nameLen = elemTy.nameLen
-    }
+    )
     Return resReg
   End If
 
@@ -1573,7 +1573,7 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     Return CgEmitCall(id, ByRef outTy)
   End If
 
-  outTy = TypeInfo With { kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+  outTy = TypeInfo With ( kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
   Return 0
 End Function
 
@@ -1590,7 +1590,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim pv As Integer = CgEmitExpr(a0, ByRef pt)
     Dim r As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = icmp eq ptr %%r%d, null\n", r, pv)
-    outTy = TypeInfo With { kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
   End If
 
@@ -1602,7 +1602,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     CgEmitLValuePtr(a0, ByRef aty, ByRef ind)
     Dim r As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = add i32 0, %d\n", r, aty.arrLen)
-    outTy = TypeInfo With { kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
   End If
 
@@ -1615,7 +1615,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim tmp As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = alloca %%struct.__vb_arena, align 8\n", tmp)
     fprintf(cg_out, "  call void @__vb_arena_init_heap(ptr %%r%d, i64 %%r%d)\n", tmp, cap64)
-    outTy = TypeInfo With { kind = TypeKind.TyArena, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyArena, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return tmp
   End If
 
@@ -1629,7 +1629,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim tmp As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = alloca %%struct.__vb_arena, align 8\n", tmp)
     fprintf(cg_out, "  call void @__vb_arena_init_buf(ptr %%r%d, ptr %%r%d, i64 %%r%d)\n", tmp, bufPtr, cap64)
-    outTy = TypeInfo With { kind = TypeKind.TyArena, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyArena, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return tmp
   End If
 
@@ -1642,7 +1642,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim b64 As Integer = CgWidenToI64(bReg, bTy)
     Dim r As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = call ptr @__vb_arena_alloc(ptr %%r%d, i64 %%r%d)\n", r, aPtr, b64)
-    outTy = TypeInfo With { kind = TypeKind.TyPointer, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyPointer, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
   End If
 
@@ -1651,7 +1651,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     cg_usesArena = 1
     Dim aPtr As Integer = CgEmitByRefArg(g_nodes(g_kids(aStart)).left)
     fprintf(cg_out, "  call void @__vb_arena_reset(ptr %%r%d)\n", aPtr)
-    outTy = TypeInfo With { kind = TypeKind.TyNothing, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyNothing, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return 0
   End If
 
@@ -1660,7 +1660,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     cg_usesArena = 1
     Dim aPtr As Integer = CgEmitByRefArg(g_nodes(g_kids(aStart)).left)
     fprintf(cg_out, "  call void @__vb_arena_destroy(ptr %%r%d)\n", aPtr)
-    outTy = TypeInfo With { kind = TypeKind.TyNothing, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyNothing, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return 0
   End If
 
@@ -1670,7 +1670,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim aPtr As Integer = CgEmitByRefArg(g_nodes(g_kids(aStart)).left)
     Dim r As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = call i64 @__vb_arena_used(ptr %%r%d)\n", r, aPtr)
-    outTy = TypeInfo With { kind = TypeKind.TyLong, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyLong, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
   End If
 
@@ -1679,7 +1679,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim aPtr As Integer = CgEmitByRefArg(g_nodes(g_kids(aStart)).left)
     Dim r As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = call i64 @__vb_arena_remaining(ptr %%r%d)\n", r, aPtr)
-    outTy = TypeInfo With { kind = TypeKind.TyLong, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyLong, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
   End If
 
@@ -1688,7 +1688,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim aPtr As Integer = CgEmitByRefArg(g_nodes(g_kids(aStart)).left)
     Dim r As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = call i64 @__vb_arena_capacity(ptr %%r%d)\n", r, aPtr)
-    outTy = TypeInfo With { kind = TypeKind.TyLong, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyLong, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
   End If
 
@@ -1699,7 +1699,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim mReg As Integer = CgEmitExpr(g_nodes(g_kids(aStart + 1)).left, ByRef mTy)
     Dim m64 As Integer = CgWidenToI64(mReg, mTy)
     fprintf(cg_out, "  call void @__vb_arena_rewind(ptr %%r%d, i64 %%r%d)\n", aPtr, m64)
-    outTy = TypeInfo With { kind = TypeKind.TyNothing, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyNothing, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return 0
   End If
 
@@ -1710,7 +1710,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim b64 As Integer = CgWidenToI64(bReg, bTy)
     Dim r As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = call ptr @calloc(i64 1, i64 %%r%d)\n", r, b64)
-    outTy = TypeInfo With { kind = TypeKind.TyPointer, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyPointer, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
   End If
 
@@ -1719,7 +1719,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim pTy As TypeInfo
     Dim pReg As Integer = CgEmitExpr(g_nodes(g_kids(aStart)).left, ByRef pTy)
     fprintf(cg_out, "  call void @free(ptr %%r%d)\n", pReg)
-    outTy = TypeInfo With { kind = TypeKind.TyNothing, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyNothing, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return 0
   End If
 
@@ -1733,7 +1733,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
       Dim aTy As TypeInfo
       Dim aReg As Integer = CgEmitExpr(g_nodes(aNode).left, ByRef aTy)
       If aTy.kind = TypeKind.TySingle Then
-        Dim dblTy As TypeInfo With { kind = TypeKind.TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+        Dim dblTy As TypeInfo With ( kind = TypeKind.TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
         aReg = CgCoerceScalar(aReg, aTy, dblTy)
         aTy = dblTy
       End If
@@ -1757,20 +1757,20 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
       j = j + 1
     End While
     fprintf(cg_out, ")\n")
-    outTy = TypeInfo With { kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    outTy = TypeInfo With ( kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
   End If
 
   ' Positional struct constructor: StructName(arg0, arg1, ...)
   Dim ctorStructIdx As Integer = CgFindStruct(nPos, nLen)
   If ctorStructIdx >= 0 Then
-    Dim sTy As TypeInfo With {
+    Dim sTy As TypeInfo With (
       kind = TypeKind.TyStruct,
       typeIdx = ctorStructIdx,
       arrLen = 0,
       namePos = nPos,
       nameLen = nLen
-    }
+    )
     Dim slot As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = alloca ", slot)
     CgEmitLlvmType(sTy)
@@ -1816,7 +1816,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
       argIsPtr(emitArgCnt) = 1
       argCAbi(emitArgCnt) = 0
       argCStruct(emitArgCnt) = -1
-      argTys(emitArgCnt) = TypeInfo With { kind = TypeKind.TyPointer, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+      argTys(emitArgCnt) = TypeInfo With ( kind = TypeKind.TyPointer, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
       emitArgCnt = emitArgCnt + 1
     Else
       Dim aTy As TypeInfo
@@ -1886,7 +1886,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
         End If
       Else
         If (fnIdx >= 0) And (cg_funcs(fnIdx).isVariadic = 1) And (aTy.kind = TypeKind.TySingle) Then
-          Dim dblTy As TypeInfo With { kind = TypeKind.TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+          Dim dblTy As TypeInfo With ( kind = TypeKind.TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
           aReg = CgCoerceScalar(aReg, aTy, dblTy)
           aTy = dblTy
         End If
@@ -1905,7 +1905,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     i = i + 1
   End While
 
-  Dim retTy As TypeInfo With { kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+  Dim retTy As TypeInfo With ( kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
   Dim isVar As Integer = 0
   If fnIdx >= 0 Then
     retTy = cg_funcs(fnIdx).retTy
@@ -2048,14 +2048,14 @@ Private Sub CgEmitStmt(id As Integer)
     If ty.arrLen < 0 Then
       isInd = 1
     End If
-    cg_locals(cg_localCount) = CgLocalSym With {
+    cg_locals(cg_localCount) = CgLocalSym With (
       namePos = g_nodes(id).intVal,
       nameLen = g_nodes(id).lenVal,
       slotReg = 0,
       isIndirect = isInd,
       staticPlusOne = sid + 1,
       ty = ty
-    }
+    )
     cg_localCount = cg_localCount + 1
     Return
   End If
@@ -2071,13 +2071,13 @@ Private Sub CgEmitStmt(id As Integer)
     CgEmitLlvmType(ty)
     fprintf(cg_out, ", align 8\n")
 
-    cg_locals(cg_localCount) = CgLocalSym With {
+    cg_locals(cg_localCount) = CgLocalSym With (
       namePos = g_nodes(id).intVal,
       nameLen = g_nodes(id).lenVal,
       slotReg = slot,
       isIndirect = isInd,
       ty = ty
-    }
+    )
     cg_localCount = cg_localCount + 1
 
     Dim initId As Integer = g_nodes(id).left
@@ -2271,7 +2271,7 @@ Private Sub CgEmitStmt(id As Integer)
     Dim lEnd As Integer = CgNextLbl()
     Dim sTy As TypeInfo
     Dim sReg As Integer = CgEmitExpr(g_nodes(id).left, ByRef sTy)
-    Dim intTy As TypeInfo With { kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    Dim intTy As TypeInfo With ( kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Dim s32 As Integer = CgCoerceScalar(sReg, sTy, intTy)
 
     Dim saved As Integer = cg_localCount
@@ -2282,13 +2282,13 @@ Private Sub CgEmitStmt(id As Integer)
     Else
       slot = CgNextReg()
       fprintf(cg_out, "  %%r%d = alloca i32, align 4\n", slot)
-      cg_locals(cg_localCount) = CgLocalSym With {
+      cg_locals(cg_localCount) = CgLocalSym With (
         namePos = g_nodes(id).intVal,
         nameLen = g_nodes(id).lenVal,
         slotReg = slot,
         isIndirect = 0,
         ty = intTy
-      }
+      )
       cg_localCount = cg_localCount + 1
     End If
     fprintf(cg_out, "  store i32 %%r%d, ptr %%r%d, align 4\n", s32, slot)
@@ -2440,13 +2440,13 @@ Private Sub CgEmitFunc(fnNodeId As Integer, fnIdx As Integer)
     Dim p As CgParamInfo = cg_params(fi.paramStart + j)
     Dim directPtr As Boolean = (p.isByRef = 1) Or (p.ty.arrLen < 0)
     If directPtr Then
-      cg_locals(cg_localCount) = CgLocalSym With {
+      cg_locals(cg_localCount) = CgLocalSym With (
         namePos = p.namePos,
         nameLen = p.nameLen,
         slotReg = -(j + 1),
         isIndirect = 0,
         ty = p.ty
-      }
+      )
       cg_localCount = cg_localCount + 1
     Else
       Dim slot As Integer = CgNextReg()
@@ -2462,13 +2462,13 @@ Private Sub CgEmitFunc(fnNodeId As Integer, fnIdx As Integer)
         CgEmitLlvmType(p.ty)
         fprintf(cg_out, " %%p%d, ptr %%r%d, align %d\n", j, slot, align)
       End If
-      cg_locals(cg_localCount) = CgLocalSym With {
+      cg_locals(cg_localCount) = CgLocalSym With (
         namePos = p.namePos,
         nameLen = p.nameLen,
         slotReg = slot,
         isIndirect = 0,
         ty = p.ty
-      }
+      )
       cg_localCount = cg_localCount + 1
     End If
     j = j + 1
@@ -2667,29 +2667,29 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
       Dim j As Integer = 0
       While j < mc Do
         Dim m As Integer = g_kids(g_nodes(d).firstChild + j)
-        cg_enumMems(cg_enumMemCount) = CgEnumMem With {
+        cg_enumMems(cg_enumMemCount) = CgEnumMem With (
           namePos = g_nodes(m).intVal,
           nameLen = g_nodes(m).lenVal,
           value = g_nodes(m).op
-        }
+        )
         cg_enumMemCount = cg_enumMemCount + 1
         j = j + 1
       End While
-      cg_enums(cg_enumCount) = CgEnumInfo With {
+      cg_enums(cg_enumCount) = CgEnumInfo With (
         namePos = g_nodes(d).intVal,
         nameLen = g_nodes(d).lenVal,
         memStart = ms,
         memCount = mc
-      }
+      )
       cg_enumCount = cg_enumCount + 1
     End If
     If dk = NodeKind.NdStructDef Then
-      cg_structs(cg_structCount) = CgStructInfo With {
+      cg_structs(cg_structCount) = CgStructInfo With (
         namePos = g_nodes(d).intVal,
         nameLen = g_nodes(d).lenVal,
         fieldStart = 0,
         fieldCount = 0
-      }
+      )
       cg_structCount = cg_structCount + 1
     End If
     i = i + 1
@@ -2706,11 +2706,11 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
       Dim j As Integer = 0
       While j < fc Do
         Dim f As Integer = g_kids(g_nodes(d).firstChild + j)
-        cg_fields(cg_fieldCount) = CgFieldInfo With {
+        cg_fields(cg_fieldCount) = CgFieldInfo With (
           namePos = g_nodes(f).intVal,
           nameLen = g_nodes(f).lenVal,
           ty = CgResolveType(g_nodes(f).tyKind, g_nodes(f).tyArrLen, g_nodes(f).tyNamePos, g_nodes(f).tyNameLen)
-        }
+        )
         cg_fieldCount = cg_fieldCount + 1
         j = j + 1
       End While
@@ -2735,7 +2735,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
       If g_nodes(d).op = 2 Then
         gvPriv = 1
       End If
-      cg_globals(cg_globalCount) = CgGlobalInfo With {
+      cg_globals(cg_globalCount) = CgGlobalInfo With (
         namePos = g_nodes(d).intVal,
         nameLen = g_nodes(d).lenVal,
         isPublic = gvPub,
@@ -2743,7 +2743,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
         modId = g_nodes(d).modId,
         ty = CgResolveType(g_nodes(d).tyKind, g_nodes(d).tyArrLen, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen),
         initNode = g_nodes(d).left
-      }
+      )
       cg_globalCount = cg_globalCount + 1
     End If
     If (dk = NodeKind.NdFuncDef) Or (dk = NodeKind.NdExternDecl) Then
@@ -2752,12 +2752,12 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
       Dim j As Integer = 0
       While j < pc Do
         Dim pn As Integer = g_kids(g_nodes(d).extraStart + j)
-        cg_params(cg_paramCount) = CgParamInfo With {
+        cg_params(cg_paramCount) = CgParamInfo With (
           isByRef = g_nodes(pn).op,
           namePos = g_nodes(pn).intVal,
           nameLen = g_nodes(pn).lenVal,
           ty = CgResolveType(g_nodes(pn).tyKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen)
-        }
+        )
         cg_paramCount = cg_paramCount + 1
         j = j + 1
       End While
@@ -2782,7 +2782,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
       Dim existing As Integer = CgFindFunc(g_nodes(d).intVal, g_nodes(d).lenVal)
       If (isExt = 0) Or (existing < 0) Then
         g_nodes(d).third = cg_funcCount
-        cg_funcs(cg_funcCount) = CgFuncInfo With {
+        cg_funcs(cg_funcCount) = CgFuncInfo With (
           namePos = g_nodes(d).intVal,
           nameLen = g_nodes(d).lenVal,
           isExtern = isExt,
@@ -2793,7 +2793,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
           retTy = CgResolveType(g_nodes(d).tyKind, 0, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen),
           paramStart = ps,
           paramCount = pc
-        }
+        )
         cg_funcCount = cg_funcCount + 1
       End If
     End If

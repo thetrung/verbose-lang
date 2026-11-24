@@ -8,7 +8,7 @@ Declare Function sum_big_byval(box As BigBox) As Long
 Declare Sub scale_big_byref(ByRef box As BigBox, k As Long)
 
 Public Function main() As Integer
-  Dim b As BigBox With { a = 10, b = 20, c = 30 }
+  Dim b As BigBox With ( a = 10, b = 20, c = 30 )
   Dim s1 As Long = sum_big_byval(b)
   scale_big_byref(ByRef b, 3)
   Dim s2 As Long = sum_big_byval(b)

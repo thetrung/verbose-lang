@@ -250,14 +250,14 @@ End Function
 
 Private Sub LxEmitTok(kind As Integer, pos As Integer, slen As Integer, ival As Integer, line As Integer)
   If g_tokCount < g_tokCap Then
-    g_tokens(g_tokCount) = Token With {
+    g_tokens(g_tokCount) = Token With (
       kind = kind,
       pos = pos,
       len = slen,
       intVal = ival,
       line = line,
       modId = lx_curModId
-    }
+    )
     g_tokCount = g_tokCount + 1
   End If
 End Sub
@@ -412,7 +412,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
   End If
   Dim savedModId As Integer = lx_curModId
   lx_curModId = lx_loadedCount
-  lx_loaded(lx_loadedCount) = LoadedFile With { pathPos = pathPos, pathLen = pathLen }
+  lx_loaded(lx_loadedCount) = LoadedFile With ( pathPos = pathPos, pathLen = pathLen )
   lx_loadedCount = lx_loadedCount + 1
 
   ' Copy path to small null-terminated stack buffer for fopen

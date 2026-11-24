@@ -4,6 +4,6 @@ Structure Pair
 End Structure
 
 Public Function main() As Integer
-  Dim p As Pair With { a = True, b = False }
+  Dim p As Pair With ( a = True, b = False )
   Return 0
 End Function

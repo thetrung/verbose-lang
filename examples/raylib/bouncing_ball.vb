@@ -50,13 +50,13 @@ Public Function main() As Integer
   Dim padColor As Color = MakeColor(80, 200, 120, 255)
   Dim textColor As Color = MakeColor(240, 240, 240, 255)
 
-  Dim ball As Ball With {
-    pos = Vector2 With { x = 760.0, y = 200.0 },
-    vel = Vector2 With { x = 120.0, y = 60.0 },
+  Dim ball As Ball With (
+    pos = Vector2 With ( x = 760.0, y = 200.0 ),
+    vel = Vector2 With ( x = 120.0, y = 60.0 ),
     radius = 20.0
-  }
+  )
 
-  Dim pad As Rectangle With { x = 350.0, y = 410.0, width = 100.0, height = 16.0 }
+  Dim pad As Rectangle With ( x = 350.0, y = 410.0, width = 100.0, height = 16.0 )
 
   ' Scratch arena reset every frame (zero heap churn in game loop!)
   Dim frameArena As Arena = ArenaCreate(1024)

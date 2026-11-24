@@ -88,7 +88,7 @@ definition:
     { Ast.GlobalVar(vis, name, t, None) }
   | vis=visibility STATIC name=ID AS t=data_type EQUALS e=expr mandatory_newlines
     { Ast.GlobalVar(vis, name, t, Some(e)) }
-  | vis=visibility STATIC name=ID AS struct_name=ID WITH LBRACE optional_newlines inits=field_init_list RBRACE mandatory_newlines
+  | vis=visibility STATIC name=ID AS struct_name=ID WITH LPAREN optional_newlines inits=field_init_list RPAREN mandatory_newlines
     { Ast.GlobalVar(vis, name, Ast.Custom(struct_name), Some(Ast.StructInit(struct_name, inits))) }
   | vis=visibility STATIC name=ID LPAREN size=INT_LIT RPAREN AS t=data_type mandatory_newlines
     { Ast.GlobalVar(vis, name, Ast.Array(t, size), None) }
@@ -172,14 +172,14 @@ code_stmt:
   | DIM name=ID AS struct_name=ID 
     LPAREN args=separated_list(COMMA, expr) RPAREN  
     { Ast.Dim(name, Ast.Pointer, Some(Ast.Call(struct_name, List.map (fun e -> (Ast.ByVal, e)) args))) }
-  | DIM name=ID AS struct_name=ID WITH LBRACE optional_newlines inits=field_init_list RBRACE
+  | DIM name=ID AS struct_name=ID WITH LPAREN optional_newlines inits=field_init_list RPAREN
     { Ast.Dim(name, Ast.Custom(struct_name), Some(Ast.StructInit(struct_name, inits))) }
 
   | STATIC name=ID AS t=data_type
     { Ast.StaticDim(name, t, None) }
   | STATIC name=ID AS t=data_type EQUALS e=expr
     { Ast.StaticDim(name, t, Some(e)) }
-  | STATIC name=ID AS struct_name=ID WITH LBRACE optional_newlines inits=field_init_list RBRACE
+  | STATIC name=ID AS struct_name=ID WITH LPAREN optional_newlines inits=field_init_list RPAREN
     { Ast.StaticDim(name, Ast.Custom(struct_name), Some(Ast.StructInit(struct_name, inits))) }
   | STATIC name=ID LPAREN size=INT_LIT RPAREN AS t=data_type
     { Ast.StaticDim(name, Ast.Array(t, size), None) }
@@ -272,7 +272,7 @@ expr:
   | LPAREN e=expr RPAREN                                    { e }
   | NOT e=expr                                              { Ast.UnaryOp("Not", e) }
   | MINUS e=expr %prec UMINUS                               { Ast.UnaryOp("Neg", e) }
-  | name=ID WITH LBRACE optional_newlines inits=field_init_list RBRACE { Ast.StructInit(name, inits) }
+  | name=ID WITH LPAREN optional_newlines inits=field_init_list RPAREN { Ast.StructInit(name, inits) }
   | SIZEOF LPAREN t=data_type RPAREN { Ast.SizeOf(t) }
   | HEAP_ALLOC LPAREN t=data_type RPAREN { Ast.HeapAlloc(t, Ast.IntLit(1)) }
   | HEAP_ALLOC LPAREN t=data_type COMMA count=expr RPAREN { Ast.HeapAlloc(t, count) }

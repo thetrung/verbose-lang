@@ -4,7 +4,7 @@ Structure Config
 End Structure
 
 Static g_zero As Config
-Static g_cfg As Config With { port = 8080, retries = 3 }
+Static g_cfg As Config With ( port = 8080, retries = 3 )
 
 Private Sub BumpPort(ByRef c As Config)
   c.port = c.port + 1

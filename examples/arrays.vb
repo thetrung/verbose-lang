@@ -25,8 +25,8 @@ Public Function main() As Integer
   printf("doubled_sum=%d last=%d\n", Sum(nums, Len(nums)), nums(4))
 
   Dim pts(2) As Point
-  pts(0) = Point With { x = 3, y = 4 }
-  pts(1) = Point With { x = 7, y = 8 }
+  pts(0) = Point With ( x = 3, y = 4 )
+  pts(1) = Point With ( x = 7, y = 8 )
   printf("pts=(%d,%d) (%d,%d)\n", pts(0).x, pts(0).y, pts(1).x, pts(1).y)
   Return 0
 End Function

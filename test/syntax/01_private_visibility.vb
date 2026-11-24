@@ -17,7 +17,7 @@ Private Sub BumpX(ByRef p As Point, delta As Integer)
 End Sub
 
 Public Function main() As Integer
-  Dim pt As Point With { x = Color.Red, y = Color.Blue }
+  Dim pt As Point With ( x = Color.Red, y = Color.Blue )
   BumpX(ByRef pt, 5)
   Dim sum As Integer = AddXY(pt)
   printf("pt=%d,%d sum=%d\n", pt.x, pt.y, sum)
