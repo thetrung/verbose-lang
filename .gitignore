@@ -1,5 +1,6 @@
 _build
 stage0/_build
+dist
 /verbose
 /verbose1
 /verbose.new

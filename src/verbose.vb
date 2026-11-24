@@ -150,7 +150,7 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
       Return 0
     End If
     If strcmp(arg, "--version") = 0 Then
-      Printf("verbose 0.1.0 (VerBose-Lang Self-Hosted Compiler)\n")
+      Printf("verbose 0.2.0 (VerBose-Lang Self-Hosted Compiler)\n")
       Return 0
     End If
     If strcmp(arg, "--ast") = 0 Then

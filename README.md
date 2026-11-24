@@ -9,7 +9,7 @@ Just Another Human-Readable Systems Programming Language — inspired by Visual 
 VerBose-Lang combines classic Visual Basic readability with deterministic, C-speed systems programming on top of LLVM:
 - **Zero GC**: Stack values, `Static` storage, explicit `HeapAlloc`/`HeapFree`, and a first-class deterministic `Arena` bump allocator.
 - **Native C FFI**: Direct `Declare Function`/`Sub` bindings with SysV x86-64 ByVal struct ABI lowering (including Raylib 5.x).
-- **Self-Hosted Compiler (`./verbose`)**: The primary compiler (`src/verbose.vb`, `src/token.vb`, `src/lexer.vb`, `src/ast.vb`, `src/parser.vb`, `src/codegen.vb`) is written in VerBose-Lang itself, compiles itself to a byte-for-byte Stage 3 fixpoint, and passes all 68/68 compatibility tests & examples.
+- **Self-Hosted Compiler (`./verbose`)**: The primary compiler (`src/verbose.vb`, `src/token.vb`, `src/lexer.vb`, `src/ast.vb`, `src/printer.vb`, `src/parser.vb`, `src/type_analyzer.vb`, `src/codegen.vb`) is written in VerBose-Lang itself, includes a full semantic Type Analyzer and direct compile-and-run CLI, compiles itself to a byte-for-byte Stage 3 fixpoint, and passes **105/105** self-hosted tests & examples.
 
 ---
 
@@ -119,13 +119,14 @@ End Function
 
 ```text
 verbose-lang/
-├── src/                        # Self-hosted VerBose compiler (verbose.vb, token.vb, lexer.vb, ast.vb, parser.vb, codegen.vb)
+├── .github/workflows/          # GitHub Actions CI & Release workflows (ci.yml, release.yml)
+├── src/                        # Self-hosted VerBose compiler (verbose, token, lexer, ast, printer, parser, type_analyzer, codegen)
 ├── stage0/                     # Stage 0 OCaml bootstrap compiler (bin/, lib/, verbose)
 ├── examples/                   # Standalone language examples + Raylib 5.x demo
 ├── raylib/                     # Raylib header/binding playground
 ├── test/                       # Automated test suites for ./verbose & stage0/verbose
 ├── prototype.vb                # Scratch prototype
-├── makefile                    # Build, demo, and test targets
+├── makefile                    # Build, demo, test, install, and dist targets
 ├── STATE.md                    # Detailed technical state & verification metrics
 └── README.md
 ```
@@ -134,28 +135,47 @@ verbose-lang/
 
 ## Usage
 
-**Prerequisites**: `clang` (LLVM 19+ recommended) and `python3` for test runners (`opam`/`dune` only needed if rebuilding `stage0/verbose`).
+**Prerequisites**: `clang` (LLVM 19+ recommended) and `python3` for test runners (`ocaml`/`dune`/`menhir` only needed if rebuilding `stage0/verbose`).
 
 ```bash
 # Build & verify the self-hosted compiler (./verbose) via Stage 1 -> Stage 2 -> Stage 3 fixpoint
 make build
 
+# Compile and execute any .vb file directly (default mode)
+./verbose your_file.vb
+
 # Build and run prototype.vb with ./verbose
 make
 
-# Compile any .vb file directly with the self-hosted compiler
-./verbose your_file.vb your_file.ll
-clang -O2 your_file.ll -o your_file
-./your_file
+# Install ./verbose globally (default: /usr/local/bin/verbose) or build release artifacts
+make install          # or: make install PREFIX=$HOME/.local
+make dist             # builds stripped dist/verbose, dist/verbose-linux-x86_64, dist/SHA256SUMS.txt
 
 # Run all examples
 make demo
 
 # Run test suites
-make test          # 68/68 self-hosted ./verbose compatibility tests + examples
+make test          # 105/105 self-hosted ./verbose CLI, examples, and full regression suites
 make test-stage0   # 92/92 Stage 0 OCaml compiler + Type Analyzer regression suites
 make test-all      # Full pipeline: Stage 1-3 build fixpoint + make test + make test-stage0
 ```
+
+### Compiler CLI Flags (`./verbose`)
+
+| Flag | Description |
+| --- | --- |
+| `verbose <file.vb>` | Type-check, emit `.ll`, compile with `clang -O2`, and **execute directly** |
+| `--ast` | Pretty-print the parsed AST |
+| `--ir` | Print the generated LLVM IR to stdout |
+| `--ta` | Verbose semantic Type Analyzer output (runs automatically before codegen) |
+| `--no-ta` | Skip the semantic Type Analyzer pass |
+| `--emit-only` | Emit LLVM IR (`.ll`) only; skip `clang` and execution |
+| `--no-run` | Compile native executable with `clang`, skip execution |
+| `-o <path>` | Output executable path (or `.ll` path with `--emit-only`) |
+| `-I <dir>` / `-I<dir>` | Add `Include` module search directory |
+| `-l<lib>` / `-L<dir>` / `-W<flag>` | Forward linker/warning flags to `clang` (e.g. `-lm`, `-lraylib`) |
+| `<file.c/.o/.a>` | Additional C/object/archive files compiled & linked alongside `.vb` |
+| `-h`, `--help`, `--version` | Show CLI usage or compiler version |
 
 ---
 
@@ -169,7 +189,8 @@ make test-all      # Full pipeline: Stage 1-3 build fixpoint + make test + make 
 - **Static, Heap & Deterministic Arena Memory**: Module & function-local `Static`, `SizeOf(Type)`, `HeapAlloc` / `HeapRealloc` / `HeapAllocBytes` / `HeapFree`, and built-in `Arena` (`ArenaCreate`, `ArenaFromBuffer`, `ArenaAlloc`, `ArenaAllocBytes`, `ArenaReset`, `ArenaMark`, `ArenaRewind`, `ArenaUsed`, `ArenaRemaining`, `ArenaCapacity`, `ArenaDestroy`, `IsNull`)
 - **Modules & Encapsulation**: `Include "path.vb"`, `.`/`..` path normalization, diamond include-once deduplication, `Public` / `Private` / `Default` visibility & module-scoped `Private` isolation
 - **Native C Interop (FFI)**: `Declare Function` / `Sub`, variadic `...`, `ByRef` out-pointers, SysV x86-64 ByVal struct lowering, string escapes (`\n`, `\r`, `\t`, `\"`, `\\`, `\0`), plus working Raylib 5.x demo (`examples/raylib/bouncing_ball.vb`)
-- **Self-Hosting**: 6-module compiler in `src/` passing Stage 1 → Stage 2 → Stage 3 byte-for-byte fixpoint and 68/68 compatibility tests
+- **Self-Hosting, Type Analyzer & CLI**: 8-module compiler in `src/` with full semantic Type Analyzer (`--ta`/`--no-ta`), AST printer (`--ast`), IR printer (`--ir`), direct compile-and-run (`./verbose file.vb`), full clang/linker flags (`-o`, `-I`, `-l`, `-L`, `.c/.o/.a`), Stage 1 → Stage 2 → Stage 3 byte-for-byte fixpoint, and **105/105** tests
+- **Tooling & CI**: `make install` / `uninstall` / `dist` packaging plus GitHub Actions CI (`.github/workflows/ci.yml`) and Release automation (`.github/workflows/release.yml`)
 
 ---
 
@@ -184,8 +205,8 @@ make test-all      # Full pipeline: Stage 1-3 build fixpoint + make test + make 
 
 ## Roadmap / TODO
 
-- [ ] **Self-Hosted Type Analyzer & CLI**: Port Stage 0's semantic Type Analyzer (`--ta`) and driver flags (`-o`, `-I`, `-l`, `-L`, `--emit-only`, direct `clang` linking) into `src/verbose.vb`
+- [x] **Self-Hosted Type Analyzer & CLI**: Ported Stage 0's semantic Type Analyzer (`--ta`/`--no-ta`), AST printer (`--ast`), IR printer (`--ir`), and full driver flags (`-o`, `-I`, `-l`, `-L`, `--emit-only`, `--no-run`, direct compile & execute) into `src/`
+- [x] **Tooling & CI**: `make install`/`uninstall`/`dist` packaging, GitHub Actions CI (`ci.yml`), and automated Linux x86-64 binary releases (`release.yml`)
 - [ ] **Target Triples & Cross-Compilation**: Emit explicit LLVM target triples and data layouts for Linux x86-64, macOS arm64, and bare-metal ARM-M (`Volatile`, fixed/deterministic memory regions)
 - [ ] **Standard Library (`std/`)**: Core modules (`strings`, `math`, `collections`, `io`) built with `Include` + `Arena`
-- [ ] **Tooling & CI**: Package/build tooling and GitHub Actions CI running `make test-all`
 - [ ] **Language Extensions**: `Async`/`Await` and low-level label/address/raw memory primitives

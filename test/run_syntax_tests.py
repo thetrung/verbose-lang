@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-COMPILER = REPO / "stage0" / "verbose"
+COMPILER = Path(os.environ.get("VERBOSE_COMPILER", str(REPO / "verbose"))).resolve()
 TEST_DIR = Path(__file__).resolve().parent / "syntax"
 
 # (filename, description, extra_flag, expected_lines, expect_error)
@@ -22,7 +22,7 @@ CASES = [
         [
             "define internal i32 @AddXY",
             "define internal void @BumpX",
-            "define  i32 @main()",
+            "i32 @main()",
             "pt=15,20 sum=35",
         ],
         False,

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Test runner for VerBose C Interop, SysV ABI structs, Raylib demo, escapes & unary minus."""
 
+import os
 import re
 import shutil
 import subprocess
@@ -9,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-COMPILER = REPO / "stage0" / "verbose"
+COMPILER = Path(os.environ.get("VERBOSE_COMPILER", str(REPO / "verbose"))).resolve()
 TEST_DIR = Path(__file__).resolve().parent / "c_interop"
 RAYLIB_DIR = REPO / "examples" / "raylib"
 
