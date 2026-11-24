@@ -67,14 +67,12 @@ Public Function SliceEqualsStr(pos, slen As Integer, lit As Pointer, litLen As I
   If slen <> litLen Then
     Return False
   End If
-  Dim i As Integer = 0
-  While i < slen Do
+  For i = 0 To slen - 1 Do
     Dim a = g_srcPool(pos + i), b = lit(i) As Integer
     If a <> b Then
       Return False
     End If
-    i = i + 1
-  End While
+  End For
   Return True
 End Function
 
@@ -82,84 +80,82 @@ Public Function SlicesEqual(p1, l1, p2, l2 As Integer) As Boolean
   If l1 <> l2 Then
     Return False
   End If
-  Dim i As Integer = 0
-  While i < l1 Do
+  For i = 0 To l1 - 1 Do
     Dim a = g_srcPool(p1 + i), b = g_srcPool(p2 + i) As Integer
     If a <> b Then
       Return False
     End If
-    i = i + 1
-  End While
+  End For
   Return True
 End Function
 
 Private Function LxClassifyKeyword(pos, slen As Integer) As Integer
   Match With
-    Case SliceEqualsStr(pos, slen, "Include", 7) Then Return TokenKind.TkInclude
-    Case SliceEqualsStr(pos, slen, "Public", 6) Then Return TokenKind.TkPublic
-    Case SliceEqualsStr(pos, slen, "Private", 7) Then Return TokenKind.TkPrivate
-    Case SliceEqualsStr(pos, slen, "Declare", 7) Then Return TokenKind.TkDeclare
-    Case SliceEqualsStr(pos, slen, "Structure", 9) Then Return TokenKind.TkStructure
-    Case SliceEqualsStr(pos, slen, "Enum", 4) Then Return TokenKind.TkEnum
-    Case SliceEqualsStr(pos, slen, "Static", 6) Then Return TokenKind.TkStatic
-    Case SliceEqualsStr(pos, slen, "Function", 8) Then Return TokenKind.TkFunction
-    Case SliceEqualsStr(pos, slen, "Sub", 3) Then Return TokenKind.TkSub
-    Case SliceEqualsStr(pos, slen, "End", 3) Then Return TokenKind.TkEnd
-    Case SliceEqualsStr(pos, slen, "Dim", 3) Then Return TokenKind.TkDim
-    Case SliceEqualsStr(pos, slen, "As", 2) Then Return TokenKind.TkAs
-    Case SliceEqualsStr(pos, slen, "ByRef", 5) Then Return TokenKind.TkByRef
-    Case SliceEqualsStr(pos, slen, "With", 4) Then Return TokenKind.TkWith
-    Case SliceEqualsStr(pos, slen, "Return", 6) Then Return TokenKind.TkReturn
-    Case SliceEqualsStr(pos, slen, "Test", 4) Then Return TokenKind.TkTest
-    Case SliceEqualsStr(pos, slen, "Assert", 6) Then Return TokenKind.TkAssert
-    Case SliceEqualsStr(pos, slen, "Volatile", 8) Then Return TokenKind.TkVolatile
-    Case SliceEqualsStr(pos, slen, "VolatileLoad", 12) Then Return TokenKind.TkVolatileLoad
-    Case SliceEqualsStr(pos, slen, "VolatileStore", 13) Then Return TokenKind.TkVolatileStore
-    Case SliceEqualsStr(pos, slen, "AddressOf", 9) Then Return TokenKind.TkAddressOf
-    Case SliceEqualsStr(pos, slen, "PtrRead", 7) Then Return TokenKind.TkPtrRead
-    Case SliceEqualsStr(pos, slen, "PtrWrite", 8) Then Return TokenKind.TkPtrWrite
-    Case SliceEqualsStr(pos, slen, "PtrAdd", 6) Then Return TokenKind.TkPtrAdd
-    Case SliceEqualsStr(pos, slen, "Label", 5) Then Return TokenKind.TkLabel
-    Case SliceEqualsStr(pos, slen, "GoTo", 4) Then Return TokenKind.TkGoTo
-    Case SliceEqualsStr(pos, slen, "Async", 5) Then Return TokenKind.TkAsync
-    Case SliceEqualsStr(pos, slen, "Await", 5) Then Return TokenKind.TkAwait
-    Case SliceEqualsStr(pos, slen, "Task", 4) Then Return TokenKind.TkTask
-    Case SliceEqualsStr(pos, slen, "Integer", 7) Then Return TokenKind.TkInteger
-    Case SliceEqualsStr(pos, slen, "Byte", 4) Then Return TokenKind.TkByte
-    Case SliceEqualsStr(pos, slen, "Short", 5) Then Return TokenKind.TkShort
-    Case SliceEqualsStr(pos, slen, "Long", 4) Then Return TokenKind.TkLong
-    Case SliceEqualsStr(pos, slen, "Boolean", 7) Then Return TokenKind.TkBoolean
-    Case SliceEqualsStr(pos, slen, "Pointer", 7) Then Return TokenKind.TkPointer
-    Case SliceEqualsStr(pos, slen, "String", 6) Then Return TokenKind.TkString
-    Case SliceEqualsStr(pos, slen, "Arena", 5) Then Return TokenKind.TkArena
-    Case SliceEqualsStr(pos, slen, "Nothing", 7) Then Return TokenKind.TkNothing
-    Case SliceEqualsStr(pos, slen, "Single", 6) Then Return TokenKind.TkSingle
-    Case SliceEqualsStr(pos, slen, "Double", 6) Then Return TokenKind.TkDouble
-    Case SliceEqualsStr(pos, slen, "True", 4) Then Return TokenKind.TkTrue
-    Case SliceEqualsStr(pos, slen, "False", 5) Then Return TokenKind.TkFalse
-    Case SliceEqualsStr(pos, slen, "SizeOf", 6) Then Return TokenKind.TkSizeOf
-    Case SliceEqualsStr(pos, slen, "ArenaAlloc", 10) Then Return TokenKind.TkArenaAlloc
-    Case SliceEqualsStr(pos, slen, "HeapAlloc", 9) Then Return TokenKind.TkHeapAlloc
-    Case SliceEqualsStr(pos, slen, "HeapRealloc", 11) Then Return TokenKind.TkHeapRealloc
-    Case SliceEqualsStr(pos, slen, "If", 2) Then Return TokenKind.TkIf
-    Case SliceEqualsStr(pos, slen, "Then", 4) Then Return TokenKind.TkThen
-    Case SliceEqualsStr(pos, slen, "Else", 4) Then Return TokenKind.TkElse
-    Case SliceEqualsStr(pos, slen, "While", 5) Then Return TokenKind.TkWhile
-    Case SliceEqualsStr(pos, slen, "Do", 2) Then Return TokenKind.TkDo
-    Case SliceEqualsStr(pos, slen, "For", 3) Then Return TokenKind.TkFor
-    Case SliceEqualsStr(pos, slen, "To", 2) Then Return TokenKind.TkTo
-    Case SliceEqualsStr(pos, slen, "Select", 6) Then Return TokenKind.TkSelect
-    Case SliceEqualsStr(pos, slen, "Case", 4) Then Return TokenKind.TkCase
-    Case SliceEqualsStr(pos, slen, "Match", 5) Then Return TokenKind.TkMatch
-    Case SliceEqualsStr(pos, slen, "When", 4) Then Return TokenKind.TkWhen
-    Case SliceEqualsStr(pos, slen, "And", 3) Then Return TokenKind.TkAnd
-    Case SliceEqualsStr(pos, slen, "Or", 2) Then Return TokenKind.TkOr
-    Case SliceEqualsStr(pos, slen, "Not", 3) Then Return TokenKind.TkNot
-    Case SliceEqualsStr(pos, slen, "Mod", 3) Then Return TokenKind.TkMod
-    Case SliceEqualsStr(pos, slen, "Xor", 3) Then Return TokenKind.TkXor
-    Case SliceEqualsStr(pos, slen, "Shl", 3) Then Return TokenKind.TkShl
-    Case SliceEqualsStr(pos, slen, "Shr", 3) Then Return TokenKind.TkShr
-    Case _ Then Return TokenKind.TkIdent
+    Case SliceEqualsStr(pos, slen, "Include", 7) Then Return TkInclude
+    Case SliceEqualsStr(pos, slen, "Public", 6) Then Return TkPublic
+    Case SliceEqualsStr(pos, slen, "Private", 7) Then Return TkPrivate
+    Case SliceEqualsStr(pos, slen, "Declare", 7) Then Return TkDeclare
+    Case SliceEqualsStr(pos, slen, "Structure", 9) Then Return TkStructure
+    Case SliceEqualsStr(pos, slen, "Enum", 4) Then Return TkEnum
+    Case SliceEqualsStr(pos, slen, "Static", 6) Then Return TkStatic
+    Case SliceEqualsStr(pos, slen, "Function", 8) Then Return TkFunction
+    Case SliceEqualsStr(pos, slen, "Sub", 3) Then Return TkSub
+    Case SliceEqualsStr(pos, slen, "End", 3) Then Return TkEnd
+    Case SliceEqualsStr(pos, slen, "Dim", 3) Then Return TkDim
+    Case SliceEqualsStr(pos, slen, "As", 2) Then Return TkAs
+    Case SliceEqualsStr(pos, slen, "ByRef", 5) Then Return TkByRef
+    Case SliceEqualsStr(pos, slen, "With", 4) Then Return TkWith
+    Case SliceEqualsStr(pos, slen, "Return", 6) Then Return TkReturn
+    Case SliceEqualsStr(pos, slen, "Test", 4) Then Return TkTest
+    Case SliceEqualsStr(pos, slen, "Assert", 6) Then Return TkAssert
+    Case SliceEqualsStr(pos, slen, "Volatile", 8) Then Return TkVolatile
+    Case SliceEqualsStr(pos, slen, "VolatileLoad", 12) Then Return TkVolatileLoad
+    Case SliceEqualsStr(pos, slen, "VolatileStore", 13) Then Return TkVolatileStore
+    Case SliceEqualsStr(pos, slen, "AddressOf", 9) Then Return TkAddressOf
+    Case SliceEqualsStr(pos, slen, "PtrRead", 7) Then Return TkPtrRead
+    Case SliceEqualsStr(pos, slen, "PtrWrite", 8) Then Return TkPtrWrite
+    Case SliceEqualsStr(pos, slen, "PtrAdd", 6) Then Return TkPtrAdd
+    Case SliceEqualsStr(pos, slen, "Label", 5) Then Return TkLabel
+    Case SliceEqualsStr(pos, slen, "GoTo", 4) Then Return TkGoTo
+    Case SliceEqualsStr(pos, slen, "Async", 5) Then Return TkAsync
+    Case SliceEqualsStr(pos, slen, "Await", 5) Then Return TkAwait
+    Case SliceEqualsStr(pos, slen, "Task", 4) Then Return TkTask
+    Case SliceEqualsStr(pos, slen, "Integer", 7) Then Return TkInteger
+    Case SliceEqualsStr(pos, slen, "Byte", 4) Then Return TkByte
+    Case SliceEqualsStr(pos, slen, "Short", 5) Then Return TkShort
+    Case SliceEqualsStr(pos, slen, "Long", 4) Then Return TkLong
+    Case SliceEqualsStr(pos, slen, "Boolean", 7) Then Return TkBoolean
+    Case SliceEqualsStr(pos, slen, "Pointer", 7) Then Return TkPointer
+    Case SliceEqualsStr(pos, slen, "String", 6) Then Return TkString
+    Case SliceEqualsStr(pos, slen, "Arena", 5) Then Return TkArena
+    Case SliceEqualsStr(pos, slen, "Nothing", 7) Then Return TkNothing
+    Case SliceEqualsStr(pos, slen, "Single", 6) Then Return TkSingle
+    Case SliceEqualsStr(pos, slen, "Double", 6) Then Return TkDouble
+    Case SliceEqualsStr(pos, slen, "True", 4) Then Return TkTrue
+    Case SliceEqualsStr(pos, slen, "False", 5) Then Return TkFalse
+    Case SliceEqualsStr(pos, slen, "SizeOf", 6) Then Return TkSizeOf
+    Case SliceEqualsStr(pos, slen, "ArenaAlloc", 10) Then Return TkArenaAlloc
+    Case SliceEqualsStr(pos, slen, "HeapAlloc", 9) Then Return TkHeapAlloc
+    Case SliceEqualsStr(pos, slen, "HeapRealloc", 11) Then Return TkHeapRealloc
+    Case SliceEqualsStr(pos, slen, "If", 2) Then Return TkIf
+    Case SliceEqualsStr(pos, slen, "Then", 4) Then Return TkThen
+    Case SliceEqualsStr(pos, slen, "Else", 4) Then Return TkElse
+    Case SliceEqualsStr(pos, slen, "While", 5) Then Return TkWhile
+    Case SliceEqualsStr(pos, slen, "Do", 2) Then Return TkDo
+    Case SliceEqualsStr(pos, slen, "For", 3) Then Return TkFor
+    Case SliceEqualsStr(pos, slen, "To", 2) Then Return TkTo
+    Case SliceEqualsStr(pos, slen, "Select", 6) Then Return TkSelect
+    Case SliceEqualsStr(pos, slen, "Case", 4) Then Return TkCase
+    Case SliceEqualsStr(pos, slen, "Match", 5) Then Return TkMatch
+    Case SliceEqualsStr(pos, slen, "When", 4) Then Return TkWhen
+    Case SliceEqualsStr(pos, slen, "And", 3) Then Return TkAnd
+    Case SliceEqualsStr(pos, slen, "Or", 2) Then Return TkOr
+    Case SliceEqualsStr(pos, slen, "Not", 3) Then Return TkNot
+    Case SliceEqualsStr(pos, slen, "Mod", 3) Then Return TkMod
+    Case SliceEqualsStr(pos, slen, "Xor", 3) Then Return TkXor
+    Case SliceEqualsStr(pos, slen, "Shl", 3) Then Return TkShl
+    Case SliceEqualsStr(pos, slen, "Shr", 3) Then Return TkShr
+    Case _ Then Return TkIdent
   End Match
 End Function
 
@@ -184,9 +180,9 @@ Private Function LxLexInterpChunk(ByRef pos As Integer, fileEnd As Integer, line
     If sc = 34 Then
       Dim cLen As Integer = g_srcPoolLen - chunkStart
       If cLen > 0 Then
-        LxEmitTok(TokenKind.TkStrLit, chunkStart, cLen, 0, line)
+        LxEmitTok(TkStrLit, chunkStart, cLen, 0, line)
       End If
-      LxEmitTok(TokenKind.TkInterpEnd, pos, 1, 0, line)
+      LxEmitTok(TkInterpEnd, pos, 1, 0, line)
       pos = pos + 1
       Return 0
     End If
@@ -208,9 +204,9 @@ Private Function LxLexInterpChunk(ByRef pos As Integer, fileEnd As Integer, line
         Else
           Dim cLen As Integer = g_srcPoolLen - chunkStart
           If cLen > 0 Then
-            LxEmitTok(TokenKind.TkStrLit, chunkStart, cLen, 0, line)
+            LxEmitTok(TkStrLit, chunkStart, cLen, 0, line)
           End If
-          LxEmitTok(TokenKind.TkInterpExprStart, pos, 1, 0, line)
+          LxEmitTok(TkInterpExprStart, pos, 1, 0, line)
           pos = pos + 1
           lx_interpDepth = lx_interpDepth + 1
           Return 0
@@ -245,13 +241,11 @@ Private Function LxLexInterpChunk(ByRef pos As Integer, fileEnd As Integer, line
 End Function
 
 Private Function LxFindLoaded(pPos, pLen As Integer) As Integer
-  Dim i As Integer = 0
-  While i < lx_loadedCount Do
+  For i = 0 To lx_loadedCount - 1 Do
     If SlicesEqual(lx_loaded(i).pathPos, lx_loaded(i).pathLen, pPos, pLen) Then
       Return i
     End If
-    i = i + 1
-  End While
+  End For
   Return -1
 End Function
 
@@ -351,20 +345,16 @@ Private Function LxNormalizePath(rawPos, rawLen As Integer, ByRef outLen As Inte
     g_srcPool(g_srcPoolLen) = 47
     g_srcPoolLen = g_srcPoolLen + 1
   End If
-  Dim k As Integer = 0
-  While k < segCnt Do
+  For k = 0 To segCnt - 1 Do
     If k > 0 Then
       g_srcPool(g_srcPoolLen) = 47
       g_srcPoolLen = g_srcPoolLen + 1
     End If
-    Dim j As Integer = 0
-    While j < segLen(k) Do
+    For j = 0 To segLen(k) - 1 Do
       g_srcPool(g_srcPoolLen) = g_srcPool(segPos(k) + j)
       g_srcPoolLen = g_srcPoolLen + 1
-      j = j + 1
-    End While
-    k = k + 1
-  End While
+    End For
+  End For
   outLen = g_srcPoolLen - startPos
   g_srcPool(g_srcPoolLen) = 0
   g_srcPoolLen = g_srcPoolLen + 1
@@ -387,29 +377,23 @@ Private Function LxResolveRelPath(curPos, curLen, relPos, relLen As Integer, ByR
   If Not isRelAbs Then
     ' Find last '/' or '\' in curPath
     Dim lastSlash As Integer = -1
-    Dim i As Integer = 0
-    While i < curLen Do
+    For i = 0 To curLen - 1 Do
       Dim ch As Integer = g_srcPool(curPos + i)
       If (ch = 47) Or (ch = 92) Then
         lastSlash = i
       End If
-      i = i + 1
-    End While
+    End For
     If lastSlash >= 0 Then
-      Dim j As Integer = 0
-      While j <= lastSlash Do
+      For j = 0 To lastSlash Do
         g_srcPool(g_srcPoolLen) = g_srcPool(curPos + j)
         g_srcPoolLen = g_srcPoolLen + 1
-        j = j + 1
-      End While
+      End For
     End If
   End If
-  Dim k As Integer = 0
-  While k < relLen Do
+  For k = 0 To relLen - 1 Do
     g_srcPool(g_srcPoolLen) = g_srcPool(relPos + k)
     g_srcPoolLen = g_srcPoolLen + 1
-    k = k + 1
-  End While
+  End For
   Dim rawLen As Integer = g_srcPoolLen - startPos
   g_srcPool(g_srcPoolLen) = 0
   g_srcPoolLen = g_srcPoolLen + 1
@@ -425,8 +409,7 @@ Private Function LxResolveIncludePath(curPos, curLen, incPos, incLen As Integer,
   End If
 
   ' Try -I search directories in order
-  Dim d As Integer = 0
-  While d < lx_incDirCount Do
+  For d = 0 To lx_incDirCount - 1 Do
     Dim dirPtr As Pointer = lx_incDirs(d)
     Dim startPos As Integer = g_srcPoolLen
     Dim j As Integer = 0
@@ -448,12 +431,10 @@ Private Function LxResolveIncludePath(curPos, curLen, incPos, incLen As Integer,
         g_srcPoolLen = g_srcPoolLen + 1
       End If
     End If
-    Dim k As Integer = 0
-    While k < incLen Do
+    For k = 0 To incLen - 1 Do
       g_srcPool(g_srcPoolLen) = g_srcPool(incPos + k)
       g_srcPoolLen = g_srcPoolLen + 1
-      k = k + 1
-    End While
+    End For
     Dim rawLen As Integer = g_srcPoolLen - startPos
     g_srcPool(g_srcPoolLen) = 0
     g_srcPoolLen = g_srcPoolLen + 1
@@ -463,8 +444,7 @@ Private Function LxResolveIncludePath(curPos, curLen, incPos, incLen As Integer,
       outLen = normLen
       Return normPos
     End If
-    d = d + 1
-  End While
+  End For
 
   ' Lowest-priority fallback: resolve relative to current working directory (.) so Include "std/..." works from subdirs
   Dim cwdLen As Integer = 0
@@ -509,11 +489,9 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
 
   ' Copy path to small null-terminated stack buffer for Fopen
   Dim pathBuf(512) As Byte
-  Dim pi As Integer = 0
-  While pi < pathLen Do
+  For pi = 0 To pathLen - 1 Do
     pathBuf(pi) = g_srcPool(pathPos + pi)
-    pi = pi + 1
-  End While
+  End For
   pathBuf(pathLen) = 0
 
   Dim fp As Pointer = Fopen(pathBuf, "rb")
@@ -538,12 +516,10 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
   fclose(fp)
 
   Dim fileBase As Integer = g_srcPoolLen
-  Dim ci As Integer = 0
-  While ci < fsize Do
+  For ci = 0 To fsize - 1 Do
     g_srcPool(g_srcPoolLen) = tmpBuf(ci)
     g_srcPoolLen = g_srcPoolLen + 1
-    ci = ci + 1
-  End While
+  End For
   g_srcPool(g_srcPoolLen) = 10
   g_srcPoolLen = g_srcPoolLen + 1
   Dim fileEnd As Integer = fileBase + fsize
@@ -557,7 +533,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
       Case (c = 32) Or (c = 9) Or (c = 13) Then
         pos = pos + 1
       Case c = 10 Then
-        LxEmitTok(TokenKind.TkNewline, pos, 1, 0, line)
+        LxEmitTok(TkNewline, pos, 1, 0, line)
         pos = pos + 1
         line = line + 1
       Case c = 39 Then
@@ -565,13 +541,13 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
           pos = pos + 1
         End While
       Case (c = 36) And ((pos + 1) < fileEnd) And (g_srcPool(pos + 1) = 34) Then
-        LxEmitTok(TokenKind.TkInterpStart, pos, 2, 0, line)
+        LxEmitTok(TkInterpStart, pos, 2, 0, line)
         pos = pos + 2
         If LxLexInterpChunk(ByRef pos, fileEnd, line) < 0 Then
           Return -1
         End If
       Case (c = 125) And (lx_interpDepth > 0) Then
-        LxEmitTok(TokenKind.TkInterpExprEnd, pos, 1, 0, line)
+        LxEmitTok(TkInterpExprEnd, pos, 1, 0, line)
         pos = pos + 1
         lx_interpDepth = lx_interpDepth - 1
         If LxLexInterpChunk(ByRef pos, fileEnd, line) < 0 Then
@@ -592,7 +568,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
         If pos < fileEnd Then
           pos = pos + 1
         End If
-        LxEmitTok(TokenKind.TkStrLit, sStart, sLen, 0, line)
+        LxEmitTok(TkStrLit, sStart, sLen, 0, line)
       Case LxIsAlpha(c) Then
         Dim idStart As Integer = pos
         While (pos < fileEnd) And LxIsAlnum(g_srcPool(pos)) Do
@@ -600,7 +576,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
         End While
         Dim idLen As Integer = pos - idStart
         Dim kw As Integer = LxClassifyKeyword(idStart, idLen)
-        If kw = TokenKind.TkInclude Then
+        If kw = TkInclude Then
           While (pos < fileEnd) And ((g_srcPool(pos) = 32) Or (g_srcPool(pos) = 9)) Do
             pos = pos + 1
           End While
@@ -622,7 +598,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
             If LexerLoadFile(ByRef arena, resPos, resLen) < 0 Then
               Return -1
             End If
-            LxEmitTok(TokenKind.TkNewline, pos, 1, 0, line)
+            LxEmitTok(TkNewline, pos, 1, 0, line)
           End If
         Else
           LxEmitTok(kw, idStart, idLen, 0, line)
@@ -639,7 +615,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
             acc = acc * 16 + LxHexVal(g_srcPool(pos))
             pos = pos + 1
           End While
-          LxEmitTok(TokenKind.TkIntLit, nStart, pos - nStart, acc, line)
+          LxEmitTok(TkIntLit, nStart, pos - nStart, acc, line)
         Else
           While (pos < fileEnd) And LxIsDigit(g_srcPool(pos)) Do
             Dim d As Integer = g_srcPool(pos)
@@ -655,9 +631,9 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
             End While
           End If
           If isFloat Then
-            LxEmitTok(TokenKind.TkFloatLit, nStart, pos - nStart, 0, line)
+            LxEmitTok(TkFloatLit, nStart, pos - nStart, 0, line)
           Else
-            LxEmitTok(TokenKind.TkIntLit, nStart, pos - nStart, acc, line)
+            LxEmitTok(TkIntLit, nStart, pos - nStart, acc, line)
           End If
         End If
       Case _ Then
@@ -670,31 +646,31 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
         End If
         Match With
           Case (c = 46) And (nc1 = 46) And (nc2 = 46) Then
-            LxEmitTok(TokenKind.TkEllipsis, pos, 3, 0, line)
+            LxEmitTok(TkEllipsis, pos, 3, 0, line)
             pos = pos + 3
           Case (c = 60) And (nc1 = 62) Then
-            LxEmitTok(TokenKind.TkNeq, pos, 2, 0, line)
+            LxEmitTok(TkNeq, pos, 2, 0, line)
             pos = pos + 2
           Case (c = 60) And (nc1 = 61) Then
-            LxEmitTok(TokenKind.TkLe, pos, 2, 0, line)
+            LxEmitTok(TkLe, pos, 2, 0, line)
             pos = pos + 2
           Case (c = 62) And (nc1 = 61) Then
-            LxEmitTok(TokenKind.TkGe, pos, 2, 0, line)
+            LxEmitTok(TkGe, pos, 2, 0, line)
             pos = pos + 2
           Case _ Then
             Match c With
-              Case 40 Then LxEmitTok(TokenKind.TkLParen, pos, 1, 0, line)
-              Case 41 Then LxEmitTok(TokenKind.TkRParen, pos, 1, 0, line)
-              Case 44 Then LxEmitTok(TokenKind.TkComma, pos, 1, 0, line)
-              Case 46 Then LxEmitTok(TokenKind.TkDot, pos, 1, 0, line)
-              Case 61 Then LxEmitTok(TokenKind.TkEq, pos, 1, 0, line)
-              Case 60 Then LxEmitTok(TokenKind.TkLt, pos, 1, 0, line)
-              Case 62 Then LxEmitTok(TokenKind.TkGt, pos, 1, 0, line)
-              Case 43 Then LxEmitTok(TokenKind.TkPlus, pos, 1, 0, line)
-              Case 45 Then LxEmitTok(TokenKind.TkMinus, pos, 1, 0, line)
-              Case 42 Then LxEmitTok(TokenKind.TkStar, pos, 1, 0, line)
-              Case 47 Then LxEmitTok(TokenKind.TkSlash, pos, 1, 0, line)
-              Case 38 Then LxEmitTok(TokenKind.TkAmp, pos, 1, 0, line)
+              Case 40 Then LxEmitTok(TkLParen, pos, 1, 0, line)
+              Case 41 Then LxEmitTok(TkRParen, pos, 1, 0, line)
+              Case 44 Then LxEmitTok(TkComma, pos, 1, 0, line)
+              Case 46 Then LxEmitTok(TkDot, pos, 1, 0, line)
+              Case 61 Then LxEmitTok(TkEq, pos, 1, 0, line)
+              Case 60 Then LxEmitTok(TkLt, pos, 1, 0, line)
+              Case 62 Then LxEmitTok(TkGt, pos, 1, 0, line)
+              Case 43 Then LxEmitTok(TkPlus, pos, 1, 0, line)
+              Case 45 Then LxEmitTok(TkMinus, pos, 1, 0, line)
+              Case 42 Then LxEmitTok(TkStar, pos, 1, 0, line)
+              Case 47 Then LxEmitTok(TkSlash, pos, 1, 0, line)
+              Case 38 Then LxEmitTok(TkAmp, pos, 1, 0, line)
               Case _ Then
                 Printf(MSG_LEX_UNEXPECTED_CHAR, c, line)
                 Return -1
@@ -704,7 +680,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
     End Match
   End While
 
-  LxEmitTok(TokenKind.TkNewline, fileEnd, 1, 0, line)
+  LxEmitTok(TkNewline, fileEnd, 1, 0, line)
   lx_loaded(mySlot).inProgress = 0
   lx_curModId = savedModId
   Return 0
@@ -729,6 +705,6 @@ Public Function LexerLoadEntry(ByRef arena As Arena, entryPath As Pointer) As In
   If rc < 0 Then
     Return -1
   End If
-  LxEmitTok(TokenKind.TkEof, g_srcPoolLen, 0, 0, 0)
+  LxEmitTok(TkEof, g_srcPoolLen, 0, 0, 0)
   Return g_tokCount
 End Function

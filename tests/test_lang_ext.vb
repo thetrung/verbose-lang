@@ -29,7 +29,7 @@ Private Static g_cmpFn As Pointer = AddressOf(CompareInts)
 
 Public Async Function ComputeSquare(n As Integer) As Integer
   Dim acc As Integer = 0
-  For i = 1 To n
+  For i = 1 To n Do
     acc = acc + n
   End For
   Return acc
@@ -138,11 +138,11 @@ Test "Async/Await/Task(T): parallel tasks, Task arrays, structs, Async Sub, ByRe
 
   ' Array of Task(Integer) launched concurrently
   Dim tasks(4) As Task(Integer)
-  For i = 0 To 3
+  For i = 0 To 3 Do
     tasks(i) = ComputeSquare(i + 2)
   End For
   Dim total As Integer = 0
-  For i = 0 To 3
+  For i = 0 To 3 Do
     total = total + (Await tasks(i))
   End For
   Assert total = 54

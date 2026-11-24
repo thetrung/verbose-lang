@@ -1,7 +1,7 @@
 Public Function main() As Integer
   Dim nums() As Integer = HeapAlloc(Integer, 4)
   Printf("zero=%d,%d\n", nums(0), nums(3))
-  For i = 0 To 3
+  For i = 0 To 3 Do
     nums(i) = (i + 1) * 5
   End For
   nums = HeapRealloc(nums, Integer, 6)

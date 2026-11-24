@@ -114,7 +114,7 @@ Public Function NewNode(kind As Integer) As Integer
     childCount = 0,
     extraStart = 0,
     extraCount = 0,
-    tyKind = TypeKind.TyNothing,
+    tyKind = TyNothing,
     tyArrLen = 0,
     tyNamePos = 0,
     tyNameLen = 0

@@ -10,7 +10,7 @@ End Sub
 
 Private Function SumX(pts() As Point, n As Integer) As Integer
   Dim acc As Integer = 0
-  For i = 0 To n - 1
+  For i = 0 To n - 1 Do
     acc = acc + pts(i).x
   End For
   Return acc

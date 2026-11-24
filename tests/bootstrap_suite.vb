@@ -87,7 +87,7 @@ End Test
 
 Test "(STAGE-2) 02_if_else_while_for — If/Then/Else, While, For loops & Boolean And/Or/Not"
   EnsureBootstrapDir()
-  Assert RunStage2Prog("p02", "Public Function main() As Integer\n  Dim i As Integer = 1\n  Dim sum As Integer = 0\n  While i <= 10 Do\n    If (i > 5) And (Not (i = 11)) Then\n      sum = sum + i * 2\n    Else\n      sum = sum + i\n    End If\n    i = i + 1\n  End While\n  Dim fsum As Integer = 0\n  For k = 1 To 5\n    fsum = fsum + k\n  End For\n  Printf(\"sum=%d fsum=%d\\n\", sum, fsum)\n  Return 0\nEnd Function\n") = 0
+  Assert RunStage2Prog("p02", "Public Function main() As Integer\n  Dim i As Integer = 1\n  Dim sum As Integer = 0\n  While i <= 10 Do\n    If (i > 5) And (Not (i = 11)) Then\n      sum = sum + i * 2\n    Else\n      sum = sum + i\n    End If\n    i = i + 1\n  End While\n  Dim fsum As Integer = 0\n  For k = 1 To 5 Do\n    fsum = fsum + k\n  End For\n  Printf(\"sum=%d fsum=%d\\n\", sum, fsum)\n  Return 0\nEnd Function\n") = 0
   Assert OutHas("sum=95 fsum=15")
 End Test
 

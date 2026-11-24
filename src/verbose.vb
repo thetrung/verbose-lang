@@ -28,21 +28,21 @@ End Sub
 
 Private Function CliResolveTarget(name As Pointer) As Integer
   Match name With
-    Case "linux-x86_64", "linux-x64", "x86_64-pc-linux-gnu", "x86_64-linux-gnu" Then Return TargetKind.TgtLinuxX64
-    Case "linux-arm64", "linux-aarch64", "aarch64-unknown-linux-gnu", "aarch64-linux-gnu" Then Return TargetKind.TgtLinuxArm64
-    Case "macos-arm64", "darwin-arm64", "arm64-apple-darwin", "arm64-apple-macosx", "arm64-apple-macosx11.0.0" Then Return TargetKind.TgtMacosArm64
-    Case "windows-x86_64", "windows-x64", "win64", "x86_64-w64-windows-gnu", "x86_64-pc-windows-msvc" Then Return TargetKind.TgtWindowsX64
-    Case "arm-m", "cortex-m", "cortex-m4", "thumbv7em-none-eabi", "thumbv7em-unknown-none-eabi" Then Return TargetKind.TgtArmM
+    Case "linux-x86_64", "linux-x64", "x86_64-pc-linux-gnu", "x86_64-linux-gnu" Then Return TgtLinuxX64
+    Case "linux-arm64", "linux-aarch64", "aarch64-unknown-linux-gnu", "aarch64-linux-gnu" Then Return TgtLinuxArm64
+    Case "macos-arm64", "darwin-arm64", "arm64-apple-darwin", "arm64-apple-macosx", "arm64-apple-macosx11.0.0" Then Return TgtMacosArm64
+    Case "windows-x86_64", "windows-x64", "win64", "x86_64-w64-windows-gnu", "x86_64-pc-windows-msvc" Then Return TgtWindowsX64
+    Case "arm-m", "cortex-m", "cortex-m4", "thumbv7em-none-eabi", "thumbv7em-unknown-none-eabi" Then Return TgtArmM
     Case _ Then Return -1
   End Match
 End Function
 
 Private Function CliTargetTriple(targetId As Integer) As Pointer
   Match targetId With
-    Case TargetKind.TgtLinuxArm64 Then Return CLANG_TRIPLE_LINUX_ARM64
-    Case TargetKind.TgtMacosArm64 Then Return CLANG_TRIPLE_MACOS_ARM64
-    Case TargetKind.TgtWindowsX64 Then Return CLANG_TRIPLE_WINDOWS_X64
-    Case TargetKind.TgtArmM Then Return CLANG_TRIPLE_ARM_M
+    Case TgtLinuxArm64 Then Return CLANG_TRIPLE_LINUX_ARM64
+    Case TgtMacosArm64 Then Return CLANG_TRIPLE_MACOS_ARM64
+    Case TgtWindowsX64 Then Return CLANG_TRIPLE_WINDOWS_X64
+    Case TgtArmM Then Return CLANG_TRIPLE_ARM_M
     Case _ Then Return CLANG_TRIPLE_LINUX_X64
   End Match
 End Function
@@ -62,7 +62,7 @@ Private Function CliDetectHostTarget() As Integer
   Dim envOs As Pointer = getenv("OS")
   If Not IsNull(envOs) Then
     If strcmp(envOs, "Windows_NT") = 0 Then
-      cli_hostTarget = TargetKind.TgtWindowsX64
+      cli_hostTarget = TgtWindowsX64
       Return cli_hostTarget
     End If
   End If
@@ -79,24 +79,24 @@ Private Function CliDetectHostTarget() As Integer
     ubuf(ulen) = 0
     pclose(fp)
     If Not IsNull(strstr(ubuf, "Darwin")) Then
-      cli_hostTarget = TargetKind.TgtMacosArm64
+      cli_hostTarget = TgtMacosArm64
       Return cli_hostTarget
     End If
     If (Not IsNull(strstr(ubuf, "MINGW"))) Or (Not IsNull(strstr(ubuf, "MSYS"))) Or (Not IsNull(strstr(ubuf, "CYGWIN"))) Then
-      cli_hostTarget = TargetKind.TgtWindowsX64
+      cli_hostTarget = TgtWindowsX64
       Return cli_hostTarget
     End If
     If (Not IsNull(strstr(ubuf, "aarch64"))) Or (Not IsNull(strstr(ubuf, "arm64"))) Then
-      cli_hostTarget = TargetKind.TgtLinuxArm64
+      cli_hostTarget = TgtLinuxArm64
       Return cli_hostTarget
     End If
   End If
-  cli_hostTarget = TargetKind.TgtLinuxX64
+  cli_hostTarget = TgtLinuxX64
   Return cli_hostTarget
 End Function
 
 Private Function CliTempDir() As Pointer
-  If CliDetectHostTarget() = TargetKind.TgtWindowsX64 Then
+  If CliDetectHostTarget() = TgtWindowsX64 Then
     Dim t1 As Pointer = getenv("TEMP")
     If (Not IsNull(t1)) And (t1(0) <> 0) Then
       Return t1
@@ -153,7 +153,7 @@ Private Sub CliAppendStr(buf As Pointer, ByRef pos As Integer, cap As Integer, s
 End Sub
 
 Private Sub CliAppendQuoted(buf As Pointer, ByRef pos As Integer, cap As Integer, s As Pointer)
-  If CliDetectHostTarget() = TargetKind.TgtWindowsX64 Then
+  If CliDetectHostTarget() = TgtWindowsX64 Then
     CliAppendChar(buf, ByRef pos, cap, 34)
     Dim wlen = strlen(s), wi = 0 As Integer
     While wi < wlen Do
@@ -211,7 +211,7 @@ End Sub
 Private Function CliIsDir(path As Pointer) As Boolean
   Dim cmd(1024) As Byte
   Dim pos As Integer = 0
-  If CliDetectHostTarget() = TargetKind.TgtWindowsX64 Then
+  If CliDetectHostTarget() = TgtWindowsX64 Then
     snprintf(cmd, 1024, "if exist \"%s\\*\" (exit /b 0) else (exit /b 1)", path)
     Return system(cmd) = 0
   End If
@@ -224,14 +224,12 @@ Private Function CliCountTests(progRoot As Integer) As Integer
   Dim defStart As Integer = g_nodes(progRoot).firstChild
   Dim defCount As Integer = g_nodes(progRoot).childCount
   Dim cnt As Integer = 0
-  Dim i As Integer = 0
-  While i < defCount Do
+  For i = 0 To defCount - 1 Do
     Dim d As Integer = g_kids(defStart + i)
-    If g_nodes(d).kind = NodeKind.NdTestDef Then
+    If g_nodes(d).kind = NdTestDef Then
       cnt = cnt + 1
     End If
-    i = i + 1
-  End While
+  End For
   Return cnt
 End Function
 
@@ -284,7 +282,7 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
   Dim hostTgt As Integer = CliDetectHostTarget()
   Dim effEmitObj As Integer = emitObj
   Dim effNoRun As Integer = noRun
-  If targetId = TargetKind.TgtArmM Then
+  If targetId = TgtArmM Then
     If emitOnly = 0 Then
       effEmitObj = 1
     End If
@@ -341,7 +339,7 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
       CliAppendStr(binPathBuf, ByRef binPos, 512, ".o")
     Else
       If testMode = 1 Then
-        If targetId = TargetKind.TgtWindowsX64 Then
+        If targetId = TgtWindowsX64 Then
           snprintf(binPathBuf, 512, "%s/vb_test_%d.exe", CliTempDir(), pid)
         Else
           snprintf(binPathBuf, 512, "%s/vb_test_%d", CliTempDir(), pid)
@@ -351,7 +349,7 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
         End If
       Else
         CliAppendStr(binPathBuf, ByRef binPos, 512, baseBuf)
-        If (targetId = TargetKind.TgtWindowsX64) And (Not CliHasSuffix(binPathBuf, ".exe")) Then
+        If (targetId = TgtWindowsX64) And (Not CliHasSuffix(binPathBuf, ".exe")) Then
           CliAppendStr(binPathBuf, ByRef binPos, 512, ".exe")
         End If
       End If
@@ -367,7 +365,7 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
     CliAppendStr(cmdBuf, ByRef cmdPos, 4096, CliTargetTriple(targetId))
     CliAppendChar(cmdBuf, ByRef cmdPos, 4096, 32)
   Else
-    If targetId = TargetKind.TgtMacosArm64 Then
+    If targetId = TgtMacosArm64 Then
       CliAppendStr(cmdBuf, ByRef cmdPos, 4096, "-Wno-override-module ")
     End If
   End If
@@ -376,22 +374,18 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
   End If
   CliAppendQuoted(cmdBuf, ByRef cmdPos, 4096, llPathBuf)
   If effEmitObj = 0 Then
-    Dim ei As Integer = 0
-    While ei < extraInputCount Do
+    For ei = 0 To extraInputCount - 1 Do
       CliAppendChar(cmdBuf, ByRef cmdPos, 4096, 32)
       CliAppendQuoted(cmdBuf, ByRef cmdPos, 4096, extraInputs(ei))
-      ei = ei + 1
-    End While
+    End For
   End If
   CliAppendStr(cmdBuf, ByRef cmdPos, 4096, " -o ")
   CliAppendQuoted(cmdBuf, ByRef cmdPos, 4096, binPathBuf)
-  Dim fi As Integer = 0
-  While fi < clangFlagCount Do
+  For fi = 0 To clangFlagCount - 1 Do
     CliAppendChar(cmdBuf, ByRef cmdPos, 4096, 32)
     CliAppendQuoted(cmdBuf, ByRef cmdPos, 4096, clangFlags(fi))
-    fi = fi + 1
-  End While
-  If (effEmitObj = 0) And ((targetId = TargetKind.TgtLinuxX64) Or (targetId = TargetKind.TgtLinuxArm64) Or (targetId = TargetKind.TgtWindowsX64)) And (CgUsesAsync() = 1) Then
+  End For
+  If (effEmitObj = 0) And ((targetId = TgtLinuxX64) Or (targetId = TgtLinuxArm64) Or (targetId = TgtWindowsX64)) And (CgUsesAsync() = 1) Then
     CliAppendStr(cmdBuf, ByRef cmdPos, 4096, " -lpthread")
   End If
 
@@ -417,7 +411,7 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
   If Not CliHasSlash(binPathBuf) Then
     Dim relBuf(520) As Byte
     Dim relPos As Integer = 0
-    If hostTgt = TargetKind.TgtWindowsX64 Then
+    If hostTgt = TgtWindowsX64 Then
       CliAppendStr(relBuf, ByRef relPos, 520, ".\\")
     Else
       CliAppendStr(relBuf, ByRef relPos, 520, "./")
@@ -433,7 +427,7 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
     unlink(binPathBuf)
   End If
   If execRc <> 0 Then
-    If hostTgt = TargetKind.TgtWindowsX64 Then
+    If hostTgt = TgtWindowsX64 Then
       Return execRc
     End If
     Dim exitCode As Integer = (execRc Shr 8) And 255
@@ -459,7 +453,7 @@ Private Function RunTestDirectory(dirPath As Pointer, showAst, showIr, showTa, s
   End While
   cleanDir(di) = 0
 
-  Dim isWin As Boolean = (CliDetectHostTarget() = TargetKind.TgtWindowsX64)
+  Dim isWin As Boolean = (CliDetectHostTarget() = TgtWindowsX64)
   Dim findCmd(1024) As Byte
   Dim fPos As Integer = 0
   If isWin Then
@@ -682,8 +676,7 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
     End If
     Dim suitesPassed As Integer = 0
     Dim suitesFailed As Integer = 0
-    Dim ti As Integer = 0
-    While ti < targetCount Do
+    For ti = 0 To targetCount - 1 Do
       Printf(MSG_CLI_TEST_RUNNING, targets(ti))
       fflush(0)
       Dim trc As Integer = 0
@@ -697,8 +690,7 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
       Else
         suitesFailed = suitesFailed + 1
       End If
-      ti = ti + 1
-    End While
+    End For
     Printf(MSG_CLI_TEST_SEP)
     Printf(MSG_CLI_TEST_SUMMARY, suitesPassed, targetCount, suitesFailed)
     If suitesFailed > 0 Then

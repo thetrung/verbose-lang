@@ -1,13 +1,13 @@
 Private Function Sum(arr() As Integer, n As Integer) As Integer
   Dim acc As Integer = 0
-  For i = 0 To n - 1
+  For i = 0 To n - 1 Do
     acc = acc + arr(i)
   End For
   Return acc
 End Function
 
 Private Sub Scale(ByRef arr() As Integer, n As Integer, k As Integer)
-  For i = 0 To n - 1
+  For i = 0 To n - 1 Do
     arr(i) = arr(i) * k
   End For
 End Sub

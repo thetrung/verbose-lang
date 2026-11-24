@@ -13,7 +13,7 @@ Public Function main() As Integer
   Dim st As Stat
   st.hits = 0
   st.score = 0
-  For i = 1 To 4
+  For i = 1 To 4 Do
     RecordHit(ByRef st)
   End For
   Printf("hits=%d score=%d\n", st.hits, st.score)

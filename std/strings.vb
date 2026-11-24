@@ -111,7 +111,7 @@ Public Function StrEndsWith(s As Pointer, suffix As Pointer) As Boolean
     Return False
   End If
   Dim off As Integer = sLen - sufLen
-  For i = 0 To sufLen - 1
+  For i = 0 To sufLen - 1 Do
     Dim cs As Integer = ByteAt(s, off + i)
     Dim cp As Integer = ByteAt(suffix, i)
     If cs <> cp Then
@@ -153,7 +153,7 @@ Public Function StrFind(haystack As Pointer, needle As Pointer) As Integer
   If nLen > hLen Then
     Return -1
   End If
-  For i = 0 To hLen - nLen
+  For i = 0 To hLen - nLen Do
     Dim j As Integer = 0
     Dim matched As Boolean = True
     While j < nLen Do
@@ -180,7 +180,7 @@ Public Function StrCopy(ByRef a As Arena, s As Pointer) As Pointer
     Return 0
   End If
   If Not IsNull(s) Then
-    For i = 0 To n - 1
+    For i = 0 To n - 1 Do
       dst(i) = s(i)
     End For
   End If
@@ -209,7 +209,7 @@ Public Function StrSubstr(ByRef a As Arena, s As Pointer, start As Integer, leng
   If IsNull(dst) Then
     Return 0
   End If
-  For i = 0 To take - 1
+  For i = 0 To take - 1 Do
     dst(i) = s(st + i)
   End For
   dst(take) = 0
@@ -224,12 +224,12 @@ Public Function StrConcat(ByRef a As Arena, aStr As Pointer, bStr As Pointer) As
     Return 0
   End If
   If Not IsNull(aStr) Then
-    For i = 0 To lenA - 1
+    For i = 0 To lenA - 1 Do
       dst(i) = aStr(i)
     End For
   End If
   If Not IsNull(bStr) Then
-    For i = 0 To lenB - 1
+    For i = 0 To lenB - 1 Do
       dst(lenA + i) = bStr(i)
     End For
   End If
@@ -278,7 +278,7 @@ Public Function StrToUpper(ByRef a As Arena, s As Pointer) As Pointer
     Return 0
   End If
   If Not IsNull(s) Then
-    For i = 0 To n - 1
+    For i = 0 To n - 1 Do
       Dim c As Integer = ByteAt(s, i)
       If c >= 97 Then
         If c <= 122 Then
@@ -299,7 +299,7 @@ Public Function StrToLower(ByRef a As Arena, s As Pointer) As Pointer
     Return 0
   End If
   If Not IsNull(s) Then
-    For i = 0 To n - 1
+    For i = 0 To n - 1 Do
       Dim c As Integer = ByteAt(s, i)
       If c >= 65 Then
         If c <= 90 Then
@@ -390,7 +390,7 @@ Public Function IntToStr(ByRef a As Arena, n As Integer) As Pointer
     dst(0) = 45
     pos = 1
   End If
-  For i = 0 To count - 1
+  For i = 0 To count - 1 Do
     dst(pos + i) = rev(count - 1 - i)
   End For
   dst(total) = 0
@@ -414,7 +414,7 @@ Public Function StrViewEq(a As StrView, b As StrView) As Boolean
   If IsNull(b.data) Then
     Return False
   End If
-  For i = 0 To a.length - 1
+  For i = 0 To a.length - 1 Do
     Dim ca As Integer = ByteAt(a.data, i)
     Dim cb As Integer = ByteAt(b.data, i)
     If ca <> cb Then
@@ -497,7 +497,7 @@ Public Sub SbAppendInt(ByRef sb As StrBuilder, n As Integer)
     count = count + 1
     v = v / 10
   End While
-  For i = 0 To count - 1
+  For i = 0 To count - 1 Do
     SbAppendChar(ByRef sb, rev(count - 1 - i) And 255)
   End For
 End Sub

@@ -77,7 +77,7 @@ Test "While and For loops with comparisons"
   Assert flag = 26
 
   Dim total As Integer = 0
-  For i = 1 To 10
+  For i = 1 To 10 Do
     total = total + i
   End For
   Assert total = 55
@@ -90,7 +90,7 @@ Test "Enum values and Select Case multi-value dispatch"
   Assert NodeType.FunctionCall = 3
 
   Dim hits As Integer = 0
-  For k = 1 To 5
+  For k = 1 To 5 Do
     Select Case k
       Case 1, 3
         hits = hits + 10
@@ -142,7 +142,7 @@ Test "C FFI file reading via fopen/getc/fclose with Select Case"
   Dim first As Integer = getc(fp)
   Assert first = 39, "first byte of src/ast.vb is comment quote"
   Dim spaces As Integer = 0
-  For i = 1 To 60
+  For i = 1 To 60 Do
     Dim ch As Integer = getc(fp)
     Select Case ch
       Case 32
