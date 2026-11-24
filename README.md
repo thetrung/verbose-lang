@@ -129,7 +129,7 @@ See **[LAYOUT.md](LAYOUT.md)** for the complete repository structure and directo
 
 ## Usage
 
-**Prerequisites**: `clang` (LLVM 19+ recommended) and `curl` (only if bootstrapping without an existing `verbose` binary). No OCaml or Python required!
+**Prerequisites**: `clang` (LLVM 19+ recommended) and `curl` (only if bootstrapping without an existing `verbose` binary). Prebuilt native binaries for **Linux x86-64**, **Linux arm64**, **macOS arm64**, and **Windows x86-64** are published on [GitHub Releases](https://github.com/thetrung/verbose-lang/releases/latest). No OCaml or Python required!
 
 ```bash
 # Build & verify the self-hosted compiler (./verbose) via Stage 1 -> Stage 2 -> Stage 3 fixpoint
