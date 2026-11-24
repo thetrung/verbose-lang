@@ -148,6 +148,21 @@ let rec type_of_expr env = function
       ) inits;
       Custom name
 
+  | IndexAccess (base_expr, idx_expr) ->
+      ignore (type_of_expr env idx_expr);
+      (match type_of_expr env base_expr with
+       | Array (elem_dt, _) -> elem_dt
+       | Pointer -> Byte
+       | _ -> raise (TypeError "Cannot index non-array, non-pointer expression"))
+
+  | ArrayLit elems ->
+      (match elems with
+       | [] -> Array (Int, 0)
+       | first :: rest ->
+           let et = type_of_expr env first in
+           List.iter (fun e -> ignore (type_of_expr env e)) rest;
+           Array (et, List.length elems))
+
 
 let rec check_stmt env = function
 
@@ -196,6 +211,10 @@ let rec check_stmt env = function
       
       if not types_match then
         raise (TypeError ("Type assignment mismatch inside field path: " ^ field_name))
+
+  | IndexAssign (base_expr, idx_expr, value_expr) ->
+      ignore (type_of_expr env (IndexAccess(base_expr, idx_expr)));
+      ignore (type_of_expr env value_expr)
 
 
 

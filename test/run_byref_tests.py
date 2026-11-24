@@ -39,7 +39,7 @@ CASES = [
     ("13_byref_primitive_field_and_forward.vb", "ByRef primitive struct field & forwarded primitive", ["p.a=16 p.b=2 n=115"], False),
     ("14_byref_missing_at_callsite_err.vb", "Reject missing ByRef at call site", ["expects ByRef at call site"], True),
     ("15_byref_on_byval_param_err.vb", "Reject ByRef passed to ByVal param", ["is ByVal and cannot be passed ByRef"], True),
-    ("16_byref_rvalue_err.vb", "Reject ByRef on non-lvalue literal", ["ByRef argument must be a variable or struct field"], True),
+    ("16_byref_rvalue_err.vb", "Reject ByRef on non-lvalue literal", ["ByRef argument must be a variable"], True),
 ]
 
 CLANG_STATUS_RE = re.compile(r"Status:\s*clang/exec\s*=\s*(-?\d+)\s+(-?\d+)")

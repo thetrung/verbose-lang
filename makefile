@@ -20,12 +20,13 @@ demo: build
 	./verbose examples/structure.vb
 	./verbose examples/structure2.vb
 	./verbose examples/nested_struct.vb
+	./verbose examples/arrays.vb
 	rm -rf examples && git checkout examples
 
 clean:
 	rm -rf _build \
 		${TARGET}.ll ${TARGET}.s ${TARGET}
-	@for dir in test/byref test/syntax; do \
+	@for dir in test/byref test/syntax test/arrays; do \
 		if [ -d "$$dir" ]; then \
 			find "$$dir" -maxdepth 1 -type f ! -name '*.vb' -delete; \
 		fi; \

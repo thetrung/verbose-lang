@@ -9,6 +9,7 @@ type data_type =
   | Nothing
   | Pointer
   | Custom of string
+  | Array of data_type * int (* element type, size; 0 = unsized slice/param *)
 
 type op = 
   (* Numeric *)
@@ -33,6 +34,8 @@ type expr =
   | BinOp of expr * op * expr
   | Call of string * (param_mode * expr) list
   | FieldAccess of expr * string    (* variable.Kind *)
+  | IndexAccess of expr * expr      (* arr[i] *)
+  | ArrayLit of expr list           (* [1, 2, 3] *)
   | StructInit of string * (string * expr) list (* Vector With { x = 1.0, y = 2.0 } *)
   
 type stmt =
@@ -40,6 +43,7 @@ type stmt =
   | Assign of string * expr
   | AssignExpr of expr * expr 
   | FieldAssign of expr * string * expr (* 🆕 Added for field assignment: e.g., t.Kind = 5 *)
+  | IndexAssign of expr * expr * expr   (* arr[i] = val *)
   | ExprStatement of expr
   | Return of expr option
 

@@ -34,6 +34,8 @@ let struct_field_types = Hashtbl.create 10
 let var_types = Hashtbl.create 50
 let ret_types   = Hashtbl.create 50
 let local_types = Hashtbl.create 50
+let local_ast_types : (string, data_type) Hashtbl.t = Hashtbl.create 50
+let indirect_arrays : (string, bool) Hashtbl.t = Hashtbl.create 16
 (* Enum Values  *)
 let enum_values = Hashtbl.create 50
 
@@ -51,7 +53,7 @@ let next_label ctx prefix =
   l
 
 (* Map custom data types to standard LLVM IR strings *)
-let string_of_dt = function
+let rec string_of_dt = function
   | Int -> "i32"
   | Byte -> "i8"
   | Short -> "i16"   
@@ -65,32 +67,115 @@ let string_of_dt = function
       (* If it's a registered Enum, lower it natively to a plain integer *)
       if Hashtbl.mem enum_values (name ^ "._is_enum") then "i32"
       else Printf.sprintf "%%struct.%s" name
+  | Array (et, n) ->
+      if n <= 0 then "ptr"
+      else Printf.sprintf "[%d x %s]" n (string_of_dt et)
+
+let is_struct_dt = function
+  | Custom name -> Hashtbl.mem struct_fields name
+  | _ -> false
+
+let is_aggregate_dt = function
+  | Custom name -> Hashtbl.mem struct_fields name
+  | Array (_, n) -> n > 0
+  | _ -> false
 
 let llvm_param_type (mode, _, dt) =
   match dt with
+  | Array _ -> "ptr"
   | Custom name when not (Hashtbl.mem enum_values (name ^ "._is_enum")) -> "ptr"
   | _ -> if mode = ByRef then "ptr" else string_of_dt dt
 
+let rec get_type_align = function
+  | Byte | Boolean -> 1
+  | Short -> 2
+  | Int | Single -> 4
+  | Long | Double | Pointer -> 8
+  | Nothing -> 1
+  | Custom name ->
+      if Hashtbl.mem enum_values (name ^ "._is_enum") then 4
+      else get_struct_align name
+  | Array (elem_dt, n) ->
+      if n <= 0 then 8 else get_type_align elem_dt
 
-let rec get_struct_size struct_name =
+and get_struct_align struct_name =
   if Hashtbl.mem struct_field_types struct_name then
     let fields = Hashtbl.find struct_field_types struct_name in
-    let raw_size = List.fold_left (fun acc (_, dt) ->
-      acc + (match dt with
-       | Byte -> 1
-       | Short -> 2
-       | Int | Single -> 4
-       | Long | Double | Pointer -> 8
-       | Boolean -> 1
-       | Nothing -> 0
-       (* Inside get_struct_size *)
-       | Custom name ->
-          if Hashtbl.mem enum_values (name ^ "._is_enum") then 4
-          else get_struct_size name (* Calculates size of nested fields recursively *)
-          )
-        ) 0 fields in
-        ((raw_size + 7) / 8) * 8
+    List.fold_left (fun acc (_, dt) -> max acc (get_type_align dt)) 1 fields
+  else 8
+
+and get_type_size = function
+  | Byte | Boolean -> 1
+  | Short -> 2
+  | Int | Single -> 4
+  | Long | Double | Pointer -> 8
+  | Nothing -> 0
+  | Custom name ->
+      if Hashtbl.mem enum_values (name ^ "._is_enum") then 4
+      else get_struct_size name
+  | Array (elem_dt, n) ->
+      if n <= 0 then 8 else n * get_type_size elem_dt
+
+and get_struct_size struct_name =
+  if Hashtbl.mem struct_field_types struct_name then
+    let fields = Hashtbl.find struct_field_types struct_name in
+    let align_up off a = if a <= 1 then off else ((off + a - 1) / a) * a in
+    let max_align = ref 1 in
+    let off = List.fold_left (fun acc (_, dt) ->
+      let a = get_type_align dt in
+      if a > !max_align then max_align := a;
+      let aligned = align_up acc a in
+      aligned + get_type_size dt
+    ) 0 fields in
+    let total = align_up off !max_align in
+    if total = 0 then 8 else total
   else 16
+
+let emit_store_typed ctx expected_dt v dt_str target_ptr =
+  if is_aggregate_dt expected_dt then begin
+    let byte_size = get_type_size expected_dt in
+    emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)"
+               target_ptr v byte_size)
+  end else begin
+    let expected_dt_str = string_of_dt expected_dt in
+    let align = max 1 (get_type_align expected_dt) in
+    let is_reg = String.length v > 0 && (v.[0] = '%' || v.[0] = '@') in
+    if expected_dt_str = "ptr" && dt_str = "i32" then begin
+      let cast_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
+      emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 8" cast_reg target_ptr)
+    end else if expected_dt_str = "float" && dt_str = "double" && is_reg then begin
+      let cast_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = fptrunc double %s to float" cast_reg v);
+      emit ctx (Printf.sprintf "  store float %s, ptr %s, align 4" cast_reg target_ptr)
+    end else if expected_dt_str = "double" && dt_str = "float" && is_reg then begin
+      let cast_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = fpext float %s to double" cast_reg v);
+      emit ctx (Printf.sprintf "  store double %s, ptr %s, align 8" cast_reg target_ptr)
+    end else if expected_dt_str = "float" && dt_str = "double" && not is_reg then begin
+      let f = float_of_string v in
+      let f32 = Int32.float_of_bits (Int32.bits_of_float f) in
+      let hex_bits = Printf.sprintf "0x%016LX" (Int64.bits_of_float f32) in
+      emit ctx (Printf.sprintf "  store float %s, ptr %s, align 4" hex_bits target_ptr)
+    end else if expected_dt_str = "i8" && (dt_str = "i32" || dt_str = "i64" || dt_str = "i16") && is_reg then begin
+      let cast_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = trunc %s %s to i8" cast_reg dt_str v);
+      emit ctx (Printf.sprintf "  store i8 %s, ptr %s, align 1" cast_reg target_ptr)
+    end else if expected_dt_str = "i16" && (dt_str = "i32" || dt_str = "i64") && is_reg then begin
+      let cast_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = trunc %s %s to i16" cast_reg dt_str v);
+      emit ctx (Printf.sprintf "  store i16 %s, ptr %s, align 2" cast_reg target_ptr)
+    end else if expected_dt_str = "i64" && (dt_str = "i32" || dt_str = "i16" || dt_str = "i8") && is_reg then begin
+      let cast_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = sext %s %s to i64" cast_reg dt_str v);
+      emit ctx (Printf.sprintf "  store i64 %s, ptr %s, align 8" cast_reg target_ptr)
+    end else if expected_dt_str = "i32" && (dt_str = "i8" || dt_str = "i16") && is_reg then begin
+      let cast_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = sext %s %s to i32" cast_reg dt_str v);
+      emit ctx (Printf.sprintf "  store i32 %s, ptr %s, align 4" cast_reg target_ptr)
+    end else
+      emit ctx (Printf.sprintf "  store %s %s, ptr %s, align %d" expected_dt_str v target_ptr align)
+  end
 
 (* Inside your main compilation driver function tracking definitions *)
 let compile_enum_definition enum_name members =
@@ -120,23 +205,36 @@ let rec codegen_expr ctx = function
    | Id name ->
     if Hashtbl.mem ctx.variables name then
       let alloca_reg = Hashtbl.find ctx.variables name in
-      let res_reg = next_reg ctx in
-      
-      let t_str = 
-        if Hashtbl.mem var_types name then 
-          Printf.sprintf "%%struct.%s" (Hashtbl.find var_types name)
-        else if name = "buffer" || name = "fileHandle" then "ptr"
-        else 
-          let local_type = Hashtbl.find local_types name in
-          local_type
-      in
-      
-      if Hashtbl.mem var_types name then
-        (alloca_reg, "ptr")
-      else begin
-        emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align 4" res_reg t_str alloca_reg);
-        (res_reg, t_str)
-      end
+      match Hashtbl.find_opt local_ast_types name with
+      | Some dt when is_aggregate_dt dt ->
+          (alloca_reg, "ptr")
+      | Some (Array (_, -1)) ->
+          if Hashtbl.mem indirect_arrays name then begin
+            let res_reg = next_reg ctx in
+            emit ctx (Printf.sprintf "  %s = load ptr, ptr %s, align 8" res_reg alloca_reg);
+            (res_reg, "ptr")
+          end else
+            (alloca_reg, "ptr")
+      | Some dt ->
+          let t_str = string_of_dt dt in
+          let align = max 1 (get_type_align dt) in
+          let res_reg = next_reg ctx in
+          emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align %d" res_reg t_str alloca_reg align);
+          (res_reg, t_str)
+      | None ->
+          let res_reg = next_reg ctx in
+          let t_str =
+            if Hashtbl.mem var_types name then
+              Printf.sprintf "%%struct.%s" (Hashtbl.find var_types name)
+            else if name = "buffer" || name = "fileHandle" then "ptr"
+            else Hashtbl.find local_types name
+          in
+          if Hashtbl.mem var_types name then
+            (alloca_reg, "ptr")
+          else begin
+            emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align 4" res_reg t_str alloca_reg);
+            (res_reg, t_str)
+          end
     else
       raise (Error ("Undefined variable reference: " ^ name))
 
@@ -151,18 +249,31 @@ let rec codegen_expr ctx = function
            
        (* Case B: Deep Dynamic Property Fields Paths Lookup *)
        | _ ->
-           (* 1. Use the helper to compute the exact inner element memory pointer *)
-           let field_ptr, final_type = get_field_pointer ctx (FieldAccess(base_expr, field_name)) in
-           
-           (* 2. Check if the final path points to an entire embedded sub-struct block *)
-           if Hashtbl.mem struct_fields final_type then
+           let field_ptr, final_dt = get_lvalue_ptr ctx (FieldAccess(base_expr, field_name)) in
+           if is_aggregate_dt final_dt then
              (field_ptr, "ptr")
            else begin
-             (* 3. If it's a primitive scalar (like float, double, or i64), load the data *)
+             let final_type = string_of_dt final_dt in
+             let align = max 1 (get_type_align final_dt) in
              let res_reg = next_reg ctx in
-             emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align 8" res_reg final_type field_ptr);
+             emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align %d" res_reg final_type field_ptr align);
              (res_reg, final_type)
            end)
+
+  | IndexAccess (base_expr, idx_expr) ->
+      let elem_ptr, elem_dt = get_lvalue_ptr ctx (IndexAccess(base_expr, idx_expr)) in
+      if is_aggregate_dt elem_dt then
+        (elem_ptr, "ptr")
+      else begin
+        let elem_type = string_of_dt elem_dt in
+        let align = max 1 (get_type_align elem_dt) in
+        let res_reg = next_reg ctx in
+        emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align %d" res_reg elem_type elem_ptr align);
+        (res_reg, elem_type)
+      end
+
+  | ArrayLit _ ->
+      raise (Error "Array literal must be used to initialize an array variable")
 
 
   | UnaryOp ("Not", e) ->
@@ -293,6 +404,15 @@ let rec codegen_expr ctx = function
       ) inits;
       (alloca_reg, "ptr")
 
+  | Call ("Len", [(ByVal, arg_expr)]) ->
+      let _, dt = get_lvalue_ptr ctx arg_expr in
+      (match dt with
+       | Array (_, n) when n > 0 -> (string_of_int n, "i32")
+       | _ -> raise (Error "Len() requires a fixed-size array"))
+
+  | Call ("Len", _) ->
+      raise (Error "Len() expects exactly one ByVal fixed-size array argument")
+
   | Call ("printf", args) ->
       let evaluated_args = List.map (fun (mode, e) ->
         if mode = ByRef then raise (Error "printf does not accept ByRef arguments")
@@ -358,14 +478,20 @@ let rec codegen_expr ctx = function
           match arg_expr with
           | Id var_name ->
               if Hashtbl.mem ctx.variables var_name then
-                (Hashtbl.find ctx.variables var_name, "ptr")
+                let reg = Hashtbl.find ctx.variables var_name in
+                if Hashtbl.mem indirect_arrays var_name then begin
+                  let loaded = next_reg ctx in
+                  emit ctx (Printf.sprintf "  %s = load ptr, ptr %s, align 8" loaded reg);
+                  (loaded, "ptr")
+                end else
+                  (reg, "ptr")
               else
                 raise (Error ("Undefined variable reference for ByRef argument: " ^ var_name))
-          | FieldAccess _ ->
-              let field_ptr, _ = get_field_pointer ctx arg_expr in
-              (field_ptr, "ptr")
+          | FieldAccess _ | IndexAccess _ ->
+              let lval_ptr, _ = get_lvalue_ptr ctx arg_expr in
+              (lval_ptr, "ptr")
           | _ ->
-              raise (Error "ByRef argument must be a variable or struct field")
+              raise (Error "ByRef argument must be a variable, struct field, or array element")
         in
         let is_var = Hashtbl.mem variadic_funcs name in
         let evaluated_args = List.mapi (fun idx (arg_mode, arg_expr) ->
@@ -428,139 +554,204 @@ let rec codegen_expr ctx = function
         end
       end
 
-and get_field_pointer ctx = function
+and widen_index_to_i64 ctx idx_expr =
+  let idx_v, idx_t = codegen_expr ctx idx_expr in
+  let is_reg = String.length idx_v > 0 && (idx_v.[0] = '%' || idx_v.[0] = '@') in
+  match idx_t with
+  | "i64" -> idx_v
+  | "i32" | "i16" | "i8" ->
+      if is_reg then begin
+        let ext_reg = next_reg ctx in
+        emit ctx (Printf.sprintf "  %s = sext %s %s to i64" ext_reg idx_t idx_v);
+        ext_reg
+      end else idx_v
+  | _ -> raise (Error ("Array index must be an integer type, got " ^ idx_t))
+
+and get_lvalue_ptr ctx = function
   | Id name ->
       if Hashtbl.mem ctx.variables name then
         let base_ptr = Hashtbl.find ctx.variables name in
-        let struct_name = Hashtbl.find var_types name in
-        (base_ptr, struct_name)
+        let dt =
+          match Hashtbl.find_opt local_ast_types name with
+          | Some d -> d
+          | None ->
+              if Hashtbl.mem var_types name then Custom (Hashtbl.find var_types name)
+              else Int
+        in
+        (base_ptr, dt)
       else
         raise (Error ("Undefined variable base identifier: " ^ name))
 
   | FieldAccess (sub_expr, field_name) ->
-      (* 1. Recursively bubble up the pointer and the custom layout type of the parent layer *)
-      let parent_ptr, parent_struct = get_field_pointer ctx sub_expr in
-      
-      (* 2. Look up field index within the parent struct blueprint *)
+      let parent_ptr, parent_dt = get_lvalue_ptr ctx sub_expr in
+      let parent_struct =
+        match parent_dt with
+        | Custom s when Hashtbl.mem struct_fields s -> s
+        | _ -> raise (Error ("Field access requires a structure value before ." ^ field_name))
+      in
       let fields = Hashtbl.find struct_fields parent_struct in
-      let field_index = List.assoc field_name fields in
-      
-      (* 3. Fetch the metadata type of this subfield *)
+      let field_index =
+        try List.assoc field_name fields
+        with Not_found -> raise (Error (Printf.sprintf "Structure '%s' has no field named '%s'" parent_struct field_name))
+      in
       let field_types = Hashtbl.find struct_field_types parent_struct in
       let actual_dt = List.assoc field_name field_types in
-      
-      (* 4. Shift pointer offset using getelementptr *)
       let field_ptr = next_reg ctx in
       let struct_type_str = Printf.sprintf "%%struct.%s" parent_struct in
-      emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d" 
+      emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d"
                  field_ptr struct_type_str parent_ptr field_index);
-      
-      (* 5. Crucial step: Return the child structure name string as the type identifier *)
-      (match actual_dt with
-       | Custom child_struct when Hashtbl.mem struct_fields child_struct -> (field_ptr, child_struct)
-       | _ -> (field_ptr, string_of_dt actual_dt))
+      (field_ptr, actual_dt)
 
-  | _ -> raise (Error "LHS evaluation expects an explicit identifier or nested property pathway")
+  | IndexAccess (base_expr, idx_expr) ->
+      let idx64 = widen_index_to_i64 ctx idx_expr in
+      let is_lval = match base_expr with Id _ | FieldAccess _ | IndexAccess _ -> true | _ -> false in
+      if is_lval then begin
+        let base_ptr, base_dt = get_lvalue_ptr ctx base_expr in
+        match base_dt with
+        | Array (elem_dt, n) when n > 0 ->
+            let arr_llvm = string_of_dt base_dt in
+            let elem_ptr = next_reg ctx in
+            emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i64 0, i64 %s"
+                       elem_ptr arr_llvm base_ptr idx64);
+            (elem_ptr, elem_dt)
+        | Array (elem_dt, -1) ->
+            let raw_ptr =
+              match base_expr with
+              | Id var_name when Hashtbl.mem indirect_arrays var_name ->
+                  let p = next_reg ctx in
+                  emit ctx (Printf.sprintf "  %s = load ptr, ptr %s, align 8" p base_ptr);
+                  p
+              | _ -> base_ptr
+            in
+            let elem_llvm = string_of_dt elem_dt in
+            let elem_ptr = next_reg ctx in
+            emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i64 %s"
+                       elem_ptr elem_llvm raw_ptr idx64);
+            (elem_ptr, elem_dt)
+        | Pointer ->
+            let raw_ptr = next_reg ctx in
+            emit ctx (Printf.sprintf "  %s = load ptr, ptr %s, align 8" raw_ptr base_ptr);
+            let elem_ptr = next_reg ctx in
+            emit ctx (Printf.sprintf "  %s = getelementptr inbounds i8, ptr %s, i64 %s"
+                       elem_ptr raw_ptr idx64);
+            (elem_ptr, Byte)
+        | _ ->
+            raise (Error "Cannot index non-array, non-pointer expression")
+      end else begin
+        let pv, pt = codegen_expr ctx base_expr in
+        if pt = "ptr" then begin
+          let elem_ptr = next_reg ctx in
+          emit ctx (Printf.sprintf "  %s = getelementptr inbounds i8, ptr %s, i64 %s"
+                     elem_ptr pv idx64);
+          (elem_ptr, Byte)
+        end else
+          raise (Error "Cannot index non-array, non-pointer expression")
+      end
+
+  | _ -> raise (Error "LHS evaluation expects an explicit identifier, field, or array element")
 
 let rec codegen_stmt ctx = function
 
   | Dim (name, dt, opt_exp) ->
-   
-    (match dt with 
-    | Custom struct_name -> 
-        if Hashtbl.mem struct_fields struct_name then
-          Hashtbl.replace var_types name struct_name
+    let effective_dt =
+      match dt, opt_exp with
+      | Pointer, Some (Call (sn, _)) when Hashtbl.mem struct_fields sn -> Custom sn
+      | Pointer, Some (StructInit (sn, _)) when Hashtbl.mem struct_fields sn -> Custom sn
+      | _, _ -> dt
+    in
+    (match effective_dt with
+    | Custom struct_name when Hashtbl.mem struct_fields struct_name ->
+        Hashtbl.replace var_types name struct_name
     | _ -> ());
 
-    (match opt_exp with
-    | Some exp -> (match exp with 
-        | Call (struct_name, _) when Hashtbl.mem struct_fields struct_name ->
-                                     Hashtbl.replace var_types name struct_name
-        | StructInit (struct_name, _) when Hashtbl.mem struct_fields struct_name ->
-                                     Hashtbl.replace var_types name struct_name
-        | _ -> ());
-    | None -> ());
-
-    let alloca_reg = next_reg ctx in
-    let typ_str = 
-      if Hashtbl.mem var_types name then 
-        Printf.sprintf "%%struct.%s" (Hashtbl.find var_types name)
-      else string_of_dt dt 
-    in
-      emit ctx (Printf.sprintf "  %s = alloca %s, align 8" alloca_reg typ_str);
-      
-      Hashtbl.add local_types name typ_str;
-      Hashtbl.add ctx.variables name alloca_reg;
-
-    begin match opt_exp with Some exp -> 
-    let v, t = codegen_expr ctx exp in
-
-      if Hashtbl.mem var_types name then begin
-        let struct_name = Hashtbl.find var_types name in
-        let byte_size = get_struct_size struct_name in
-        emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)" 
-                   alloca_reg v byte_size)
-      end else if typ_str = "ptr" && t = "i32" then begin
-        let cast_reg = next_reg ctx in
-        emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
-        emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 8" cast_reg alloca_reg)
-      end else
-        emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 8" typ_str v alloca_reg);
-    | None -> ();
-    end
+    (match effective_dt with
+    | Array (_, -1) ->
+        let alloca_reg = next_reg ctx in
+        emit ctx (Printf.sprintf "  %s = alloca ptr, align 8" alloca_reg);
+        Hashtbl.replace local_types name "ptr";
+        Hashtbl.replace local_ast_types name effective_dt;
+        Hashtbl.replace indirect_arrays name true;
+        Hashtbl.replace ctx.variables name alloca_reg;
+        (match opt_exp with
+         | Some exp ->
+             let v, t = codegen_expr ctx exp in
+             emit_store_typed ctx Pointer v t alloca_reg
+         | None ->
+             emit ctx (Printf.sprintf "  store ptr null, ptr %s, align 8" alloca_reg))
+    | Array (_, n) when n <= 0 ->
+        raise (Error ("Array size must be greater than 0 for '" ^ name ^ "'"))
+    | Array (elem_dt, n) ->
+        let arr_llvm = string_of_dt effective_dt in
+        let alloca_reg = next_reg ctx in
+        emit ctx (Printf.sprintf "  %s = alloca %s, align 8" alloca_reg arr_llvm);
+        emit ctx (Printf.sprintf "  store %s zeroinitializer, ptr %s, align 8" arr_llvm alloca_reg);
+        Hashtbl.replace local_types name arr_llvm;
+        Hashtbl.replace local_ast_types name effective_dt;
+        Hashtbl.replace ctx.variables name alloca_reg;
+        (match opt_exp with
+         | None -> ()
+         | Some (ArrayLit elems) ->
+             if List.length elems > n then
+               raise (Error (Printf.sprintf "Array initializer for '%s' has %d elements, exceeding size %d"
+                               name (List.length elems) n));
+             List.iteri (fun idx elem_expr ->
+               let v, t = codegen_expr ctx elem_expr in
+               let elem_ptr = next_reg ctx in
+               emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i64 0, i64 %d"
+                          elem_ptr arr_llvm alloca_reg idx);
+               emit_store_typed ctx elem_dt v t elem_ptr
+             ) elems
+         | Some exp ->
+             let v, t = codegen_expr ctx exp in
+             emit_store_typed ctx effective_dt v t alloca_reg)
+    | _ ->
+        let alloca_reg = next_reg ctx in
+        let typ_str = string_of_dt effective_dt in
+        emit ctx (Printf.sprintf "  %s = alloca %s, align 8" alloca_reg typ_str);
+        Hashtbl.replace local_types name typ_str;
+        Hashtbl.replace local_ast_types name effective_dt;
+        Hashtbl.replace ctx.variables name alloca_reg;
+        (match opt_exp with
+         | Some exp ->
+             let v, t = codegen_expr ctx exp in
+             emit_store_typed ctx effective_dt v t alloca_reg
+         | None -> ()))
 
   | Assign (name, exp) ->
       if Hashtbl.mem ctx.variables name then
         let alloca_reg = Hashtbl.find ctx.variables name in
         let v, t = codegen_expr ctx exp in
-        
-        if Hashtbl.mem var_types name then begin
-          (* 👇 FIXED: Size parameter is now fully dynamic based on structure layout fields *)
-          let struct_name = Hashtbl.find var_types name in
-          let byte_size = get_struct_size struct_name in
-          emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)" 
-                     alloca_reg v byte_size)
-        end else begin
-            if Hashtbl.mem local_types name then
-              let expected_type = try Hashtbl.find local_types name with _ -> "i32" in
-              if expected_type = "ptr" && t = "i32" then begin
-                let cast_reg = next_reg ctx in
-                emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
-                emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 4" cast_reg alloca_reg)
-              end else
-                emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" t v alloca_reg)
+        match Hashtbl.find_opt local_ast_types name with
+        | Some (Array (_, -1)) ->
+            emit_store_typed ctx Pointer v t alloca_reg
+        | Some expected_dt ->
+            emit_store_typed ctx expected_dt v t alloca_reg
+        | None ->
+            if Hashtbl.mem var_types name then begin
+              let struct_name = Hashtbl.find var_types name in
+              let byte_size = get_struct_size struct_name in
+              emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)"
+                         alloca_reg v byte_size)
+            end else if Hashtbl.mem local_types name then
+              emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" t v alloca_reg)
             else raise(Error ("Can't find local type " ^ name))
-        end
       else
         raise (Error ("Assignment target undefined: " ^ name))
 
   | FieldAssign (base_expr, field_name, value_expr) ->
       let v, dt_str = codegen_expr ctx value_expr in
-      let field_ptr, target_type = get_field_pointer ctx (FieldAccess(base_expr, field_name)) in
-      if Hashtbl.mem struct_fields target_type then begin
-        let byte_size = get_struct_size target_type in
-        emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)"
-                   field_ptr v byte_size)
-      end else if target_type = "ptr" && dt_str = "i32" then begin
-        let cast_reg = next_reg ctx in
-        emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
-        emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 4" cast_reg field_ptr)
-      end else begin
-        emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" target_type v field_ptr)
-      end
+      let field_ptr, target_dt = get_lvalue_ptr ctx (FieldAccess(base_expr, field_name)) in
+      emit_store_typed ctx target_dt v dt_str field_ptr
+
+  | IndexAssign (base_expr, idx_expr, value_expr) ->
+      let v, dt_str = codegen_expr ctx value_expr in
+      let elem_ptr, elem_dt = get_lvalue_ptr ctx (IndexAccess(base_expr, idx_expr)) in
+      emit_store_typed ctx elem_dt v dt_str elem_ptr
 
   | AssignExpr (lhs_expr, rhs_expr) ->
       let rhs_val, rhs_type = codegen_expr ctx rhs_expr in
-      let target_ptr, target_type = get_field_pointer ctx lhs_expr in
-      
-      (* ✅ FIXED: Match target type mappings against global structure blueprints *)
-      if Hashtbl.mem struct_fields target_type then begin
-        let byte_size = get_struct_size target_type in
-        emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)" 
-                   target_ptr rhs_val byte_size)
-      end else begin
-        emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 8" rhs_type rhs_val target_ptr)
-      end
+      let target_ptr, target_dt = get_lvalue_ptr ctx lhs_expr in
+      emit_store_typed ctx target_dt rhs_val rhs_type target_ptr
 
 
 
@@ -677,6 +868,7 @@ let rec codegen_stmt ctx = function
           emit ctx (Printf.sprintf "  %s = alloca i32, align 4" r);
           Hashtbl.add ctx.variables var_name r;
           Hashtbl.replace local_types var_name "i32";
+          Hashtbl.replace local_ast_types var_name Int;
           r
       in
       emit ctx (Printf.sprintf "  store i32 %s, ptr %s, align 4" v_start alloca_reg);
@@ -714,10 +906,12 @@ let codegen_def ctx = function
       (* Clear local registers and variable tables before processing each unique function body *)
       Hashtbl.clear ctx.variables;
       Hashtbl.clear local_types;
+      Hashtbl.clear local_ast_types;
+      Hashtbl.clear indirect_arrays;
       Hashtbl.clear var_types;
       ctx.reg_counter <- 1;
 
-      (* 1. Structure function signature strings: System structs or ByRef require a direct 'ptr' *)
+      (* 1. Structure function signature strings: System structs, arrays, or ByRef require a direct 'ptr' *)
       let param_strs = List.map (fun (mode, n, t) -> 
         llvm_param_type (mode, n, t) ^ " %" ^ n
       ) params in
@@ -732,6 +926,7 @@ let codegen_def ctx = function
       
       (* 2. Map function parameters to local stack variables based on ByRef / ByVal *)
       List.iter (fun (mode, n, dt) ->
+        Hashtbl.replace local_ast_types n dt;
         match dt with
         | Custom struct_name when Hashtbl.mem struct_fields struct_name ->
             if mode = ByRef then begin
@@ -750,6 +945,22 @@ let codegen_def ctx = function
               Hashtbl.add ctx.variables n alloca_reg;
               Hashtbl.add var_types n struct_name;
               Hashtbl.add local_types n struct_typ
+            end
+        | Array (_, arr_len) ->
+            let arr_typ = string_of_dt dt in
+            if arr_len > 0 && mode = ByVal then begin
+              (* ByVal Fixed-Size Array: isolate with stack copy *)
+              let alloca_reg = next_reg ctx in
+              emit ctx (Printf.sprintf "  %s = alloca %s, align 8" alloca_reg arr_typ);
+              let byte_size = get_type_size dt in
+              emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %%%s, i64 %d, i1 false)"
+                         alloca_reg n byte_size);
+              Hashtbl.add ctx.variables n alloca_reg;
+              Hashtbl.add local_types n arr_typ
+            end else begin
+              (* ByRef Array or unsized slice arr[]: bind argument register directly *)
+              Hashtbl.add ctx.variables n ("%" ^ n);
+              Hashtbl.add local_types n arr_typ
             end
         | _ ->
             (* Standard Primitive Scalar Data Types *)
@@ -828,6 +1039,8 @@ let generate_program prog =
   Hashtbl.clear var_types;
   Hashtbl.clear ret_types;
   Hashtbl.clear local_types;
+  Hashtbl.clear local_ast_types;
+  Hashtbl.clear indirect_arrays;
   Hashtbl.clear enum_values;
   
   (* Step 0: Populate structural metadata indices first *)
