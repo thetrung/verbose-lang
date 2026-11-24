@@ -185,6 +185,17 @@ All implemented language, memory, FFI, standard library, compiler, and tooling f
 
 ---
 
+## Ecosystem
+
+Official companion repositories built for VerBose-Lang `v0.6.0+`:
+
+- **[verbose-raylib](https://github.com/thetrung/verbose-raylib)** — Idiomatic VerBose-Lang + C ABI wrapper for Raylib 5.x/6.x with 2D/3D math, color palettes, orbital camera helpers, headless mock, and graphical demos.
+- **[verbose.nvim](https://github.com/thetrung/verbose.nvim)** — Neovim plugin with Tree-sitter grammar & queries, recursive `Include`-cached in-process LSP (completion, `gd`, hover, diagnostics), and `:VerboseInstall` latest compiler installer.
+- **[verbose-pkg](https://github.com/thetrung/verbose-pkg)** — Serverless Cargo-inspired package manager (`vpm`), written natively in VerBose-Lang, supporting git, path, and source/binary `.vpkg.tar.gz` bundles.
+- **[verbose-tui](https://github.com/thetrung/verbose-tui)** — Ratatui-inspired zero-GC double-buffered 24-bit TrueColor TUI framework with Unicode widgets and zero `ncurses` dependency.
+
+---
+
 ## Roadmap
 
 See **[TODO.md](TODO.md)** for the active roadmap and future extensions, and **[LOGS.md](LOGS.md)** for completed tasks and milestone history.

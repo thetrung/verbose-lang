@@ -8,7 +8,9 @@ _All current core language tasks are complete and archived in **[LOGS.md](LOGS.m
 
 ## Extensions
 
-- [ ] **Raylib Wrapper Support** : (in new repo) attempt to build a wrapper in c/verbose to build up functions natively in Verbose-Lang style for more intensive graphical demos.
-- [ ] **Package Manager** : (in new repo) Learn from what you have done with Raylib to build a way to pack such library so people can pack, upload/download, install into their project like cargo did while easy to include/import in verbose. I don't mean to build a whole server thing but a way to pack/build/install from source code/binary. We may discuss this if you are unclear or confused.
-- [ ] **NVIM Plugin** : (in new repo) syntax-highlighting, intellisense (cache on included/imported files), auto-complete, treesitter, include latest version of verbose for easy installation.
-- [ ] **TUI support** : (in new repo) lookup ways to build TUI application with verbose like Ratatui on Rust.
+_All 4 initial ecosystem extensions are complete and archived in **[LOGS.md](LOGS.md)**:_
+
+- [x] **Raylib Wrapper Support** — [`thetrung/verbose-raylib`](https://github.com/thetrung/verbose-raylib)
+- [x] **NVIM Plugin** — [`thetrung/verbose.nvim`](https://github.com/thetrung/verbose.nvim)
+- [x] **Package Manager (`vpm`)** — [`thetrung/verbose-pkg`](https://github.com/thetrung/verbose-pkg)
+- [x] **TUI Support** — [`thetrung/verbose-tui`](https://github.com/thetrung/verbose-tui)
