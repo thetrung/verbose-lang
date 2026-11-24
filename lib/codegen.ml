@@ -21,6 +21,10 @@ let create_context () = {
 }
 (* Track per-function parameter passing modes (ByVal / ByRef) *)
 let func_param_modes : (string, param_mode list) Hashtbl.t = Hashtbl.create 32
+(* Track user-declared external FFI functions *)
+let extern_decls : (string, string) Hashtbl.t = Hashtbl.create 32
+let extern_order : string list ref = ref []
+let variadic_funcs : (string, string list) Hashtbl.t = Hashtbl.create 16
 (* Track visibility of structures/enums *)
 let visibility_table : (string, bool) Hashtbl.t = Hashtbl.create 16
 (* Struct Field/Type  *)
@@ -61,6 +65,11 @@ let string_of_dt = function
       (* If it's a registered Enum, lower it natively to a plain integer *)
       if Hashtbl.mem enum_values (name ^ "._is_enum") then "i32"
       else Printf.sprintf "%%struct.%s" name
+
+let llvm_param_type (mode, _, dt) =
+  match dt with
+  | Custom name when not (Hashtbl.mem enum_values (name ^ "._is_enum")) -> "ptr"
+  | _ -> if mode = ByRef then "ptr" else string_of_dt dt
 
 
 let rec get_struct_size struct_name =
@@ -228,6 +237,62 @@ let rec codegen_expr ctx = function
         (res_reg, ret_type)
       end
  
+  | StructInit (name, inits) ->
+      if not (Hashtbl.mem struct_fields name) then
+        raise (Error ("Unknown structure in With initializer: " ^ name));
+      let struct_type_str = Printf.sprintf "%%struct.%s" name in
+      let alloca_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = alloca %s, align 8" alloca_reg struct_type_str);
+      emit ctx (Printf.sprintf "  store %s zeroinitializer, ptr %s, align 8" struct_type_str alloca_reg);
+
+      let fields = Hashtbl.find struct_fields name in
+      let field_types = Hashtbl.find struct_field_types name in
+      let seen = Hashtbl.create (List.length inits) in
+
+      List.iter (fun (field_name, arg_expr) ->
+        if Hashtbl.mem seen field_name then
+          raise (Error (Printf.sprintf "Duplicate field '%s' in '%s' With initializer" field_name name));
+        Hashtbl.add seen field_name ();
+        let idx =
+          try List.assoc field_name fields
+          with Not_found ->
+            raise (Error (Printf.sprintf "Structure '%s' has no field named '%s'" name field_name))
+        in
+        let actual_dt = List.assoc field_name field_types in
+        let expected_dt_str = string_of_dt actual_dt in
+        let v, dt_str = codegen_expr ctx arg_expr in
+        let field_ptr = next_reg ctx in
+        emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d"
+                   field_ptr struct_type_str alloca_reg idx);
+        match actual_dt with
+        | Custom child_struct_name when Hashtbl.mem struct_fields child_struct_name ->
+            let byte_size = get_struct_size child_struct_name in
+            emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)"
+                       field_ptr v byte_size)
+        | _ ->
+            let is_reg = String.length v > 0 && (v.[0] = '%' || v.[0] = '@') in
+            if expected_dt_str = "ptr" && dt_str = "i32" then begin
+              let cast_reg = next_reg ctx in
+              emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
+              emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 4" cast_reg field_ptr)
+            end else if expected_dt_str = "float" && dt_str = "double" && is_reg then begin
+              let cast_reg = next_reg ctx in
+              emit ctx (Printf.sprintf "  %s = fptrunc double %s to float" cast_reg v);
+              emit ctx (Printf.sprintf "  store float %s, ptr %s, align 4" cast_reg field_ptr)
+            end else if expected_dt_str = "double" && dt_str = "float" && is_reg then begin
+              let cast_reg = next_reg ctx in
+              emit ctx (Printf.sprintf "  %s = fpext float %s to double" cast_reg v);
+              emit ctx (Printf.sprintf "  store double %s, ptr %s, align 8" cast_reg field_ptr)
+            end else if expected_dt_str = "float" && dt_str = "double" && not is_reg then begin
+              let f = float_of_string v in
+              let f32 = Int32.float_of_bits (Int32.bits_of_float f) in
+              let hex_bits = Printf.sprintf "0x%016LX" (Int64.bits_of_float f32) in
+              emit ctx (Printf.sprintf "  store float %s, ptr %s, align 4" hex_bits field_ptr)
+            end else
+              emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" expected_dt_str v field_ptr)
+      ) inits;
+      (alloca_reg, "ptr")
+
   | Call ("printf", args) ->
       let evaluated_args = List.map (fun (mode, e) ->
         if mode = ByRef then raise (Error "printf does not accept ByRef arguments")
@@ -302,21 +367,30 @@ let rec codegen_expr ctx = function
           | _ ->
               raise (Error "ByRef argument must be a variable or struct field")
         in
+        let is_var = Hashtbl.mem variadic_funcs name in
         let evaluated_args = List.mapi (fun idx (arg_mode, arg_expr) ->
           match param_modes with
           | Some modes ->
-              let expected_mode =
-                match List.nth_opt modes idx with
-                | Some m -> m
-                | None -> ByVal
-              in
-              (match expected_mode, arg_mode with
-               | ByRef, ByRef -> eval_byref_arg arg_expr
-               | ByRef, ByVal ->
-                   raise (Error (Printf.sprintf "Argument %d of '%s' expects ByRef at call site" (idx + 1) name))
-               | ByVal, ByRef ->
-                   raise (Error (Printf.sprintf "Argument %d of '%s' is ByVal and cannot be passed ByRef" (idx + 1) name))
-               | ByVal, ByVal -> codegen_expr ctx arg_expr)
+              (match List.nth_opt modes idx with
+               | Some ByRef ->
+                   if arg_mode = ByRef then eval_byref_arg arg_expr
+                   else raise (Error (Printf.sprintf "Argument %d of '%s' expects ByRef at call site" (idx + 1) name))
+               | Some ByVal ->
+                   if arg_mode = ByRef then
+                     raise (Error (Printf.sprintf "Argument %d of '%s' is ByVal and cannot be passed ByRef" (idx + 1) name))
+                   else codegen_expr ctx arg_expr
+               | None ->
+                   (* Variadic tail argument: allow ByRef for out-pointers, promote float->double for ByVal *)
+                   if is_var && arg_mode = ByRef then eval_byref_arg arg_expr
+                   else if arg_mode = ByRef then
+                     raise (Error (Printf.sprintf "Argument %d of '%s' is ByVal and cannot be passed ByRef" (idx + 1) name))
+                   else
+                     let v, t = codegen_expr ctx arg_expr in
+                     if is_var && t = "float" then begin
+                       let cast_reg = next_reg ctx in
+                       emit ctx (Printf.sprintf "  %s = fpext float %s to double" cast_reg v);
+                       (cast_reg, "double")
+                     end else (v, t))
           | None ->
               if arg_mode = ByRef then eval_byref_arg arg_expr
               else codegen_expr ctx arg_expr
@@ -326,21 +400,30 @@ let rec codegen_expr ctx = function
           checked_type ^ " " ^ v) evaluated_args in
         let args_joined = String.concat ", " arg_strs in
         let res_reg = next_reg ctx in
-        let ret_type = match name with
-          | "malloc" | "fopen" -> "ptr"
-          | "free" -> "void"
-          | "getc" | "putc" -> "i32"
-          | _ -> 
-            if Hashtbl.mem ret_types name then
-              let found_ret_type = Hashtbl.find ret_types name in
-              found_ret_type
-            else raise (Error("Can't find ReturnType of " ^ name))
+        let ret_type =
+          if Hashtbl.mem ret_types name then
+            Hashtbl.find ret_types name
+          else match name with
+            | "malloc" | "fopen" -> "ptr"
+            | "free" -> "void"
+            | "getc" | "putc" -> "i32"
+            | _ -> raise (Error("Can't find ReturnType of " ^ name))
+        in
+        let var_sig_prefix =
+          if is_var then
+            let fixed = Hashtbl.find variadic_funcs name in
+            let inner = match fixed with
+              | [] -> "..."
+              | ps -> String.concat ", " ps ^ ", ..."
+            in
+            Printf.sprintf " (%s)" inner
+          else ""
         in
         if ret_type = "void" then begin
-          emit ctx (Printf.sprintf "  call void @%s(%s)" name args_joined);
+          emit ctx (Printf.sprintf "  call void%s @%s(%s)" var_sig_prefix name args_joined);
           ("", "void")
         end else begin
-          emit ctx (Printf.sprintf "  %s = call %s @%s(%s)" res_reg ret_type name args_joined);
+          emit ctx (Printf.sprintf "  %s = call %s%s @%s(%s)" res_reg ret_type var_sig_prefix name args_joined);
           (res_reg, ret_type)
         end
       end
@@ -386,13 +469,15 @@ let rec codegen_stmt ctx = function
     (match dt with 
     | Custom struct_name -> 
         if Hashtbl.mem struct_fields struct_name then
-          Hashtbl.add var_types name struct_name
+          Hashtbl.replace var_types name struct_name
     | _ -> ());
 
     (match opt_exp with
     | Some exp -> (match exp with 
         | Call (struct_name, _) when Hashtbl.mem struct_fields struct_name ->
-                                     Hashtbl.add var_types name struct_name
+                                     Hashtbl.replace var_types name struct_name
+        | StructInit (struct_name, _) when Hashtbl.mem struct_fields struct_name ->
+                                     Hashtbl.replace var_types name struct_name
         | _ -> ());
     | None -> ());
 
@@ -634,15 +719,13 @@ let codegen_def ctx = function
 
       (* 1. Structure function signature strings: System structs or ByRef require a direct 'ptr' *)
       let param_strs = List.map (fun (mode, n, t) -> 
-        match t with
-        | Custom _ -> "ptr %" ^ n (* Structs are always received via a memory reference pointer *)
-        | _ -> if mode = ByRef then "ptr %" ^ n else string_of_dt t ^ " %" ^ n
+        llvm_param_type (mode, n, t) ^ " %" ^ n
       ) params in
       let params_joined = String.concat ", " param_strs in
       let ret_str = string_of_dt ret_type in
       
       (* Memorize ReturnType of Function -> ret_types *)
-      Hashtbl.add ret_types name ret_str;
+      Hashtbl.replace ret_types name ret_str;
     
       let linkage = if is_public then "" else "internal" in
       emit ctx (Printf.sprintf "define %s %s @%s(%s) {" linkage ret_str name params_joined);
@@ -650,7 +733,7 @@ let codegen_def ctx = function
       (* 2. Map function parameters to local stack variables based on ByRef / ByVal *)
       List.iter (fun (mode, n, dt) ->
         match dt with
-        | Custom struct_name ->
+        | Custom struct_name when Hashtbl.mem struct_fields struct_name ->
             if mode = ByRef then begin
               (* ByRef Struct: Bind the argument register directly as the pointer, skip stack cloning *)
               Hashtbl.add ctx.variables n ("%" ^ n);
@@ -693,6 +776,7 @@ let codegen_def ctx = function
 
   | Structure (is_public, name, _)  -> Hashtbl.add visibility_table name is_public;
   | EnumDef (is_public, name, _)    -> Hashtbl.add visibility_table name is_public
+  | ExternDecl _                    -> ()
 
 (* Global Pass Registrar to define metadata structures cleanly *)
 let register_definition ctx = function
@@ -715,9 +799,29 @@ let register_definition ctx = function
       Hashtbl.replace ret_types name (string_of_dt ret_type);
       Hashtbl.replace func_param_modes name (List.map (fun (mode, _, _) -> mode) params)
 
+  | ExternDecl (_, name, params, ret_type, is_variadic) ->
+      let ret_str = string_of_dt ret_type in
+      Hashtbl.replace ret_types name ret_str;
+      Hashtbl.replace func_param_modes name (List.map (fun (mode, _, _) -> mode) params);
+      let param_type_strs = List.map llvm_param_type params in
+      if is_variadic then Hashtbl.replace variadic_funcs name param_type_strs;
+      let sig_params =
+        match param_type_strs, is_variadic with
+        | [], true -> "..."
+        | ps, true -> String.concat ", " ps ^ ", ..."
+        | ps, false -> String.concat ", " ps
+      in
+      let decl_line = Printf.sprintf "declare %s @%s(%s)" ret_str name sig_params in
+      if not (Hashtbl.mem extern_decls name) then
+        extern_order := name :: !extern_order;
+      Hashtbl.replace extern_decls name decl_line
+
 let generate_program prog =
   let ctx = create_context () in
   Hashtbl.clear func_param_modes;
+  Hashtbl.clear extern_decls;
+  extern_order := [];
+  Hashtbl.clear variadic_funcs;
   Hashtbl.clear visibility_table;
   Hashtbl.clear struct_fields;
   Hashtbl.clear struct_field_types;
@@ -749,13 +853,22 @@ let generate_program prog =
   List.iter (fun g -> emit_header g) (List.rev ctx.globals);
   if ctx.globals <> [] then emit_header "";
   
-  (* Standard C Library declarations *)
-  emit_header "declare i32 @printf(ptr, ...)";
-  emit_header "declare ptr @malloc(i32)";
-  emit_header "declare void @free(ptr)";
-  emit_header "declare ptr @fopen(ptr, ptr)";
-  emit_header "declare i32 @getc(ptr)";
-  emit_header "declare i32 @putc(i32, ptr)";
+  (* Standard C Library default declarations (skipped if overridden by user Declare) *)
+  let builtin_externs = [
+    ("printf", "declare i32 @printf(ptr, ...)");
+    ("malloc", "declare ptr @malloc(i32)");
+    ("free",   "declare void @free(ptr)");
+    ("fopen",  "declare ptr @fopen(ptr, ptr)");
+    ("getc",   "declare i32 @getc(ptr)");
+    ("putc",   "declare i32 @putc(i32, ptr)");
+  ] in
+  List.iter (fun (fname, decl) ->
+    if not (Hashtbl.mem extern_decls fname) then emit_header decl
+  ) builtin_externs;
+  (* User-declared external FFI declarations *)
+  List.iter (fun fname ->
+    emit_header (Hashtbl.find extern_decls fname)
+  ) (List.rev !extern_order);
   emit_header "declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)";
   emit_header "";
   

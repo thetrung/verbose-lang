@@ -33,6 +33,7 @@ type expr =
   | BinOp of expr * op * expr
   | Call of string * (param_mode * expr) list
   | FieldAccess of expr * string    (* variable.Kind *)
+  | StructInit of string * (string * expr) list (* Vector With { x = 1.0, y = 2.0 } *)
   
 type stmt =
   | Dim of string * data_type * expr option
@@ -56,6 +57,7 @@ type definition =
   | Structure of bool * string * (string * data_type) list (* added bool flag *)
   | EnumDef of bool * string * (string * int) list
   | FuncDef of bool * string * (param_mode * string * data_type) list * data_type * stmt list
+  | ExternDecl of bool * string * (param_mode * string * data_type) list * data_type * bool (* vis, name, params, ret, is_variadic *)
 
 type program = definition list
 
