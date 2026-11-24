@@ -23,9 +23,9 @@ End Sub
 Public Function main() As Integer
   Dim v0 As Vector(1.0, 1.0, 1)
   Dim box As Box(v0, 7)
-  ReplaceBoxVec(box)
+  ReplaceBoxVec(ByRef box)
   printf("after_box=tag:%d,z:%ld\n", box.tag, box.vec.z)
-  MutateInnerVec(box.vec)
+  MutateInnerVec(ByRef box.vec)
   printf("after_inner=tag:%d,z:%ld\n", box.tag, box.vec.z)
   Return 0
 End Function

@@ -229,7 +229,10 @@ let rec codegen_expr ctx = function
       end
  
   | Call ("printf", args) ->
-      let evaluated_args = List.map (codegen_expr ctx) args in
+      let evaluated_args = List.map (fun (mode, e) ->
+        if mode = ByRef then raise (Error "printf does not accept ByRef arguments")
+        else codegen_expr ctx e
+      ) args in
       
       (* 🆕 Fix: Promote any 'float' argument to 'double' to respect C Variadic ABI requirements *)
       let promoted_args = List.map (fun (v, t) ->
@@ -257,7 +260,8 @@ let rec codegen_expr ctx = function
         let fields = Hashtbl.find struct_fields name in
         let field_types = Hashtbl.find struct_field_types name in
         
-        List.iteri (fun idx arg_expr ->
+        List.iteri (fun idx (arg_mode, arg_expr) ->
+          if arg_mode = ByRef then raise (Error ("Struct constructor '" ^ name ^ "' does not accept ByRef arguments"));
           let (field_name, _) = List.find (fun (_, i) -> i = idx) fields in
           let actual_dt = List.assoc field_name field_types in
           let expected_dt_str = string_of_dt actual_dt in 
@@ -283,31 +287,39 @@ let rec codegen_expr ctx = function
         ) args;
         (alloca_reg, "ptr")
       end else begin
-        (* Evaluate call arguments respecting callee ByRef/ByVal parameter modes *)
+        (* Evaluate call arguments requiring explicit call-site ByRef matching callee signature *)
         let param_modes = Hashtbl.find_opt func_param_modes name in
-        let is_byref_arg idx =
+        let eval_byref_arg arg_expr =
+          match arg_expr with
+          | Id var_name ->
+              if Hashtbl.mem ctx.variables var_name then
+                (Hashtbl.find ctx.variables var_name, "ptr")
+              else
+                raise (Error ("Undefined variable reference for ByRef argument: " ^ var_name))
+          | FieldAccess _ ->
+              let field_ptr, _ = get_field_pointer ctx arg_expr in
+              (field_ptr, "ptr")
+          | _ ->
+              raise (Error "ByRef argument must be a variable or struct field")
+        in
+        let evaluated_args = List.mapi (fun idx (arg_mode, arg_expr) ->
           match param_modes with
           | Some modes ->
-              (match List.nth_opt modes idx with
-               | Some ByRef -> true
-               | _ -> false)
-          | None -> false
-        in
-        let evaluated_args = List.mapi (fun idx arg_expr ->
-          if is_byref_arg idx then
-            match arg_expr with
-            | Id var_name ->
-                if Hashtbl.mem ctx.variables var_name then
-                  (Hashtbl.find ctx.variables var_name, "ptr")
-                else
-                  raise (Error ("Undefined variable reference for ByRef argument: " ^ var_name))
-            | FieldAccess _ ->
-                let field_ptr, _ = get_field_pointer ctx arg_expr in
-                (field_ptr, "ptr")
-            | _ ->
-                raise (Error "ByRef argument must be a variable or struct field")
-          else
-            codegen_expr ctx arg_expr
+              let expected_mode =
+                match List.nth_opt modes idx with
+                | Some m -> m
+                | None -> ByVal
+              in
+              (match expected_mode, arg_mode with
+               | ByRef, ByRef -> eval_byref_arg arg_expr
+               | ByRef, ByVal ->
+                   raise (Error (Printf.sprintf "Argument %d of '%s' expects ByRef at call site" (idx + 1) name))
+               | ByVal, ByRef ->
+                   raise (Error (Printf.sprintf "Argument %d of '%s' is ByVal and cannot be passed ByRef" (idx + 1) name))
+               | ByVal, ByVal -> codegen_expr ctx arg_expr)
+          | None ->
+              if arg_mode = ByRef then eval_byref_arg arg_expr
+              else codegen_expr ctx arg_expr
         ) args in
         let arg_strs = List.map (fun (v, t) -> 
           let checked_type = if name = "free" then "ptr" else t in

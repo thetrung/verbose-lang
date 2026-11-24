@@ -111,7 +111,7 @@ code_stmt:
   | DIM name=ID AS t=data_type EQUALS e=expr { Ast.Dim(name, t, Some(e)) }
   | DIM name=ID AS struct_name=ID 
     LPAREN args=separated_list(COMMA, expr) RPAREN  
-    { Ast.Dim(name, Ast.Pointer, Some(Ast.Call(struct_name, args))) }
+    { Ast.Dim(name, Ast.Pointer, Some(Ast.Call(struct_name, List.map (fun e -> (Ast.ByVal, e)) args))) }
 
   | obj=expr; DOT; field=ID; EQUALS; e=expr   { Ast.FieldAssign(obj, field, e) }
   | name=ID EQUALS e=expr                     { Ast.Assign(name, e) }
@@ -152,6 +152,12 @@ if_else_block:
   | ELSE mandatory_newlines body=block  { body }
 ;
 
+call_arg:
+  | BYREF e=expr { (Ast.ByRef, e) }
+  | BYVAL e=expr { (Ast.ByVal, e) }
+  | e=expr       { (Ast.ByVal, e) }
+;
+
 expr:
   | id=ID                                                   { Ast.Id(id) }
   | i=INT_LIT                                               { Ast.IntLit(i) }
@@ -160,7 +166,7 @@ expr:
   | s=STRING_LIT                                            { Ast.StringLit(s) }
   | LPAREN e=expr RPAREN                                    { e }
   | NOT e=expr                                              { Ast.UnaryOp("Not", e) }
-  | name=ID LPAREN args=separated_list(COMMA, expr) RPAREN  { Ast.Call(name, args) }
+  | name=ID LPAREN args=separated_list(COMMA, call_arg) RPAREN  { Ast.Call(name, args) }
   
   /* FieldAccess */
   | e1=expr DOT field=ID           { Ast.FieldAccess(e1, field) }

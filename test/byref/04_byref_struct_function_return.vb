@@ -15,8 +15,8 @@ Public Function main() As Integer
   Dim ctr As Counter(10, 5)
   Dim r1 As Long
   Dim r2 As Long
-  r1 = Bump(ctr)
-  r2 = Bump(ctr)
+  r1 = Bump(ByRef ctr)
+  r2 = Bump(ByRef ctr)
   printf("r1=%ld r2=%ld final=%ld\n", r1, r2, ctr.count)
   Return 0
 End Function

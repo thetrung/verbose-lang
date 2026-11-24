@@ -12,7 +12,7 @@ End Sub
 
 Public Function main() As Integer
   Dim vec1 As Vector(1.0, 2.0, 10)
-  ReplaceVec(vec1)
+  ReplaceVec(ByRef vec1)
   printf("x=%.2f y=%.2f z=%ld\n", vec1.x, vec1.y, vec1.z)
   Return 0
 End Function

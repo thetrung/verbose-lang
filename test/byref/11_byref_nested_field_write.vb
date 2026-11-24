@@ -17,7 +17,7 @@ End Sub
 Public Function main() As Integer
   Dim v0 As Vector(1.0, 2.0, 3)
   Dim box As Box(v0, 7)
-  MutateDeep(box)
+  MutateDeep(ByRef box)
   printf("z=%ld\n", box.vec.z)
   Return 0
 End Function

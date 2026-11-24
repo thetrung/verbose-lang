@@ -25,7 +25,7 @@ Public Function main() As Integer
   printf("after_byval=%d,%ld\n", inst.a, inst.b)
   TouchDefault(inst)
   printf("after_default=%d,%ld\n", inst.a, inst.b)
-  TouchByRef(inst)
+  TouchByRef(ByRef inst)
   printf("after_byref=%d,%ld\n", inst.a, inst.b)
   Return 0
 End Function

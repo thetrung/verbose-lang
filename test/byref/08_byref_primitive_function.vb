@@ -11,9 +11,9 @@ End Function
 Public Function main() As Integer
   Dim a As Integer = 1
   Dim b As Integer = 10
-  SetInt(a)
+  SetInt(ByRef a)
   Dim res As Integer
-  res = IncrementInt(b)
+  res = IncrementInt(ByRef b)
   printf("a=%d b=%d res=%d\n", a, b, res)
   Return 0
 End Function
