@@ -150,8 +150,8 @@ make build
 ./verbose --target macos-arm64 -c your_file.vb -o your_file.o
 ./verbose --target windows-x86_64 -c your_file.vb -o your_file.o
 
-# Build and run prototype.vb with ./verbose
-make
+# Compile and run a specific target (default: make build)
+make build
 
 # Install ./verbose globally (default: /usr/local/bin/verbose) or build release artifacts
 make install          # or: make install PREFIX=$HOME/.local
@@ -193,6 +193,17 @@ Official companion repositories built for VerBose-Lang `v0.6.0+`:
 - **[verbose.nvim](https://github.com/thetrung/verbose.nvim)** — Neovim plugin with Tree-sitter grammar & queries, recursive `Include`-cached in-process LSP (completion, `gd`, hover, diagnostics), and `:VerboseInstall` latest compiler installer.
 - **[verbose-pkg](https://github.com/thetrung/verbose-pkg)** — Serverless Cargo-inspired package manager (`vpm`), written natively in VerBose-Lang, supporting git, path, and source/binary `.vpkg.tar.gz` bundles.
 - **[verbose-tui](https://github.com/thetrung/verbose-tui)** — Ratatui-inspired zero-GC double-buffered 24-bit TrueColor TUI framework with Unicode widgets and zero `ncurses` dependency.
+
+---
+
+## Lesson Learned
+
+Building all 4 ecosystem repositories (`verbose-raylib`, `verbose.nvim`, `verbose-pkg`, `verbose-tui`) from scratch revealed how much VerBose-Lang's intentional simplicity accelerates real-world systems work:
+
+1. **Direct C ABI & `clang` pass-through**: `Structure` layout matches C verbatim (`12/12` `SizeOf(...) == sizeof(...)` checks matched Raylib 6.2 directly) and `verbose` forwards `.c`/`.a`/`-l`/`-I` flags straight to `clang`. That eliminated bindgen/IDL tooling and FFI marshaling glue — ~190 lines of POSIX C (`tui_term.c`) was enough to build a full zero-`ncurses` TUI framework.
+2. **`Arena` + value `Structure`s + `With` blocks**: Deterministic `Arena` allocation and value structs remove borrow-checker ceremony, header/source duplication, and GC-FFI coordination, while `v0.6.0` ergonomics (`Match ... With`, `$"..."`, `With`, grouped `Dim`, `For ... Do`) keep libraries compact and readable.
+3. **Regular, explicit, line-oriented syntax**: Unambiguous declarations (`Include`, `Structure`, `Enum`, `Function`, `Sub`, `Declare`, `Dim x As Type`) made it straightforward to build both a 100%-parsing Tree-sitter grammar and a zero-dependency in-process Neovim LSP, while the flat `Include "..."` + `-I` model enabled a completely serverless package manager (`vpm`).
+4. **Built-in `Test ... End Test` + fast native compiles**: Self-contained unit tests with zero external test frameworks and sub-second compile-run cycles made iterating across libraries and cross-package integration feel like a scripting language with native C performance.
 
 ---
 

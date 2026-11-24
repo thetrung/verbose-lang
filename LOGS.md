@@ -13,6 +13,12 @@ Historical log of finished tasks and completed roadmap milestones for **VerBose-
 
 ---
 
+## Completed Tasks (`v0.6.x`)
+
+- [x] **Short-Circuit Boolean `And`/`Or`, Rvalue Member/Index Access & Multi-Line Call Arguments**: Upgraded `src/codegen.vb` to short-circuit `Boolean` `And`/`Or` via stack-free LLVM trampoline `phi` blocks (skipping RHS side effects/traps while preserving bitwise integer `And`/`Or`) and to support chained rvalue member access and indexing (`GetMousePosition().x`, `MakeShip().tf.pos.y`, `MakeShip().tags(2)`, `(Vec2 With (...)).y`, `MakeLabel()(0)`, `(Await job).tf.pos.y`) via `CgIsLValueNode`; upgraded `src/parser.vb` to allow multi-line function and struct-constructor call arguments plus arbitrary chained `.field` / `(idx)` postfix sequences; added `tests/test_expressions.vb` (3/3 passing; **23/23** suites, **169/169** `Test` blocks, Stage 3 byte-for-byte fixpoint verified); added **Lesson Learned** section to `README.md` and cleaned up remaining `prototype.vb` CI/test references.
+
+---
+
 ## Completed Tasks (`v0.6.0`)
 
 - [x] **Language Syntax / Semantic Compression & Cold-Bootstrap CI**: Unified `Select Case` into `Match ... With` (`NdMatch` desugaring, deleting duplicate `NdSelect`/`NdCaseBranch` passes), removed redundant `ByVal` keyword (pass-by-value is default), enforced consistent `For ... To ... Do` and `While ... Do` loop syntax, added unqualified `Enum` member fallback with local shadowing and compile-time ambiguity errors, added zero-copy `With <lvalue> ... End With` member-access blocks, and added `tests/test_ergonomics.vb` (4/4 passing; **22/22** suites, **167/167** `Test` blocks). Dogfooded across `src/` (`1,172` enum prefixes stripped, `138` `While` loops converted to `For ... Do`, `12/12` `Select Case` converted to `Match ... With`, `27` `With g_nodes(id)` blocks), reducing compiler size from `10,876 → 10,631 LOC`, and added `BOOTSTRAP_CHAIN` cold-bootstrap fallback in `makefile` + CI/Release workflows so fresh builds bootstrap cleanly from `v0.5.1`.

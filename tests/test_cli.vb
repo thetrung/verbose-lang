@@ -1,4 +1,4 @@
-' CLI flag checks & root prototype.vb smoke test.
+' CLI flag checks & compile/run smoke tests.
 
 Include "harness.vb"
 
@@ -86,9 +86,4 @@ Test "cli: --ast, --ir, --no-run, --emit-only, --ta, bad-code rejection, --help,
 
   snprintf(mkCmd, 512, "rm -rf '%s'", tmpDir)
   system(mkCmd)
-End Test
-
-Test "prototype.vb smoke test"
-  Assert RunVb("prototype.vb", "") = 0
-  Assert OutHas("vec1.z ^ 2 =")
 End Test

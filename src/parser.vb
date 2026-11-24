@@ -500,6 +500,7 @@ Private Function PParsePrimary() As Integer
     End If
     If PPeekKind() = TkLParen Then
       PAdvance()
+      PSkipNewlines()
       Dim argBuf(32) As Integer
       Dim argCount As Integer = 0
       If PPeekKind() <> TkRParen Then
@@ -507,8 +508,10 @@ Private Function PParsePrimary() As Integer
         While reading Do
           argBuf(argCount) = PParseCallArg()
           argCount = argCount + 1
+          PSkipNewlines()
           If PPeekKind() = TkComma Then
             PAdvance()
+            PSkipNewlines()
           Else
             reading = False
           End If
@@ -542,19 +545,22 @@ End Function
 
 Private Function PParsePostfix() As Integer
   Dim cur As Integer = PParsePrimary()
-  While PPeekKind() = TkDot Do
-    PAdvance()
-    Dim fPos As Integer = g_tokens(p_pos).pos
-    Dim fLen As Integer = g_tokens(p_pos).len
-    PExpect(TkIdent)
-    Dim fa As Integer = NewNode(NdFieldAccess)
-    g_nodes(fa).left = cur
-    g_nodes(fa).intVal = fPos
-    g_nodes(fa).lenVal = fLen
-    cur = fa
-    If PPeekKind() = TkLParen Then
+  While (PPeekKind() = TkDot) Or (PPeekKind() = TkLParen) Do
+    If PPeekKind() = TkDot Then
       PAdvance()
+      Dim fPos As Integer = g_tokens(p_pos).pos
+      Dim fLen As Integer = g_tokens(p_pos).len
+      PExpect(TkIdent)
+      Dim fa As Integer = NewNode(NdFieldAccess)
+      g_nodes(fa).left = cur
+      g_nodes(fa).intVal = fPos
+      g_nodes(fa).lenVal = fLen
+      cur = fa
+    Else
+      PAdvance()
+      PSkipNewlines()
       Dim idxE As Integer = ParseExpr()
+      PSkipNewlines()
       PExpect(TkRParen)
       Dim ia As Integer = NewNode(NdIndexAccess)
       g_nodes(ia).left = cur
@@ -827,6 +833,7 @@ Private Sub PParseVarDeclGroup(ndKind, vis, isVolatile, defModId As Integer, out
     Else
       If (firstArrLen = 0) And (tk = TyStruct) And (PPeekKind() = TkLParen) Then
         PAdvance()
+        PSkipNewlines()
         Dim argBuf(32) As Integer
         Dim argCount As Integer = 0
         If PPeekKind() <> TkRParen Then
@@ -834,8 +841,10 @@ Private Sub PParseVarDeclGroup(ndKind, vis, isVolatile, defModId As Integer, out
           While reading Do
             argBuf(argCount) = PParseCallArg()
             argCount = argCount + 1
+            PSkipNewlines()
             If PPeekKind() = TkComma Then
               PAdvance()
+              PSkipNewlines()
             Else
               reading = False
             End If

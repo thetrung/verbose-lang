@@ -1348,6 +1348,23 @@ Private Function CgEmitLValuePtr(id As Integer, ByRef outTy As TypeInfo, ByRef o
   Return 0
 End Function
 
+Private Function CgIsLValueNode(id As Integer) As Boolean
+  If id < 0 Then
+    Return False
+  End If
+  Dim k As Integer = g_nodes(id).kind
+  If (k = NdVar) Or (k = NdWithTarget) Then
+    Return True
+  End If
+  If k = NdCall Then
+    Return CgIsVarIndexCall(id)
+  End If
+  If (k = NdFieldAccess) Or (k = NdIndexAccess) Then
+    Return CgIsLValueNode(g_nodes(id).left)
+  End If
+  Return False
+End Function
+
 Private Function CgEmitByRefArg(exprId As Integer) As Integer
   Dim ty As TypeInfo
   Dim isInd = 0, isVol = 0 As Integer
@@ -1601,7 +1618,19 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     End If
     Dim fTy As TypeInfo
     Dim isInd = 0, isVol = 0 As Integer
-    Dim fPtr As Integer = CgEmitLValuePtr(id, ByRef fTy, ByRef isInd, ByRef isVol)
+    Dim fPtr As Integer = 0
+    If CgIsLValueNode(id) Then
+      fPtr = CgEmitLValuePtr(id, ByRef fTy, ByRef isInd, ByRef isVol)
+    Else
+      ' Rvalue member access (e.g. GetMousePosition().x, GetShip().tf.pos.z, (Await t).field)
+      Dim baseTy As TypeInfo
+      Dim basePtr As Integer = CgEmitExpr(baseId, ByRef baseTy)
+      Dim fIdx As Integer = CgFindStructField(baseTy.typeIdx, g_nodes(id).intVal, g_nodes(id).lenVal, ByRef fTy)
+      fPtr = CgNextReg()
+      fprintf(cg_out, "  %%r%d = getelementptr inbounds ", fPtr)
+      CgEmitBaseLlvmType(baseTy.kind, baseTy.typeIdx, baseTy.namePos, baseTy.nameLen)
+      fprintf(cg_out, ", ptr %%r%d, i32 0, i32 %d\n", basePtr, fIdx)
+    End If
     outTy = fTy
     If CgIsAggregate(fTy) Then
       Return fPtr
@@ -1621,7 +1650,36 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
   If (k = NdIndexAccess) Or CgIsVarIndexCall(id) Then
     Dim eTy As TypeInfo
     Dim isInd = 0, isVol = 0 As Integer
-    Dim ePtr As Integer = CgEmitLValuePtr(id, ByRef eTy, ByRef isInd, ByRef isVol)
+    Dim ePtr As Integer = 0
+    If CgIsLValueNode(id) Then
+      ePtr = CgEmitLValuePtr(id, ByRef eTy, ByRef isInd, ByRef isVol)
+    Else
+      ' Rvalue indexing (e.g. GetShip().tags(0), GetSlice()(i), GetName()(0))
+      Dim idxTy As TypeInfo
+      Dim idxReg As Integer = CgEmitExpr(g_nodes(id).right, ByRef idxTy)
+      Dim idx64 As Integer = CgWidenToI64(idxReg, idxTy)
+      Dim baseTy As TypeInfo
+      Dim baseVal As Integer = CgEmitExpr(g_nodes(id).left, ByRef baseTy)
+      If baseTy.arrLen > 0 Then
+        eTy = CgElemType(baseTy)
+        ePtr = CgNextReg()
+        fprintf(cg_out, "  %%r%d = getelementptr inbounds ", ePtr)
+        CgEmitLlvmType(baseTy)
+        fprintf(cg_out, ", ptr %%r%d, i64 0, i64 %%r%d\n", baseVal, idx64)
+      Else
+        If baseTy.arrLen < 0 Then
+          eTy = CgElemType(baseTy)
+          ePtr = CgNextReg()
+          fprintf(cg_out, "  %%r%d = getelementptr inbounds ", ePtr)
+          CgEmitLlvmType(eTy)
+          fprintf(cg_out, ", ptr %%r%d, i64 %%r%d\n", baseVal, idx64)
+        Else
+          eTy = TypeInfo With ( kind = TyByte, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+          ePtr = CgNextReg()
+          fprintf(cg_out, "  %%r%d = getelementptr inbounds i8, ptr %%r%d, i64 %%r%d\n", ePtr, baseVal, idx64)
+        End If
+      End If
+    End If
     outTy = eTy
     If CgIsAggregate(eTy) Then
       Return ePtr
@@ -1667,11 +1725,45 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
   End If
 
   If k = NdBinOp Then
+    Dim op As Integer = g_nodes(id).op
     Dim t1 As TypeInfo
     Dim t2 As TypeInfo
     Dim v1 As Integer = CgEmitExpr(g_nodes(id).left, ByRef t1)
+    ' Short-circuit boolean And / Or using stack-free trampoline phi blocks.
+    ' Integer operands keep bitwise `and` / `or` semantics below.
+    If ((op = TkAnd) Or (op = TkOr)) And (t1.kind = TyBoolean) And (t1.arrLen = 0) Then
+      Dim scLbl As Integer = CgNextLbl()
+      If op = TkAnd Then
+        fprintf(cg_out, "  br i1 %%r%d, label %%sc_rhs_%d, label %%sc_short_%d\n", v1, scLbl, scLbl)
+      Else
+        fprintf(cg_out, "  br i1 %%r%d, label %%sc_short_%d, label %%sc_rhs_%d\n", v1, scLbl, scLbl)
+      End If
+      fprintf(cg_out, "sc_short_%d:\n", scLbl)
+      fprintf(cg_out, "  br label %%sc_end_%d\n", scLbl)
+      fprintf(cg_out, "sc_rhs_%d:\n", scLbl)
+      Dim v2Sc As Integer = CgEmitExpr(g_nodes(id).right, ByRef t2)
+      If t2.kind <> TyBoolean Then
+        Dim b2Bits As Integer = CgIntBits(t2.kind)
+        If b2Bits > 0 Then
+          Dim cv As Integer = CgNextReg()
+          fprintf(cg_out, "  %%r%d = icmp ne i%d %%r%d, 0\n", cv, b2Bits, v2Sc)
+          v2Sc = cv
+        End If
+      End If
+      fprintf(cg_out, "  br label %%sc_rhs_end_%d\n", scLbl)
+      fprintf(cg_out, "sc_rhs_end_%d:\n", scLbl)
+      fprintf(cg_out, "  br label %%sc_end_%d\n", scLbl)
+      fprintf(cg_out, "sc_end_%d:\n", scLbl)
+      Dim scRes As Integer = CgNextReg()
+      If op = TkAnd Then
+        fprintf(cg_out, "  %%r%d = phi i1 [ false, %%sc_short_%d ], [ %%r%d, %%sc_rhs_end_%d ]\n", scRes, scLbl, v2Sc, scLbl)
+      Else
+        fprintf(cg_out, "  %%r%d = phi i1 [ true, %%sc_short_%d ], [ %%r%d, %%sc_rhs_end_%d ]\n", scRes, scLbl, v2Sc, scLbl)
+      End If
+      outTy = TypeInfo With ( kind = TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+      Return scRes
+    End If
     Dim v2 As Integer = CgEmitExpr(g_nodes(id).right, ByRef t2)
-    Dim op As Integer = g_nodes(id).op
     Dim s1 As Boolean = ((t1.arrLen = 0) And (t1.kind = TyPointer)) Or ((t1.arrLen <> 0) And (t1.kind = TyByte))
     Dim s2 As Boolean = ((t2.arrLen = 0) And (t2.kind = TyPointer)) Or ((t2.arrLen <> 0) And (t2.kind = TyByte))
     If (op = TkAmp) Or ((op = TkPlus) And s1 And s2) Then
