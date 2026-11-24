@@ -107,6 +107,17 @@ End Sub
 Private Sub CgEmitSymName(pos, slen, modId, isPrivate As Integer)
   If (isPrivate = 1) And (modId > 0) Then
     fprintf(cg_out, "__mod%d_", modId)
+  Else
+    If (cg_target = TargetKind.TgtWindowsX64) And (isPrivate = 0) Then
+      If SliceEqualsStr(pos, slen, "popen", 5) Then
+        fprintf(cg_out, "_popen")
+        Return
+      End If
+      If SliceEqualsStr(pos, slen, "pclose", 6) Then
+        fprintf(cg_out, "_pclose")
+        Return
+      End If
+    End If
   End If
   CgEmitSlice(pos, slen)
 End Sub
@@ -517,11 +528,90 @@ Private Function CgClassifyChunk(startOff As Integer, chunkBytes As Integer, lea
   Return 4
 End Function
 
-' Returns mode: 0 = ByValPtr (>16B), 1 = 1 eightbyte (outT0), 2 = 2 eightbytes (outT0, outT1)
+' Returns mode:
+'   0 = ptr byval(%struct.X) (code 8)
+'   1 = 1 ABI register chunk (outT0)
+'   2 = 2 ABI register chunks (outT0, outT1)
+'   3 = direct %struct.X value (HFA on ARM64, small struct on ARM-M)
+'   4 = indirect plain ptr to caller stack copy (code 9: >16B on ARM64, non-1/2/4/8B on Win64)
 Private Function CgClassifyCStruct(structIdx As Integer, ByRef outT0 As Integer, ByRef outT1 As Integer) As Integer
   outT0 = 0
   outT1 = 0
   Dim totalSz As Integer = CgStructSize(structIdx)
+  If cg_target = TargetKind.TgtWindowsX64 Then
+    Select Case totalSz
+      Case 1
+        outT0 = 1
+        Return 1
+      Case 2
+        outT0 = 2
+        Return 1
+      Case 4
+        outT0 = 3
+        Return 1
+      Case 8
+        outT0 = 4
+        Return 1
+      Case Else
+        Return 4
+    End Select
+  End If
+  If cg_target = TargetKind.TgtArmM Then
+    If totalSz > 16 Then
+      Return 0
+    End If
+    Return 3
+  End If
+  If (cg_target = TargetKind.TgtLinuxArm64) Or (cg_target = TargetKind.TgtMacosArm64) Then
+    Dim aOffs(64), aKinds(64), aSizes(64) As Integer
+    Dim aCnt As Integer = 0
+    Dim aTy As TypeInfo With (
+      kind = TypeKind.TyStruct,
+      typeIdx = structIdx,
+      arrLen = 0,
+      namePos = cg_structs(structIdx).namePos,
+      nameLen = cg_structs(structIdx).nameLen
+    )
+    CgFlattenStruct(0, aTy, aOffs, aKinds, aSizes, ByRef aCnt)
+    If (aCnt >= 1) And (aCnt <= 4) Then
+      Dim k0 As Integer = aKinds(0)
+      If (k0 = TypeKind.TySingle) Or (k0 = TypeKind.TyDouble) Then
+        Dim isHfa As Boolean = True
+        Dim hi As Integer = 1
+        While hi < aCnt Do
+          If aKinds(hi) <> k0 Then
+            isHfa = False
+          End If
+          hi = hi + 1
+        End While
+        If isHfa Then
+          Return 3
+        End If
+      End If
+    End If
+    If totalSz > 16 Then
+      Return 4
+    End If
+    If totalSz <= 8 Then
+      If totalSz <= 1 Then
+        outT0 = 1
+      Else
+        If totalSz <= 2 Then
+          outT0 = 2
+        Else
+          If totalSz <= 4 Then
+            outT0 = 3
+          Else
+            outT0 = 4
+          End If
+        End If
+      End If
+      Return 1
+    End If
+    outT0 = 4
+    outT1 = 4
+    Return 2
+  End If
   If totalSz > 16 Then
     Return 0
   End If
@@ -566,11 +656,13 @@ Private Sub CgEmitCAbiCode(code As Integer, structIdx As Integer)
       fprintf(cg_out, "ptr byval(%%struct.")
       CgEmitSlice(cg_structs(structIdx).namePos, cg_structs(structIdx).nameLen)
       fprintf(cg_out, ")")
+    Case 9
+      fprintf(cg_out, "ptr")
   End Select
 End Sub
 
 Private Sub CgEmitExternRetType(retTy As TypeInfo)
-  If (retTy.kind = TypeKind.TyStruct) And (retTy.arrLen = 0) And (retTy.typeIdx >= 0) And (cg_target = TargetKind.TgtLinuxX64) Then
+  If (retTy.kind = TypeKind.TyStruct) And (retTy.arrLen = 0) And (retTy.typeIdx >= 0) Then
     Dim t0 As Integer = 0
     Dim t1 As Integer = 0
     Dim mode As Integer = CgClassifyCStruct(retTy.typeIdx, ByRef t0, ByRef t1)
@@ -592,30 +684,29 @@ End Sub
 
 Private Sub CgEmitExternParamType(p As CgParamInfo)
   If (p.isByRef = 0) And (p.ty.kind = TypeKind.TyStruct) And (p.ty.arrLen = 0) And (p.ty.typeIdx >= 0) Then
-    If cg_target = TargetKind.TgtLinuxX64 Then
-      Dim t0 As Integer = 0
-      Dim t1 As Integer = 0
-      Dim mode As Integer = CgClassifyCStruct(p.ty.typeIdx, ByRef t0, ByRef t1)
-      If mode = 1 Then
-        CgEmitCAbiCode(t0, p.ty.typeIdx)
-        Return
-      End If
-      If mode = 2 Then
-        CgEmitCAbiCode(t0, p.ty.typeIdx)
-        fprintf(cg_out, ", ")
-        CgEmitCAbiCode(t1, p.ty.typeIdx)
-        Return
-      End If
-      CgEmitCAbiCode(8, p.ty.typeIdx)
-      Return
-    Else
-      If CgStructSize(p.ty.typeIdx) > 16 Then
-        CgEmitCAbiCode(8, p.ty.typeIdx)
-      Else
-        CgEmitLlvmType(p.ty)
-      End If
+    Dim t0 As Integer = 0
+    Dim t1 As Integer = 0
+    Dim mode As Integer = CgClassifyCStruct(p.ty.typeIdx, ByRef t0, ByRef t1)
+    If mode = 1 Then
+      CgEmitCAbiCode(t0, p.ty.typeIdx)
       Return
     End If
+    If mode = 2 Then
+      CgEmitCAbiCode(t0, p.ty.typeIdx)
+      fprintf(cg_out, ", ")
+      CgEmitCAbiCode(t1, p.ty.typeIdx)
+      Return
+    End If
+    If mode = 3 Then
+      CgEmitLlvmType(p.ty)
+      Return
+    End If
+    If mode = 4 Then
+      CgEmitCAbiCode(9, p.ty.typeIdx)
+      Return
+    End If
+    CgEmitCAbiCode(8, p.ty.typeIdx)
+    Return
   End If
   CgEmitParamLlvmType(p)
 End Sub
@@ -2162,69 +2253,81 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
       If (fnIdx >= 0) And (i < cg_funcs(fnIdx).paramCount) Then
         Dim pInfo As CgParamInfo = cg_params(cg_funcs(fnIdx).paramStart + i)
         If isExternFn And (pInfo.isByRef = 0) And (pInfo.ty.kind = TypeKind.TyStruct) And (pInfo.ty.arrLen = 0) And (pInfo.ty.typeIdx >= 0) Then
-          If cg_target = TargetKind.TgtLinuxX64 Then
-            Dim t0 As Integer = 0
-            Dim t1 As Integer = 0
-            Dim mode As Integer = CgClassifyCStruct(pInfo.ty.typeIdx, ByRef t0, ByRef t1)
-            If mode = 1 Then
+          Dim t0 As Integer = 0
+          Dim t1 As Integer = 0
+          Dim mode As Integer = CgClassifyCStruct(pInfo.ty.typeIdx, ByRef t0, ByRef t1)
+          If mode = 1 Then
+            Dim r0 As Integer = CgNextReg()
+            fprintf(cg_out, "  %%r%d = load ", r0)
+            CgEmitCAbiCode(t0, pInfo.ty.typeIdx)
+            fprintf(cg_out, ", ptr %%r%d, align 4\n", aReg)
+            argRegs(emitArgCnt) = r0
+            argIsPtr(emitArgCnt) = 0
+            argCAbi(emitArgCnt) = t0
+            argCStruct(emitArgCnt) = pInfo.ty.typeIdx
+            emitArgCnt = emitArgCnt + 1
+          Else
+            If mode = 2 Then
               Dim r0 As Integer = CgNextReg()
               fprintf(cg_out, "  %%r%d = load ", r0)
               CgEmitCAbiCode(t0, pInfo.ty.typeIdx)
               fprintf(cg_out, ", ptr %%r%d, align 4\n", aReg)
+              Dim p1 As Integer = CgNextReg()
+              fprintf(cg_out, "  %%r%d = getelementptr inbounds i8, ptr %%r%d, i64 8\n", p1, aReg)
+              Dim r1 As Integer = CgNextReg()
+              fprintf(cg_out, "  %%r%d = load ", r1)
+              CgEmitCAbiCode(t1, pInfo.ty.typeIdx)
+              fprintf(cg_out, ", ptr %%r%d, align 4\n", p1)
               argRegs(emitArgCnt) = r0
               argIsPtr(emitArgCnt) = 0
               argCAbi(emitArgCnt) = t0
               argCStruct(emitArgCnt) = pInfo.ty.typeIdx
               emitArgCnt = emitArgCnt + 1
-            Else
-              If mode = 2 Then
-                Dim r0 As Integer = CgNextReg()
-                fprintf(cg_out, "  %%r%d = load ", r0)
-                CgEmitCAbiCode(t0, pInfo.ty.typeIdx)
-                fprintf(cg_out, ", ptr %%r%d, align 4\n", aReg)
-                Dim p1 As Integer = CgNextReg()
-                fprintf(cg_out, "  %%r%d = getelementptr inbounds i8, ptr %%r%d, i64 8\n", p1, aReg)
-                Dim r1 As Integer = CgNextReg()
-                fprintf(cg_out, "  %%r%d = load ", r1)
-                CgEmitCAbiCode(t1, pInfo.ty.typeIdx)
-                fprintf(cg_out, ", ptr %%r%d, align 4\n", p1)
-                argRegs(emitArgCnt) = r0
-                argIsPtr(emitArgCnt) = 0
-                argCAbi(emitArgCnt) = t0
-                argCStruct(emitArgCnt) = pInfo.ty.typeIdx
-                emitArgCnt = emitArgCnt + 1
-                argRegs(emitArgCnt) = r1
-                argIsPtr(emitArgCnt) = 0
-                argCAbi(emitArgCnt) = t1
-                argCStruct(emitArgCnt) = pInfo.ty.typeIdx
-                emitArgCnt = emitArgCnt + 1
-              Else
-                argRegs(emitArgCnt) = aReg
-                argIsPtr(emitArgCnt) = 0
-                argCAbi(emitArgCnt) = 8
-                argCStruct(emitArgCnt) = pInfo.ty.typeIdx
-                emitArgCnt = emitArgCnt + 1
-              End If
-            End If
-          Else
-            If CgStructSize(pInfo.ty.typeIdx) > 16 Then
-              argRegs(emitArgCnt) = aReg
+              argRegs(emitArgCnt) = r1
               argIsPtr(emitArgCnt) = 0
-              argCAbi(emitArgCnt) = 8
+              argCAbi(emitArgCnt) = t1
               argCStruct(emitArgCnt) = pInfo.ty.typeIdx
               emitArgCnt = emitArgCnt + 1
             Else
-              Dim r0 As Integer = CgNextReg()
-              Dim al As Integer = CgTypeAlign(pInfo.ty)
-              fprintf(cg_out, "  %%r%d = load ", r0)
-              CgEmitLlvmType(pInfo.ty)
-              fprintf(cg_out, ", ptr %%r%d, align %d\n", aReg, al)
-              argRegs(emitArgCnt) = r0
-              argIsPtr(emitArgCnt) = 0
-              argCAbi(emitArgCnt) = 0
-              argCStruct(emitArgCnt) = -1
-              argTys(emitArgCnt) = pInfo.ty
-              emitArgCnt = emitArgCnt + 1
+              If mode = 3 Then
+                Dim r0 As Integer = CgNextReg()
+                Dim al As Integer = CgTypeAlign(pInfo.ty)
+                fprintf(cg_out, "  %%r%d = load ", r0)
+                CgEmitLlvmType(pInfo.ty)
+                fprintf(cg_out, ", ptr %%r%d, align %d\n", aReg, al)
+                argRegs(emitArgCnt) = r0
+                argIsPtr(emitArgCnt) = 0
+                argCAbi(emitArgCnt) = 0
+                argCStruct(emitArgCnt) = -1
+                argTys(emitArgCnt) = pInfo.ty
+                emitArgCnt = emitArgCnt + 1
+              Else
+                If mode = 4 Then
+                  Dim al As Integer = CgTypeAlign(pInfo.ty)
+                  Dim cpPtr As Integer = CgNextReg()
+                  fprintf(cg_out, "  %%r%d = alloca ", cpPtr)
+                  CgEmitLlvmType(pInfo.ty)
+                  fprintf(cg_out, ", align %d\n", al)
+                  Dim cpVal As Integer = CgNextReg()
+                  fprintf(cg_out, "  %%r%d = load ", cpVal)
+                  CgEmitLlvmType(pInfo.ty)
+                  fprintf(cg_out, ", ptr %%r%d, align %d\n", aReg, al)
+                  fprintf(cg_out, "  store ")
+                  CgEmitLlvmType(pInfo.ty)
+                  fprintf(cg_out, " %%r%d, ptr %%r%d, align %d\n", cpVal, cpPtr, al)
+                  argRegs(emitArgCnt) = cpPtr
+                  argIsPtr(emitArgCnt) = 0
+                  argCAbi(emitArgCnt) = 9
+                  argCStruct(emitArgCnt) = pInfo.ty.typeIdx
+                  emitArgCnt = emitArgCnt + 1
+                Else
+                  argRegs(emitArgCnt) = aReg
+                  argIsPtr(emitArgCnt) = 0
+                  argCAbi(emitArgCnt) = 8
+                  argCStruct(emitArgCnt) = pInfo.ty.typeIdx
+                  emitArgCnt = emitArgCnt + 1
+                End If
+              End If
             End If
           End If
         Else
@@ -2377,7 +2480,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     fprintf(cg_out, "  %%r%d = alloca ", tmp)
     CgEmitLlvmType(retTy)
     fprintf(cg_out, ", align 8\n")
-    If isExternFn And (cg_target = TargetKind.TgtLinuxX64) And (retTy.kind = TypeKind.TyStruct) And (retTy.arrLen = 0) And (retTy.typeIdx >= 0) Then
+    If isExternFn And (retTy.kind = TypeKind.TyStruct) And (retTy.arrLen = 0) And (retTy.typeIdx >= 0) Then
       Dim rt0 As Integer = 0
       Dim rt1 As Integer = 0
       Dim rmode As Integer = CgClassifyCStruct(retTy.typeIdx, ByRef rt0, ByRef rt1)
@@ -3509,9 +3612,15 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
 
   fputs(IR_MODULE_HEADER, cg_out)
   Select Case cg_target
+    Case TargetKind.TgtLinuxArm64
+      fputs(IR_DL_LINUX_ARM64, cg_out)
+      fputs(IR_TRIPLE_LINUX_ARM64, cg_out)
     Case TargetKind.TgtMacosArm64
       fputs(IR_DL_MACOS_ARM64, cg_out)
       fputs(IR_TRIPLE_MACOS_ARM64, cg_out)
+    Case TargetKind.TgtWindowsX64
+      fputs(IR_DL_WINDOWS_X64, cg_out)
+      fputs(IR_TRIPLE_WINDOWS_X64, cg_out)
     Case TargetKind.TgtArmM
       fputs(IR_DL_ARM_M, cg_out)
       fputs(IR_TRIPLE_ARM_M, cg_out)
@@ -3642,7 +3751,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
       fprintf(cg_out, "declare ")
       CgEmitExternRetType(cg_funcs(i).retTy)
       fprintf(cg_out, " @")
-      CgEmitSlice(cg_funcs(i).namePos, cg_funcs(i).nameLen)
+      CgEmitSymName(cg_funcs(i).namePos, cg_funcs(i).nameLen, 0, 0)
       fprintf(cg_out, "(")
       Dim j As Integer = 0
       While j < cg_funcs(i).paramCount Do

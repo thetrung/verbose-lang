@@ -9,7 +9,7 @@ Command-line interface options and usage reference for `./verbose`.
 | `verbose <file.vb>` | Type-check, emit `.ll`, compile with `clang -O2`, and **execute directly** |
 | `verbose test [file.vb \| dir]` | Compile & run built-in `Test`/`Assert` blocks (auto-discovers `test_*.vb`/`*_test.vb` in directories; default `tests`) |
 | `--test` | Alias for `verbose test` |
-| `--target <name>`, `--target=<name>` | Set cross-compilation target architecture/triple (`linux-x86_64` [default], `macos-arm64`, `arm-m`; aliases include `x86_64-pc-linux-gnu`, `arm64-apple-darwin`, `arm64-apple-macosx`, `cortex-m4`, `thumbv7em-none-eabi`, `thumbv7em-unknown-none-eabi`). Emits target-specific datalayout & triple, selects ABI lowering, and adjusts pointer size (4 on `arm-m`, 8 on 64-bit). |
+| `--target <name>`, `--target=<name>` | Set compilation target architecture/triple (`linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`, `arm-m`; defaults to auto-detected host target, overrideable via `VERBOSE_TARGET`). Aliases include `x86_64-pc-linux-gnu`, `aarch64-unknown-linux-gnu`, `arm64-apple-darwin`, `win64`, `x86_64-w64-windows-gnu`, `cortex-m4`, `thumbv7em-unknown-none-eabi`. Emits target-specific datalayout & triple, selects target C ABI lowering, and adjusts pointer size (4 on `arm-m`, 8 on 64-bit). |
 | `-c`, `--emit-obj` | Compile LLVM IR to native object file (`.o`) via `clang -O2 -c` without linking or executing (auto-selected for `arm-m` and non-host cross-targets unless `--emit-only`) |
 | `--ast` | Pretty-print the parsed AST |
 | `--ir` | Print the generated LLVM IR to stdout |

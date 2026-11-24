@@ -10,7 +10,7 @@ A Human-Readable Language inspired by Visual Basic, compiled directly to LLVM-IR
 
 ## Overview
 
-Verbose-Lang pairs Visual Basic's brace-free readability with C-speed, zero-GC systems programming directly on LLVM IR. It compiles natively for Linux x86-64, macOS arm64, and bare-metal 32-bit ARM-M, providing deterministic memory (`Static`, `Heap`, `Arena`), hardware MMIO (`Volatile`, `At`), native C FFI, structured `Async`/`Await` concurrency, a pure-VerBose standard library (`std/`), and built-in `Test`/`Assert` suites. The compiler (`./verbose`) is 100% self-hosted in VerBose-Lang itself with zero OCaml or Python dependencies.
+Verbose-Lang pairs Visual Basic's brace-free readability with C-speed, zero-GC systems programming directly on LLVM IR. It compiles natively for Linux (x86-64, arm64), macOS (arm64), Windows (x86-64), and bare-metal 32-bit ARM-M, providing deterministic memory (`Static`, `Heap`, `Arena`), hardware MMIO (`Volatile`, `At`), native C FFI, structured `Async`/`Await` concurrency, a pure-VerBose standard library (`std/`), and built-in `Test`/`Assert` suites. The compiler (`./verbose`) is 100% self-hosted in VerBose-Lang itself with zero OCaml or Python dependencies.
 
 See **[FEATURES.md](FEATURES.md)** for the complete feature catalog.
 
@@ -143,16 +143,18 @@ make build
 ./verbose test your_tests.vb
 ./verbose test
 
-# Cross-compile for bare-metal ARM-M or macOS arm64 to object file
+# Cross-compile for bare-metal ARM-M, Linux arm64, macOS arm64, or Windows x86-64 to object file
 ./verbose --target arm-m -c your_file.vb -o your_file.o
+./verbose --target linux-arm64 -c your_file.vb -o your_file.o
 ./verbose --target macos-arm64 -c your_file.vb -o your_file.o
+./verbose --target windows-x86_64 -c your_file.vb -o your_file.o
 
 # Build and run prototype.vb with ./verbose
 make
 
 # Install ./verbose globally (default: /usr/local/bin/verbose) or build release artifacts
 make install          # or: make install PREFIX=$HOME/.local
-make dist             # builds stripped dist/verbose, dist/verbose-linux-x86_64, dist/SHA256SUMS.txt
+make dist             # builds stripped platform binary in dist/ + dist/SHA256SUMS.txt
 
 # Run pure-VerBose test suites (zero Python!)
 make test             # runs ./verbose test
@@ -176,7 +178,7 @@ All implemented language, memory, FFI, standard library, compiler, and tooling f
 - Bootstrap minimally and stay 100% self-hosted.
 - Human-readable, brace-free VB6/VB.NET-inspired syntax that fits in your head (case-sensitive to eliminate C/DLL `Alias` boilerplate).
 - Fast as C/Rust with zero GC, native C interop, and deterministic memory (`Arena`, `Static`, `Heap`, raw `Pointer`).
-- Portable across LLVM targets — Linux x86-64, macOS Arm64, and bare-metal 32-bit ARM-M microcontrollers.
+- Portable across LLVM targets — Linux (x86-64, arm64), macOS (arm64), Windows (x86-64), and bare-metal 32-bit ARM-M microcontrollers.
 
 ---
 

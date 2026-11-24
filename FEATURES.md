@@ -33,11 +33,11 @@ VerBose-Lang is a brace-free, VB6/VB.NET-inspired systems programming language c
 
 - **100% Self-Hosted Compiler (`src/`)**: 9-module compiler (`verbose.vb`, `constants.vb`, `token.vb`, `lexer.vb`, `ast.vb`, `printer.vb`, `parser.vb`, `type_analyzer.vb`, `codegen.vb`) backed by a single 32 MiB deterministic `Arena`. Compiles itself to a byte-for-byte Stage 3 self-hosting fixpoint and passes **18/18** pure-VerBose test suites (**145** `Test` blocks + **6/6** bootstrap tests) via `./verbose test` with zero OCaml or Python dependencies. The archival OCaml Stage 0 bootstrap compiler is preserved on the `stage0` git branch.
 - **Cross-Compilation & Target Triples**:
-  - Target presets via `--target <name>` / `--target=<name>`: `linux-x86_64` (default), `macos-arm64` (Apple Silicon), and `arm-m` (bare-metal 32-bit Cortex-M / Thumbv7EM).
-  - Target-specific LLVM `target datalayout` and `target triple` emission, eliminating `clang -Woverride-module` warnings.
+  - Target presets via `--target <name>` / `--target=<name>` with automatic host target detection (overrideable via `VERBOSE_TARGET`): `linux-x86_64`, `linux-arm64`, `macos-arm64` (Apple Silicon), `windows-x86_64` (MinGW-w64/UCRT), and `arm-m` (bare-metal 32-bit Cortex-M / Thumbv7EM).
+  - Target-specific LLVM `target datalayout`, `target triple`, and native C ABI lowering (SysV x86-64, AAPCS64, Microsoft x64, ARM AAPCS), eliminating `clang -Woverride-module` warnings.
   - Parameterized pointer sizes (4 bytes on `arm-m`, 8 bytes on 64-bit targets) and alignment rules.
   - Freestanding mode on `arm-m` (suppresses unused host libc imports).
   - Direct object file emission via `-c` / `--emit-obj` using `clang -O2 -c`.
 - **Semantic Type Analyzer & Inspection**: Automatic semantic type checking (`--ta` verbose output, `--no-ta` opt-out), AST pretty-printer (`--ast`), and LLVM IR inspection (`--ir`).
 - **Direct Compile-and-Run CLI & Built-in Test Runner**: `./verbose file.vb` type-checks, emits LLVM IR, compiles with `clang -O2`, and executes directly by default; `./verbose test [file.vb | dir]` (or `--test`) builds and runs native `Test`/`Assert` suites with full flag support (`--target`, `-c`, `--emit-only`, `--no-run`, `-o`, `-I`, `-l`, `-L`, `-W`, extra `.c/.o/.a` inputs, `--help`, `--version`).
-- **Packaging & CI**: `make install` / `uninstall` / `dist` packaging plus lightweight GitHub Actions CI (`.github/workflows/ci.yml` — `clang` + `curl` only) and automated Linux x86-64 GitHub Releases (`.github/workflows/release.yml`).
+- **Packaging & CI**: `make install` / `uninstall` / `dist` packaging plus lightweight GitHub Actions CI (`.github/workflows/ci.yml` — `clang` + `curl` only) and automated multi-platform GitHub Releases for Linux x86-64, Linux arm64, macOS arm64, and Windows x86-64 (`.github/workflows/release.yml`).

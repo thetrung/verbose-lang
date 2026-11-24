@@ -1,7 +1,7 @@
 ' VerBose Self-Hosting Compiler (verbose) - Shared Diagnostics, Messages & LLVM IR Templates
 
 ' --- Compiler Version & CLI Driver Messages ---
-Public Static MSG_CLI_VERSION As Pointer = "verbose 0.5.0 (VerBose-Lang Self-Hosted Compiler)\n"
+Public Static MSG_CLI_VERSION As Pointer = "verbose 0.5.1 (VerBose-Lang Self-Hosted Compiler)\n"
 Public Static MSG_CLI_USAGE As Pointer = "Usage: verbose <filename>.vb [options]\n" &
   "       verbose test [file.vb | dir] [options]\n" &
   "  test         Run built-in Test/Assert blocks in a .vb file or directory (default: tests)\n" &
@@ -12,7 +12,7 @@ Public Static MSG_CLI_USAGE As Pointer = "Usage: verbose <filename>.vb [options]
   "  --no-ta      Skip semantic type-analyzer pass\n" &
   "  --emit-only  Emit .ll only (skip clang & execution)\n" &
   "  -c, --emit-obj Compile to object file (.o) via clang -c (skip linking & run)\n" &
-  "  --target <t> Target platform: linux-x86_64 (default), macos-arm64, arm-m\n" &
+  "  --target <t> Target: linux-x86_64, linux-arm64, macos-arm64, windows-x86_64, arm-m\n" &
   "  --no-run     Compile binary with clang without executing it\n" &
   "  -I <dir>     Add module Include search directory\n" &
   "  -o <path>    Specify output binary path (or .ll path with --emit-only)\n" &
@@ -29,8 +29,8 @@ Public Static MSG_CLI_PARSE_ABORT = "verbose: aborting due to %d parse error(s)\
   MSG_CLI_CLANG_STATUS = "Status: clang = %d\n",
   MSG_CLI_ERR_O_ARG = "Error: -o requires a path argument\n",
   MSG_CLI_ERR_I_ARG = "Error: -I requires a directory argument\n",
-  MSG_CLI_ERR_TARGET_ARG = "Error: --target requires a target name (linux-x86_64, macos-arm64, arm-m)\n",
-  MSG_CLI_ERR_UNKNOWN_TARGET = "Error: unknown target '%s' (supported: linux-x86_64, macos-arm64, arm-m)\n",
+  MSG_CLI_ERR_TARGET_ARG = "Error: --target requires a target name (linux-x86_64, linux-arm64, macos-arm64, windows-x86_64, arm-m)\n",
+  MSG_CLI_ERR_UNKNOWN_TARGET = "Error: unknown target '%s' (supported: linux-x86_64, linux-arm64, macos-arm64, windows-x86_64, arm-m)\n",
   MSG_CLI_ERR_UNKNOWN_OPT = "Unknown option: %s\n",
   MSG_CLI_ERR_UNEXPECTED_ARG = "Unexpected argument: %s\n",
   MSG_CLI_TEST_NO_BLOCKS = "verbose test error: no Test blocks found in '%s'\n",
@@ -94,16 +94,24 @@ Public Enum TargetKind
   TgtLinuxX64 = 0
   TgtMacosArm64 = 1
   TgtArmM = 2
+  TgtLinuxArm64 = 3
+  TgtWindowsX64 = 4
 End Enum
 
 Public Static IR_DL_LINUX_X64 = "target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"\n",
   IR_TRIPLE_LINUX_X64 = "target triple = \"x86_64-pc-linux-gnu\"\n\n",
+  IR_DL_LINUX_ARM64 = "target datalayout = \"e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128\"\n",
+  IR_TRIPLE_LINUX_ARM64 = "target triple = \"aarch64-unknown-linux-gnu\"\n\n",
   IR_DL_MACOS_ARM64 = "target datalayout = \"e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128\"\n",
   IR_TRIPLE_MACOS_ARM64 = "target triple = \"arm64-apple-macosx11.0.0\"\n\n",
+  IR_DL_WINDOWS_X64 = "target datalayout = \"e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"\n",
+  IR_TRIPLE_WINDOWS_X64 = "target triple = \"x86_64-w64-windows-gnu\"\n\n",
   IR_DL_ARM_M = "target datalayout = \"e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64\"\n",
   IR_TRIPLE_ARM_M = "target triple = \"thumbv7em-unknown-none-eabi\"\n\n",
   CLANG_TRIPLE_LINUX_X64 = "x86_64-pc-linux-gnu",
+  CLANG_TRIPLE_LINUX_ARM64 = "aarch64-unknown-linux-gnu",
   CLANG_TRIPLE_MACOS_ARM64 = "arm64-apple-macosx11.0.0",
+  CLANG_TRIPLE_WINDOWS_X64 = "x86_64-w64-windows-gnu",
   CLANG_TRIPLE_ARM_M = "thumbv7em-unknown-none-eabi" As Pointer
 
 ' --- LLVM IR Module & Runtime Templates (emitted via fputs) ---

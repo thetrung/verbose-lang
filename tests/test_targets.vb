@@ -2,7 +2,37 @@
 
 Include "harness.vb"
 
-Test "targets: default linux-x86_64 target datalayout, triple, and zero clang warnings"
+Private Function CheckObjHeader(path As Pointer, b0, b1, b2, b3, offM, m0, m1 As Integer) As Boolean
+  Dim fp As Pointer = Fopen(path, "rb")
+  If IsNull(fp) Then
+    Return False
+  End If
+  Dim hdr(32) As Byte
+  Dim n As Long = fread(hdr, 1, 32, fp)
+  fclose(fp)
+  If n < 24 Then
+    Return False
+  End If
+  Dim h0 As Integer = hdr(0), h1 As Integer = hdr(1), h2 As Integer = hdr(2), h3 As Integer = hdr(3)
+  If ((h0 And 255) <> b0) Or ((h1 And 255) <> b1) Then
+    Return False
+  End If
+  If (b2 >= 0) And ((h2 And 255) <> b2) Then
+    Return False
+  End If
+  If (b3 >= 0) And ((h3 And 255) <> b3) Then
+    Return False
+  End If
+  If offM >= 0 Then
+    Dim hm0 As Integer = hdr(offM), hm1 As Integer = hdr(offM + 1)
+    If ((hm0 And 255) <> m0) Or ((hm1 And 255) <> m1) Then
+      Return False
+    End If
+  End If
+  Return True
+End Function
+
+Test "targets: linux-x86_64 explicit IR and host native zero-warning compile & run"
   Dim comp(768), tmpDir(256), srcPath(300), llPath(300), binPath(300) As Byte
   GetCompilerAbs(comp, 768)
   Dim pid As Integer = getpid()
@@ -15,27 +45,59 @@ Test "targets: default linux-x86_64 target datalayout, triple, and zero clang wa
   snprintf(mkCmd, 512, "mkdir -p '%s'", tmpDir)
   system(mkCmd)
 
-  WriteTextFile(srcPath, "Public Function main() As Integer\n  Printf(\"hello linux\\n\")\n  Return 0\nEnd Function\n")
+  WriteTextFile(srcPath, "Public Function main() As Integer\n  Printf(\"hello host\\n\")\n  Return 0\nEnd Function\n")
 
   Dim cmd(1536) As Byte
-  ' 1. Verify --emit-only emits correct datalayout and triple
-  snprintf(cmd, 1536, "cd '%s' && '%s' hello.vb --emit-only -o hello.ll", tmpDir, comp)
+  ' 1. Verify --target linux-x86_64 --emit-only emits correct datalayout and triple
+  snprintf(cmd, 1536, "cd '%s' && '%s' hello.vb --target linux-x86_64 --emit-only -o hello.ll", tmpDir, comp)
   Assert RunShell(cmd) = 0
   Assert FileExists(llPath)
   Assert FileHas(llPath, "target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"")
   Assert FileHas(llPath, "target triple = \"x86_64-pc-linux-gnu\"")
 
-  ' 2. Verify compilation with clang produces ZERO warnings (-Woverride-module or any other warning)
+  ' 2. Verify default host target compilation with clang produces ZERO warnings
   snprintf(cmd, 1536, "cd '%s' && '%s' hello.vb -o hello", tmpDir, comp)
   Assert RunShell(cmd) = 0
   Assert Not OutHas("-Woverride-module")
   Assert Not OutHas("warning:")
   Assert FileExists(binPath)
 
-  ' 3. Verify execution works
+  ' 3. Verify execution works on current host
   snprintf(cmd, 1536, "'%s'", binPath)
   Assert RunShell(cmd) = 0
-  Assert OutHas("hello linux")
+  Assert OutHas("hello host")
+
+  snprintf(mkCmd, 512, "rm -rf '%s'", tmpDir)
+  system(mkCmd)
+End Test
+
+Test "targets: linux-arm64 --emit-only and -c produces valid AArch64 ELF .o"
+  Dim comp(768), tmpDir(256), srcPath(300), llPath(300), objPath(300) As Byte
+  GetCompilerAbs(comp, 768)
+  Dim pid As Integer = getpid()
+  snprintf(tmpDir, 256, "/tmp/vb_tgt_%d_arm64", pid)
+  snprintf(srcPath, 300, "%s/arm64.vb", tmpDir)
+  snprintf(llPath, 300, "%s/arm64.ll", tmpDir)
+  snprintf(objPath, 300, "%s/arm64.o", tmpDir)
+
+  Dim mkCmd(512) As Byte
+  snprintf(mkCmd, 512, "mkdir -p '%s'", tmpDir)
+  system(mkCmd)
+
+  WriteTextFile(srcPath, "Public Function main() As Integer\n  Return 7\nEnd Function\n")
+
+  Dim cmd(1536) As Byte
+  snprintf(cmd, 1536, "cd '%s' && '%s' arm64.vb --target linux-arm64 --emit-only -o arm64.ll", tmpDir, comp)
+  Assert RunShell(cmd) = 0
+  Assert FileExists(llPath)
+  Assert FileHas(llPath, "target datalayout = \"e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128\"")
+  Assert FileHas(llPath, "target triple = \"aarch64-unknown-linux-gnu\"")
+
+  snprintf(cmd, 1536, "cd '%s' && '%s' arm64.vb --target linux-arm64 -c -o arm64.o", tmpDir, comp)
+  Assert RunShell(cmd) = 0
+  Assert FileExists(objPath)
+  ' ELF 64-bit little-endian, e_machine = 0x00b7 (EM_AARCH64) at offset 18
+  Assert CheckObjHeader(objPath, 127, 69, 76, 70, 18, 183, 0)
 
   snprintf(mkCmd, 512, "rm -rf '%s'", tmpDir)
   system(mkCmd)
@@ -64,15 +126,43 @@ Test "targets: macos-arm64 --emit-only and -c produces valid Mach-O .o"
   Assert FileHas(llPath, "target datalayout = \"e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128\"")
   Assert FileHas(llPath, "target triple = \"arm64-apple-macosx11.0.0\"")
 
-  ' 2. macos-arm64 -c produces Mach-O object file
+  ' 2. macos-arm64 -c produces Mach-O 64-bit arm64 object (MH_MAGIC_64 = cf fa ed fe, cputype = 0x0100000c)
   snprintf(cmd, 1536, "cd '%s' && '%s' mac.vb --target macos-arm64 -c -o mac.o", tmpDir, comp)
   Assert RunShell(cmd) = 0
   Assert FileExists(objPath)
+  Assert CheckObjHeader(objPath, 207, 250, 237, 254, 4, 12, 0)
 
-  ' Verify with `file` command
-  snprintf(cmd, 1536, "file '%s'", objPath)
+  snprintf(mkCmd, 512, "rm -rf '%s'", tmpDir)
+  system(mkCmd)
+End Test
+
+Test "targets: windows-x86_64 --emit-only and -c produces valid COFF x86-64 .o"
+  Dim comp(768), tmpDir(256), srcPath(300), llPath(300), objPath(300) As Byte
+  GetCompilerAbs(comp, 768)
+  Dim pid As Integer = getpid()
+  snprintf(tmpDir, 256, "/tmp/vb_tgt_%d_win", pid)
+  snprintf(srcPath, 300, "%s/win.vb", tmpDir)
+  snprintf(llPath, 300, "%s/win.ll", tmpDir)
+  snprintf(objPath, 300, "%s/win.o", tmpDir)
+
+  Dim mkCmd(512) As Byte
+  snprintf(mkCmd, 512, "mkdir -p '%s'", tmpDir)
+  system(mkCmd)
+
+  WriteTextFile(srcPath, "Public Function main() As Integer\n  Return 9\nEnd Function\n")
+
+  Dim cmd(1536) As Byte
+  snprintf(cmd, 1536, "cd '%s' && '%s' win.vb --target windows-x86_64 --emit-only -o win.ll", tmpDir, comp)
   Assert RunShell(cmd) = 0
-  Assert OutHas("Mach-O 64-bit arm64")
+  Assert FileExists(llPath)
+  Assert FileHas(llPath, "target datalayout = \"e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"")
+  Assert FileHas(llPath, "target triple = \"x86_64-w64-windows-gnu\"")
+
+  snprintf(cmd, 1536, "cd '%s' && '%s' win.vb --target windows-x86_64 -c -o win.o", tmpDir, comp)
+  Assert RunShell(cmd) = 0
+  Assert FileExists(objPath)
+  ' COFF IMAGE_FILE_MACHINE_AMD64 = 0x8664 little-endian (0x64, 0x86)
+  Assert CheckObjHeader(objPath, 100, 134, -1, -1, -1, 0, 0)
 
   snprintf(mkCmd, 512, "rm -rf '%s'", tmpDir)
   system(mkCmd)
@@ -107,14 +197,11 @@ Test "targets: arm-m --emit-only and -c produces freestanding Thumb ELF .o"
   Assert Not FileHas(llPath, "@fopen")
   Assert Not FileHas(llPath, "@malloc")
 
-  ' 2. arm-m -c produces ARM ELF relocatable object
+  ' 2. arm-m -c produces ARM ELF relocatable object (ELF32, e_machine = 0x0028 EM_ARM)
   snprintf(cmd, 1536, "cd '%s' && '%s' cortex.vb --target arm-m -c -o cortex.o", tmpDir, comp)
   Assert RunShell(cmd) = 0
   Assert FileExists(objPath)
-
-  snprintf(cmd, 1536, "file '%s'", objPath)
-  Assert RunShell(cmd) = 0
-  Assert OutHas("ELF 32-bit LSB relocatable, ARM")
+  Assert CheckObjHeader(objPath, 127, 69, 76, 70, 18, 40, 0)
 
   snprintf(mkCmd, 512, "rm -rf '%s'", tmpDir)
   system(mkCmd)

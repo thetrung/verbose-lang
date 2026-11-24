@@ -1,6 +1,6 @@
 # VerBose-Lang — Project State
 
-**VerBose-Lang** is a brace-free, VB6/VB.NET-inspired systems programming language compiled directly to LLVM IR (no GC, no native LLVM binding dependency, targeting Linux x86-64, macOS arm64, and bare-metal ARM-M) — now **100% self-hosted on `main`** via `./verbose`, written entirely in VerBose-Lang itself.
+**VerBose-Lang** is a brace-free, VB6/VB.NET-inspired systems programming language compiled directly to LLVM IR (no GC, no native LLVM binding dependency, targeting Linux x86-64/arm64, macOS arm64, Windows x86-64, and bare-metal ARM-M) — now **100% self-hosted on `main`** via `./verbose`, written entirely in VerBose-Lang itself.
 
 ---
 
@@ -64,7 +64,7 @@ See **[FEATURES.md](FEATURES.md)** for the full user-facing catalog. Milestone c
 | Suite / Command | Result | Scope |
 | --- | --- | --- |
 | `make build` | **6/6 PASS** + Stage 3 fixpoint | Bootstrap (`./verbose` or latest release) → `verbose1` → `./verbose` → `verbose2.ll == verbose3.ll` byte-for-byte identical + `./verbose test tests/bootstrap_suite.vb` |
-| `make test` | **18/18 suites (145/145 Test blocks) PASS** | `./verbose test`: `test_arena` 11/11, `test_arrays` 12/12, `test_assert` 5/5, `test_byref` 16/16, `test_c_interop` 4/4, `test_cli` 3/3, `test_compress` 6/6, `test_core` 7/7, `test_lang_ext` 6/6, `test_modules` 8/8, `test_static_heap` 11/11, `test_std_collections` 6/6, `test_std_io` 7/7, `test_std_math` 9/9, `test_std_strings` 6/6, `test_syntax` 10/10, `test_targets` 6/6, `test_type_analyzer` 12/12 |
+| `make test` | **18/18 suites (147/147 Test blocks) PASS** | `./verbose test`: `test_arena` 11/11, `test_arrays` 12/12, `test_assert` 5/5, `test_byref` 16/16, `test_c_interop` 4/4, `test_cli` 3/3, `test_compress` 6/6, `test_core` 7/7, `test_lang_ext` 6/6, `test_modules` 8/8, `test_static_heap` 11/11, `test_std_collections` 6/6, `test_std_io` 7/7, `test_std_math` 9/9, `test_std_strings` 6/6, `test_syntax` 10/10, `test_targets` 8/8, `test_type_analyzer` 12/12 |
 | `stage0` branch (`bc91476`) | **92/92 PASS** | Archived OCaml Stage 0 compiler verified with `(..)` array literal parity prior to retiring `stage0/` from `main` |
 
 ---
