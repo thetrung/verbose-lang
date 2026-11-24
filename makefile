@@ -13,10 +13,12 @@ demo: build
 	./verbose examples/enum.vb
 	./verbose examples/compute.vb
 	./verbose examples/boolean.vb
+	./verbose examples/byref.vb
 	./verbose examples/loop_while.vb
 	./verbose examples/numberic.vb
 	./verbose examples/read_file.vb
 	./verbose examples/structure.vb
+	./verbose examples/structure2.vb
 	./verbose examples/nested_struct.vb
 	rm -rf examples && git checkout examples
 

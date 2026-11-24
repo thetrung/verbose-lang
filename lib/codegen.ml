@@ -329,6 +329,7 @@ let rec codegen_expr ctx = function
         let ret_type = match name with
           | "malloc" | "fopen" -> "ptr"
           | "free" -> "void"
+          | "getc" | "putc" -> "i32"
           | _ -> 
             if Hashtbl.mem ret_types name then
               let found_ret_type = Hashtbl.find ret_types name in
@@ -590,6 +591,7 @@ let rec codegen_stmt ctx = function
           let r = next_reg ctx in
           emit ctx (Printf.sprintf "  %s = alloca i32, align 4" r);
           Hashtbl.add ctx.variables var_name r;
+          Hashtbl.replace local_types var_name "i32";
           r
       in
       emit ctx (Printf.sprintf "  store i32 %s, ptr %s, align 4" v_start alloca_reg);
