@@ -4,92 +4,46 @@ Include "constants.vb"
 Include "parser.vb"
 
 Structure TaEnumInfo
-  Dim namePos As Integer
-  Dim nameLen As Integer
-  Dim memStart As Integer
-  Dim memCount As Integer
-  Dim isPrivate As Integer
-  Dim modId As Integer
+  Dim namePos, nameLen, memStart, memCount, isPrivate, modId As Integer
 End Structure
 
 Structure TaEnumMem
-  Dim namePos As Integer
-  Dim nameLen As Integer
+  Dim namePos, nameLen As Integer
 End Structure
 
 Structure TaStructInfo
-  Dim namePos As Integer
-  Dim nameLen As Integer
-  Dim fieldStart As Integer
-  Dim fieldCount As Integer
-  Dim isPrivate As Integer
-  Dim modId As Integer
+  Dim namePos, nameLen, fieldStart, fieldCount, isPrivate, modId As Integer
 End Structure
 
 Structure TaFieldInfo
-  Dim namePos As Integer
-  Dim nameLen As Integer
-  Dim ty As TypeInfo
+  Dim namePos, nameLen As Integer, ty As TypeInfo
 End Structure
 
 Structure TaGlobalInfo
-  Dim namePos As Integer
-  Dim nameLen As Integer
-  Dim isPrivate As Integer
-  Dim modId As Integer
-  Dim ty As TypeInfo
-  Dim initNode As Integer
+  Dim namePos, nameLen, isPrivate, modId, initNode As Integer, ty As TypeInfo
 End Structure
 
 Structure TaParamInfo
-  Dim isByRef As Integer
-  Dim ty As TypeInfo
+  Dim isByRef As Integer, ty As TypeInfo
 End Structure
 
 Structure TaFuncInfo
-  Dim namePos As Integer
-  Dim nameLen As Integer
-  Dim isExtern As Integer
-  Dim isVariadic As Integer
-  Dim isPrivate As Integer
-  Dim modId As Integer
+  Dim namePos, nameLen, isExtern, isVariadic, isPrivate, modId, paramStart, paramCount As Integer
   Dim retTy As TypeInfo
-  Dim paramStart As Integer
-  Dim paramCount As Integer
 End Structure
 
 Structure TaLocalSym
-  Dim namePos As Integer
-  Dim nameLen As Integer
-  Dim ty As TypeInfo
+  Dim namePos, nameLen As Integer, ty As TypeInfo
 End Structure
 
-Private Static ta_enums() As TaEnumInfo
-Private Static ta_enumCount As Integer = 0
-Private Static ta_enumMems() As TaEnumMem
-Private Static ta_enumMemCount As Integer = 0
-
-Private Static ta_structs() As TaStructInfo
-Private Static ta_structCount As Integer = 0
-Private Static ta_fields() As TaFieldInfo
-Private Static ta_fieldCount As Integer = 0
-
-Private Static ta_globals() As TaGlobalInfo
-Private Static ta_globalCount As Integer = 0
-
-Private Static ta_funcs() As TaFuncInfo
-Private Static ta_funcCount As Integer = 0
-Private Static ta_params() As TaParamInfo
-Private Static ta_paramCount As Integer = 0
-
-Private Static ta_locals() As TaLocalSym
-Private Static ta_localCount As Integer = 0
-
-Private Static ta_curModId As Integer = 0
+Private Static ta_enums() As TaEnumInfo, ta_enumMems() As TaEnumMem
+Private Static ta_structs() As TaStructInfo, ta_fields() As TaFieldInfo
+Private Static ta_globals() As TaGlobalInfo, ta_funcs() As TaFuncInfo
+Private Static ta_params() As TaParamInfo, ta_locals() As TaLocalSym
+Private Static ta_enumCount, ta_enumMemCount, ta_structCount, ta_fieldCount, ta_globalCount, ta_funcCount, ta_paramCount, ta_localCount, ta_curModId, ta_errCount As Integer = 0
 Private Static ta_curRetTy As TypeInfo
-Private Static ta_errCount As Integer = 0
 
-Private Sub TaPrintSlice(pos As Integer, slen As Integer)
+Private Sub TaPrintSlice(pos, slen As Integer)
   Dim i As Integer = 0
   While i < slen Do
     Dim ch As Integer = g_srcPool(pos + i)
@@ -139,7 +93,7 @@ Private Function TaMakePrim(k As Integer) As TypeInfo
   Return t
 End Function
 
-Private Function TaFindEnum(pos As Integer, slen As Integer) As Integer
+Private Function TaFindEnum(pos, slen As Integer) As Integer
   Dim i As Integer = 0
   While i < ta_enumCount Do
     If (ta_enums(i).isPrivate = 1) And (ta_enums(i).modId = ta_curModId) And SlicesEqual(ta_enums(i).namePos, ta_enums(i).nameLen, pos, slen) Then
@@ -157,7 +111,7 @@ Private Function TaFindEnum(pos As Integer, slen As Integer) As Integer
   Return -1
 End Function
 
-Private Function TaHasPrivateEnumOther(pos As Integer, slen As Integer) As Boolean
+Private Function TaHasPrivateEnumOther(pos, slen As Integer) As Boolean
   Dim i As Integer = 0
   While i < ta_enumCount Do
     If (ta_enums(i).isPrivate = 1) And (ta_enums(i).modId <> ta_curModId) And SlicesEqual(ta_enums(i).namePos, ta_enums(i).nameLen, pos, slen) Then
@@ -168,10 +122,8 @@ Private Function TaHasPrivateEnumOther(pos As Integer, slen As Integer) As Boole
   Return False
 End Function
 
-Private Function TaHasEnumMem(eIdx As Integer, pos As Integer, slen As Integer) As Boolean
-  Dim st As Integer = ta_enums(eIdx).memStart
-  Dim cnt As Integer = ta_enums(eIdx).memCount
-  Dim i As Integer = 0
+Private Function TaHasEnumMem(eIdx, pos, slen As Integer) As Boolean
+  Dim st = ta_enums(eIdx).memStart, cnt = ta_enums(eIdx).memCount, i = 0 As Integer
   While i < cnt Do
     If SlicesEqual(ta_enumMems(st + i).namePos, ta_enumMems(st + i).nameLen, pos, slen) Then
       Return True
@@ -181,7 +133,7 @@ Private Function TaHasEnumMem(eIdx As Integer, pos As Integer, slen As Integer) 
   Return False
 End Function
 
-Private Function TaFindStruct(pos As Integer, slen As Integer) As Integer
+Private Function TaFindStruct(pos, slen As Integer) As Integer
   Dim i As Integer = 0
   While i < ta_structCount Do
     If (ta_structs(i).isPrivate = 1) And (ta_structs(i).modId = ta_curModId) And SlicesEqual(ta_structs(i).namePos, ta_structs(i).nameLen, pos, slen) Then
@@ -199,7 +151,7 @@ Private Function TaFindStruct(pos As Integer, slen As Integer) As Integer
   Return -1
 End Function
 
-Private Function TaHasPrivateStructOther(pos As Integer, slen As Integer) As Boolean
+Private Function TaHasPrivateStructOther(pos, slen As Integer) As Boolean
   Dim i As Integer = 0
   While i < ta_structCount Do
     If (ta_structs(i).isPrivate = 1) And (ta_structs(i).modId <> ta_curModId) And SlicesEqual(ta_structs(i).namePos, ta_structs(i).nameLen, pos, slen) Then
@@ -210,10 +162,8 @@ Private Function TaHasPrivateStructOther(pos As Integer, slen As Integer) As Boo
   Return False
 End Function
 
-Private Function TaFindStructField(sIdx As Integer, pos As Integer, slen As Integer, ByRef outTy As TypeInfo) As Integer
-  Dim st As Integer = ta_structs(sIdx).fieldStart
-  Dim cnt As Integer = ta_structs(sIdx).fieldCount
-  Dim i As Integer = 0
+Private Function TaFindStructField(sIdx, pos, slen As Integer, ByRef outTy As TypeInfo) As Integer
+  Dim st = ta_structs(sIdx).fieldStart, cnt = ta_structs(sIdx).fieldCount, i = 0 As Integer
   While i < cnt Do
     If SlicesEqual(ta_fields(st + i).namePos, ta_fields(st + i).nameLen, pos, slen) Then
       outTy = ta_fields(st + i).ty
@@ -224,7 +174,7 @@ Private Function TaFindStructField(sIdx As Integer, pos As Integer, slen As Inte
   Return -1
 End Function
 
-Private Function TaFindGlobal(pos As Integer, slen As Integer) As Integer
+Private Function TaFindGlobal(pos, slen As Integer) As Integer
   Dim i As Integer = 0
   While i < ta_globalCount Do
     If (ta_globals(i).isPrivate = 1) And (ta_globals(i).modId = ta_curModId) And SlicesEqual(ta_globals(i).namePos, ta_globals(i).nameLen, pos, slen) Then
@@ -242,7 +192,7 @@ Private Function TaFindGlobal(pos As Integer, slen As Integer) As Integer
   Return -1
 End Function
 
-Private Function TaHasPrivateGlobalOther(pos As Integer, slen As Integer) As Boolean
+Private Function TaHasPrivateGlobalOther(pos, slen As Integer) As Boolean
   Dim i As Integer = 0
   While i < ta_globalCount Do
     If (ta_globals(i).isPrivate = 1) And (ta_globals(i).modId <> ta_curModId) And SlicesEqual(ta_globals(i).namePos, ta_globals(i).nameLen, pos, slen) Then
@@ -253,7 +203,7 @@ Private Function TaHasPrivateGlobalOther(pos As Integer, slen As Integer) As Boo
   Return False
 End Function
 
-Private Function TaFindFunc(pos As Integer, slen As Integer) As Integer
+Private Function TaFindFunc(pos, slen As Integer) As Integer
   Dim i As Integer = 0
   While i < ta_funcCount Do
     If (ta_funcs(i).isPrivate = 1) And (ta_funcs(i).modId = ta_curModId) And SlicesEqual(ta_funcs(i).namePos, ta_funcs(i).nameLen, pos, slen) Then
@@ -271,7 +221,7 @@ Private Function TaFindFunc(pos As Integer, slen As Integer) As Integer
   Return -1
 End Function
 
-Private Function TaHasPrivateFuncOther(pos As Integer, slen As Integer) As Boolean
+Private Function TaHasPrivateFuncOther(pos, slen As Integer) As Boolean
   Dim i As Integer = 0
   While i < ta_funcCount Do
     If (ta_funcs(i).isPrivate = 1) And (ta_funcs(i).modId <> ta_curModId) And SlicesEqual(ta_funcs(i).namePos, ta_funcs(i).nameLen, pos, slen) Then
@@ -282,7 +232,7 @@ Private Function TaHasPrivateFuncOther(pos As Integer, slen As Integer) As Boole
   Return False
 End Function
 
-Private Function TaFindLocal(pos As Integer, slen As Integer) As Integer
+Private Function TaFindLocal(pos, slen As Integer) As Integer
   Dim i As Integer = ta_localCount - 1
   While i >= 0 Do
     If SlicesEqual(ta_locals(i).namePos, ta_locals(i).nameLen, pos, slen) Then
@@ -293,7 +243,7 @@ Private Function TaFindLocal(pos As Integer, slen As Integer) As Integer
   Return -1
 End Function
 
-Private Function TaLookupVar(pos As Integer, slen As Integer, ByRef outTy As TypeInfo) As Boolean
+Private Function TaLookupVar(pos, slen As Integer, ByRef outTy As TypeInfo) As Boolean
   Dim li As Integer = TaFindLocal(pos, slen)
   If li >= 0 Then
     outTy = ta_locals(li).ty

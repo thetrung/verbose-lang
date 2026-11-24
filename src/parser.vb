@@ -4,8 +4,7 @@ Include "constants.vb"
 Include "lexer.vb"
 Include "ast.vb"
 
-Private Static p_pos As Integer = 0
-Private Static p_errors As Integer = 0
+Private Static p_pos = 0, p_errors = 0 As Integer
 
 Private Function PPeekKind() As Integer
   If p_pos >= g_tokCount Then
@@ -41,7 +40,7 @@ Private Sub PExpect(k As Integer)
   PAdvance()
 End Sub
 
-Private Sub PParseBaseType(ByRef outKind As Integer, ByRef outNamePos As Integer, ByRef outNameLen As Integer)
+Private Sub PParseBaseType(ByRef outKind, outNamePos, outNameLen As Integer)
   outNamePos = 0
   outNameLen = 0
   Dim k As Integer = PPeekKind()
@@ -106,15 +105,13 @@ Private Function PParseCallArg() As Integer
   Return argId
 End Function
 
-Private Function PParseWithInit(structNamePos As Integer, structNameLen As Integer) As Integer
+Private Function PParseWithInit(structNamePos, structNameLen As Integer) As Integer
   PExpect(TokenKind.TkWith)
   PExpect(TokenKind.TkLParen)
   PSkipNewlines()
-  Dim fiBuf(64) As Integer
-  Dim fiCount As Integer = 0
+  Dim fiBuf(64) As Integer, fiCount = 0 As Integer
   While (PPeekKind() <> TokenKind.TkRParen) And (PPeekKind() <> TokenKind.TkEof) Do
-    Dim fPos As Integer = g_tokens(p_pos).pos
-    Dim fLen As Integer = g_tokens(p_pos).len
+    Dim fPos = g_tokens(p_pos).pos, fLen = g_tokens(p_pos).len As Integer
     PExpect(TokenKind.TkIdent)
     PExpect(TokenKind.TkEq)
     Dim valExpr As Integer = ParseExpr()
@@ -255,9 +252,7 @@ Private Function PParsePrimary() As Integer
   If k = TokenKind.TkSizeOf Then
     PAdvance()
     PExpect(TokenKind.TkLParen)
-    Dim tk As Integer = 0
-    Dim tnPos As Integer = 0
-    Dim tnLen As Integer = 0
+    Dim tk, tnPos, tnLen As Integer = 0
     PParseBaseType(ByRef tk, ByRef tnPos, ByRef tnLen)
     PExpect(TokenKind.TkRParen)
     Dim id As Integer = NewNode(NodeKind.NdSizeOf)
@@ -272,9 +267,7 @@ Private Function PParsePrimary() As Integer
     PExpect(TokenKind.TkLParen)
     Dim arenaArg As Integer = PParseCallArg()
     PExpect(TokenKind.TkComma)
-    Dim tk As Integer = 0
-    Dim tnPos As Integer = 0
-    Dim tnLen As Integer = 0
+    Dim tk, tnPos, tnLen As Integer = 0
     PParseBaseType(ByRef tk, ByRef tnPos, ByRef tnLen)
     Dim cntExpr As Integer = -1
     If PPeekKind() = TokenKind.TkComma Then
@@ -298,9 +291,7 @@ Private Function PParsePrimary() As Integer
   If k = TokenKind.TkHeapAlloc Then
     PAdvance()
     PExpect(TokenKind.TkLParen)
-    Dim tk As Integer = 0
-    Dim tnPos As Integer = 0
-    Dim tnLen As Integer = 0
+    Dim tk, tnPos, tnLen As Integer = 0
     PParseBaseType(ByRef tk, ByRef tnPos, ByRef tnLen)
     Dim cntExpr As Integer = -1
     If PPeekKind() = TokenKind.TkComma Then
@@ -324,9 +315,7 @@ Private Function PParsePrimary() As Integer
     PExpect(TokenKind.TkLParen)
     Dim ptrExpr As Integer = ParseExpr()
     PExpect(TokenKind.TkComma)
-    Dim tk As Integer = 0
-    Dim tnPos As Integer = 0
-    Dim tnLen As Integer = 0
+    Dim tk, tnPos, tnLen As Integer = 0
     PParseBaseType(ByRef tk, ByRef tnPos, ByRef tnLen)
     PExpect(TokenKind.TkComma)
     Dim cntExpr As Integer = ParseExpr()
@@ -445,11 +434,8 @@ Private Function PParseMulDiv() As Integer
   Return lhs
 End Function
 
-Private Function PFoldStrLit(lhs As Integer, rhs As Integer) As Integer
-  Dim p1 As Integer = g_nodes(lhs).intVal
-  Dim l1 As Integer = g_nodes(lhs).lenVal
-  Dim p2 As Integer = g_nodes(rhs).intVal
-  Dim l2 As Integer = g_nodes(rhs).lenVal
+Private Function PFoldStrLit(lhs, rhs As Integer) As Integer
+  Dim p1 = g_nodes(lhs).intVal, l1 = g_nodes(lhs).lenVal, p2 = g_nodes(rhs).intVal, l2 = g_nodes(rhs).lenVal As Integer
   If (g_srcPoolLen + l1 + l2 + 1) >= g_srcPoolCap Then
     Dim bin As Integer = NewNode(NodeKind.NdBinOp)
     g_nodes(bin).op = TokenKind.TkAmp
@@ -603,15 +589,11 @@ End Function
 '   a, b, c As Integer [= init]
 '   a = 1, b = 2, c As Integer
 '   x, y As Integer, flag As Boolean = True
-Private Sub PParseVarDeclGroup(ndKind As Integer, vis As Integer, defModId As Integer, outBuf() As Integer, ByRef outCnt As Integer)
+Private Sub PParseVarDeclGroup(ndKind, vis, defModId As Integer, outBuf() As Integer, ByRef outCnt As Integer)
   Dim moreClauses As Boolean = True
   While moreClauses Do
-    Dim nPos(32) As Integer
-    Dim nLen(32) As Integer
-    Dim aLen(32) As Integer
-    Dim iInit(32) As Integer
-    Dim itemCnt As Integer = 0
-    Dim moreItems As Boolean = True
+    Dim nPos(32), nLen(32), aLen(32), iInit(32) As Integer
+    Dim itemCnt = 0 As Integer, moreItems = True As Boolean
     While moreItems Do
       nPos(itemCnt) = g_tokens(p_pos).pos
       nLen(itemCnt) = g_tokens(p_pos).len
@@ -745,7 +727,7 @@ Private Sub PParseVarDeclGroup(ndKind As Integer, vis As Integer, defModId As In
 End Sub
 
 ' stopMode: 0 = stop at End/Eof, 1 = stop at Else/End/Eof, 2 = stop at Case/End/Eof
-Private Sub PParseBlock(stopMode As Integer, ByRef outStart As Integer, ByRef outCount As Integer)
+Private Sub PParseBlock(stopMode As Integer, ByRef outStart, outCount As Integer)
   Dim buf(512) As Integer
   Dim cnt As Integer = 0
   Dim running As Boolean = True
@@ -1006,7 +988,7 @@ End Function
 
 ' Parses parameter list with optional same-type grouping:
 '   (a, b As Integer, ByRef x, y As Single, ...)
-Private Sub PParseParamList(allowEllipsis As Integer, paramBuf() As Integer, ByRef paramCount As Integer, ByRef outIsVar As Integer)
+Private Sub PParseParamList(allowEllipsis As Integer, paramBuf() As Integer, ByRef paramCount, outIsVar As Integer)
   paramCount = 0
   outIsVar = 0
   PSkipNewlines()

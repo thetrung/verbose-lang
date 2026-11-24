@@ -3,13 +3,9 @@
 Include "harness.vb"
 
 Test "cli: verbose hello.vb (compile + direct execute)"
-  Dim comp(768) As Byte
+  Dim comp(768), tmpDir(256), samplePath(300), binPath(300), llPath(300) As Byte
   GetCompilerAbs(comp, 768)
   Dim pid As Integer = getpid()
-  Dim tmpDir(256) As Byte
-  Dim samplePath(300) As Byte
-  Dim binPath(300) As Byte
-  Dim llPath(300) As Byte
   snprintf(tmpDir, 256, "/tmp/vb_cli_%d", pid)
   snprintf(samplePath, 300, "%s/hello.vb", tmpDir)
   snprintf(binPath, 300, "%s/hello", tmpDir)
@@ -32,14 +28,9 @@ Test "cli: verbose hello.vb (compile + direct execute)"
 End Test
 
 Test "cli: --ast, --ir, --no-run, --emit-only, --ta, bad-code rejection, --help, --version"
-  Dim comp(768) As Byte
+  Dim comp(768), tmpDir(256), samplePath(300), badPath(300), customBin(300), customLl(300) As Byte
   GetCompilerAbs(comp, 768)
   Dim pid As Integer = getpid()
-  Dim tmpDir(256) As Byte
-  Dim samplePath(300) As Byte
-  Dim badPath(300) As Byte
-  Dim customBin(300) As Byte
-  Dim customLl(300) As Byte
   snprintf(tmpDir, 256, "/tmp/vb_cli2_%d", pid)
   snprintf(samplePath, 300, "%s/hello.vb", tmpDir)
   snprintf(badPath, 300, "%s/bad.vb", tmpDir)

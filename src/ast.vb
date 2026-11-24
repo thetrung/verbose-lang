@@ -16,11 +16,7 @@ Public Enum TypeKind
 End Enum
 
 Public Structure TypeInfo
-  Dim kind As Integer      ' TypeKind
-  Dim typeIdx As Integer   ' struct index or enum index
-  Dim arrLen As Integer    ' 0 = scalar, -1 = unsized slice (), >0 = fixed array (N)
-  Dim namePos As Integer   ' raw custom type name offset in g_srcPool
-  Dim nameLen As Integer
+  Dim kind, typeIdx, arrLen, namePos, nameLen As Integer
 End Structure
 
 Public Enum NodeKind
@@ -74,30 +70,13 @@ Public Enum NodeKind
 End Enum
 
 Public Structure AstNode
-  Dim kind As Integer
-  Dim op As Integer         ' operator token, bool/is_public/is_byref/is_variadic flags, str id
-  Dim intVal As Integer     ' int literal or namePos in g_srcPool
-  Dim lenVal As Integer     ' nameLen / strLen in g_srcPool
-  Dim left As Integer       ' primary child node id
-  Dim right As Integer      ' secondary child node id
-  Dim third As Integer      ' tertiary child node id (e.g. For finish / IndexAssign val)
-  Dim firstChild As Integer ' start offset in g_kids()
-  Dim childCount As Integer
-  Dim extraStart As Integer ' secondary child list start in g_kids()
-  Dim extraCount As Integer
-  Dim tyKind As Integer     ' TypeKind
-  Dim tyArrLen As Integer   ' 0, -1, or N
-  Dim tyNamePos As Integer  ' custom type name offset in g_srcPool
-  Dim tyNameLen As Integer
-  Dim modId As Integer      ' source module id for Private isolation
+  Dim kind, op, intVal, lenVal As Integer
+  Dim left, right, third, firstChild, childCount, extraStart, extraCount As Integer
+  Dim tyKind, tyArrLen, tyNamePos, tyNameLen, modId As Integer
 End Structure
 
-Public Static g_nodes() As AstNode
-Public Static g_nodeCount As Integer
-Public Static g_nodeCap As Integer
-Public Static g_kids() As Integer
-Public Static g_kidCount As Integer
-Public Static g_kidCap As Integer
+Public Static g_nodes() As AstNode, g_kids() As Integer
+Public Static g_nodeCount, g_nodeCap, g_kidCount, g_kidCap As Integer
 
 Public Sub AstInit(ByRef arena As Arena)
   g_nodeCap = 65536

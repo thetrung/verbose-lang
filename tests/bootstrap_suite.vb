@@ -2,9 +2,7 @@
 
 Include "harness.vb"
 
-Private Static b_tmpDir(256) As Byte
-Private Static b_v2(300) As Byte
-Private Static b_ready As Integer = 0
+Private Static b_tmpDir(256), b_v2(300) As Byte, b_ready = 0 As Integer
 
 Private Sub EnsureBootstrapDir()
   If b_ready = 1 Then
@@ -22,10 +20,8 @@ Private Sub EnsureBootstrapDir()
   b_ready = 1
 End Sub
 
-Private Function RunStage2Prog(fname As Pointer, source As Pointer) As Integer
-  Dim srcPath(320) As Byte
-  Dim llPath(320) As Byte
-  Dim exePath(320) As Byte
+Private Function RunStage2Prog(fname, source As Pointer) As Integer
+  Dim srcPath(320), llPath(320), exePath(320) As Byte
   snprintf(srcPath, 320, "%s/%s.vb", b_tmpDir, fname)
   snprintf(llPath, 320, "%s/%s.ll", b_tmpDir, fname)
   snprintf(exePath, 320, "%s/%s", b_tmpDir, fname)
@@ -38,12 +34,8 @@ End Function
 
 Test "(STAGE-1 -> STAGE-2 -> STAGE-3 FIXPOINT) self-hosted compiler byte-for-byte fixpoint"
   EnsureBootstrapDir()
-  Dim comp(768) As Byte
+  Dim comp(768), v1(300), v2ll(300), v3ll(300) As Byte
   GetCompilerAbs(comp, 768)
-
-  Dim v1(300) As Byte
-  Dim v2ll(300) As Byte
-  Dim v3ll(300) As Byte
   snprintf(v1, 300, "%s/verbose1", b_tmpDir)
   snprintf(v2ll, 300, "%s/verbose2.ll", b_tmpDir)
   snprintf(v3ll, 300, "%s/verbose3.ll", b_tmpDir)

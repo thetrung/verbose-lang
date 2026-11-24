@@ -10,7 +10,7 @@ Private Sub PrIndent(depth As Integer)
   End While
 End Sub
 
-Private Sub PrSlice(pos As Integer, slen As Integer)
+Private Sub PrSlice(pos, slen As Integer)
   Dim i As Integer = 0
   While i < slen Do
     Dim ch As Integer = g_srcPool(pos + i)
@@ -19,7 +19,7 @@ Private Sub PrSlice(pos As Integer, slen As Integer)
   End While
 End Sub
 
-Private Sub PrType(tk As Integer, arrLen As Integer, nPos As Integer, nLen As Integer)
+Private Sub PrType(tk, arrLen, nPos, nLen As Integer)
   Select Case tk
     Case TypeKind.TyNothing
       Printf("Nothing")
@@ -249,7 +249,7 @@ Private Sub PrExpr(id As Integer)
   End If
 End Sub
 
-Private Sub PrStmt(id As Integer, depth As Integer)
+Private Sub PrStmt(id, depth As Integer)
   Dim k As Integer = g_nodes(id).kind
   PrIndent(depth)
   If (k = NodeKind.NdDim) Or (k = NodeKind.NdStaticDim) Then
@@ -405,9 +405,7 @@ Private Sub PrStmt(id As Integer, depth As Integer)
 End Sub
 
 Public Sub PrintProgramAst(progRoot As Integer)
-  Dim defStart As Integer = g_nodes(progRoot).firstChild
-  Dim defCount As Integer = g_nodes(progRoot).childCount
-  Dim i As Integer = 0
+  Dim defStart = g_nodes(progRoot).firstChild, defCount = g_nodes(progRoot).childCount, i = 0 As Integer
   While i < defCount Do
     Dim d As Integer = g_kids(defStart + i)
     Dim dk As Integer = g_nodes(d).kind

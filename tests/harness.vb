@@ -1,11 +1,11 @@
 ' Shared pure-VerBose test harness for compiler integration, CLI, example & error-check suites.
 
-Declare Function popen(cmd As Pointer, mode As Pointer) As Pointer
+Declare Function popen(cmd, mode As Pointer) As Pointer
 Declare Function pclose(fp As Pointer) As Integer
-Declare Function fread(buf As Pointer, sz As Long, cnt As Long, fp As Pointer) As Long
+Declare Function fread(buf As Pointer, sz, cnt As Long, fp As Pointer) As Long
 Declare Function fclose(fp As Pointer) As Integer
-Declare Function fprintf(fp As Pointer, fmt As Pointer, ...) As Integer
-Declare Function strstr(haystack As Pointer, needle As Pointer) As Pointer
+Declare Function fprintf(fp, fmt As Pointer, ...) As Integer
+Declare Function strstr(haystack, needle As Pointer) As Pointer
 Declare Function system(cmd As Pointer) As Integer
 Declare Function unlink(path As Pointer) As Integer
 Declare Function getpid() As Integer
@@ -14,9 +14,7 @@ Declare Function strlen(s As Pointer) As Long
 Declare Function getenv(name As Pointer) As Pointer
 Declare Function getcwd(buf As Pointer, sz As Long) As Pointer
 
-Public Static g_out(131072) As Byte
-Public Static g_outLen As Integer = 0
-Public Static g_exitCode As Integer = 0
+Public Static g_out(131072) As Byte, g_outLen = 0, g_exitCode = 0 As Integer
 
 Public Sub GetCompilerAbs(dst As Pointer, cap As Integer)
   Dim envC As Pointer = getenv("VERBOSE_COMPILER")
@@ -93,7 +91,7 @@ Public Function FileExists(path As Pointer) As Boolean
   Return True
 End Function
 
-Public Function FileHas(path As Pointer, needle As Pointer) As Boolean
+Public Function FileHas(path, needle As Pointer) As Boolean
   Dim fp As Pointer = Fopen(path, "rb")
   If IsNull(fp) Then
     Return False
@@ -109,7 +107,7 @@ Public Function FileHas(path As Pointer, needle As Pointer) As Boolean
   Return Not IsNull(strstr(buf, needle))
 End Function
 
-Public Function WriteTextFile(path As Pointer, text As Pointer) As Boolean
+Public Function WriteTextFile(path, text As Pointer) As Boolean
   Dim fp As Pointer = Fopen(path, "wb")
   If IsNull(fp) Then
     Return False
@@ -119,7 +117,7 @@ Public Function WriteTextFile(path As Pointer, text As Pointer) As Boolean
   Return True
 End Function
 
-Public Function RunVb(vbPath As Pointer, extraArgs As Pointer) As Integer
+Public Function RunVb(vbPath, extraArgs As Pointer) As Integer
   Dim comp(768) As Byte
   GetCompilerAbs(comp, 768)
 

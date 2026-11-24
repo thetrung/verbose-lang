@@ -10,123 +10,59 @@ Declare Function strtod(s As Pointer, endp As Pointer) As Double
 Declare Function memcpy(ByRef dst As Long, ByRef src As Double, n As Long) As Pointer
 
 Structure CgEnumInfo
-  Dim namePos As Integer
-  Dim nameLen As Integer
-  Dim memStart As Integer
-  Dim memCount As Integer
+  Dim namePos, nameLen, memStart, memCount As Integer
 End Structure
 
 Structure CgEnumMem
-  Dim namePos As Integer
-  Dim nameLen As Integer
-  Dim value As Integer
+  Dim namePos, nameLen, value As Integer
 End Structure
 
 Structure CgStructInfo
-  Dim namePos As Integer
-  Dim nameLen As Integer
-  Dim fieldStart As Integer
-  Dim fieldCount As Integer
+  Dim namePos, nameLen, fieldStart, fieldCount As Integer
 End Structure
 
 Structure CgFieldInfo
-  Dim namePos As Integer
-  Dim nameLen As Integer
-  Dim ty As TypeInfo
+  Dim namePos, nameLen As Integer, ty As TypeInfo
 End Structure
 
 Structure CgGlobalInfo
-  Dim namePos As Integer
-  Dim nameLen As Integer
-  Dim isPublic As Integer
-  Dim isPrivate As Integer
-  Dim modId As Integer
-  Dim ty As TypeInfo
-  Dim initNode As Integer
+  Dim namePos, nameLen, isPublic, isPrivate, modId, initNode As Integer, ty As TypeInfo
 End Structure
 
 Structure CgParamInfo
-  Dim isByRef As Integer
-  Dim namePos As Integer
-  Dim nameLen As Integer
-  Dim ty As TypeInfo
+  Dim isByRef, namePos, nameLen As Integer, ty As TypeInfo
 End Structure
 
 Structure CgFuncInfo
-  Dim namePos As Integer
-  Dim nameLen As Integer
-  Dim isExtern As Integer
-  Dim isVariadic As Integer
-  Dim isPublic As Integer
-  Dim isPrivate As Integer
-  Dim modId As Integer
+  Dim namePos, nameLen, isExtern, isVariadic, isPublic, isPrivate, modId, paramStart, paramCount As Integer
   Dim retTy As TypeInfo
-  Dim paramStart As Integer
-  Dim paramCount As Integer
 End Structure
 
 Structure CgLocalSym
-  Dim namePos As Integer
-  Dim nameLen As Integer
-  Dim slotReg As Integer      ' >0 => %r<slotReg>, <0 => param %p<-(slotReg+1)>
-  Dim isIndirect As Integer   ' 1 for local/global unsized slice slot holding ptr
-  Dim staticPlusOne As Integer ' >0 => @__vb_static_<staticPlusOne - 1>
-  Dim ty As TypeInfo
+  Dim namePos, nameLen, slotReg, isIndirect, staticPlusOne As Integer, ty As TypeInfo
 End Structure
 
 Structure CgStaticLocal
-  Dim ty As TypeInfo
-  Dim initNode As Integer
+  Dim ty As TypeInfo, initNode As Integer
 End Structure
 
 Structure CgStrConst
-  Dim srcPos As Integer
-  Dim srcLen As Integer
-  Dim byteLen As Integer
+  Dim srcPos, srcLen, byteLen As Integer
 End Structure
 
-Private Static cg_out As Pointer
-Private Static cg_reg As Integer = 1
-Private Static cg_lbl As Integer = 1
-Private Static cg_usesArena As Integer = 0
-Private Static cg_usesAssert As Integer = 0
-Private Static cg_usesStrConcat As Integer = 0
-Private Static cg_testMode As Integer = 0
-Private Static cg_inTestFn As Integer = 0
-Private Static cg_testCount As Integer = 0
-Private Static cg_curModId As Integer = 0
-Private Static cg_curRetTy As TypeInfo
+Private Static cg_out As Pointer, cg_curRetTy As TypeInfo
+Private Static cg_reg = 1, cg_lbl = 1, cg_usesArena = 0, cg_usesAssert = 0, cg_usesStrConcat = 0, cg_testMode = 0, cg_inTestFn = 0, cg_testCount = 0, cg_curModId = 0 As Integer
 
 Public Sub CgSetTestMode(enabled As Integer)
   cg_testMode = enabled
 End Sub
 
-Private Static cg_enums() As CgEnumInfo
-Private Static cg_enumCount As Integer = 0
-Private Static cg_enumMems() As CgEnumMem
-Private Static cg_enumMemCount As Integer = 0
-
-Private Static cg_structs() As CgStructInfo
-Private Static cg_structCount As Integer = 0
-Private Static cg_fields() As CgFieldInfo
-Private Static cg_fieldCount As Integer = 0
-
-Private Static cg_globals() As CgGlobalInfo
-Private Static cg_globalCount As Integer = 0
-
-Private Static cg_funcs() As CgFuncInfo
-Private Static cg_funcCount As Integer = 0
-Private Static cg_params() As CgParamInfo
-Private Static cg_paramCount As Integer = 0
-
-Private Static cg_locals() As CgLocalSym
-Private Static cg_localCount As Integer = 0
-
-Private Static cg_strs() As CgStrConst
-Private Static cg_strCount As Integer = 0
-
-Private Static cg_staticLocals() As CgStaticLocal
-Private Static cg_staticLocalCount As Integer = 0
+Private Static cg_enums() As CgEnumInfo, cg_enumMems() As CgEnumMem
+Private Static cg_structs() As CgStructInfo, cg_fields() As CgFieldInfo
+Private Static cg_globals() As CgGlobalInfo, cg_funcs() As CgFuncInfo
+Private Static cg_params() As CgParamInfo, cg_locals() As CgLocalSym
+Private Static cg_strs() As CgStrConst, cg_staticLocals() As CgStaticLocal
+Private Static cg_enumCount, cg_enumMemCount, cg_structCount, cg_fieldCount, cg_globalCount, cg_funcCount, cg_paramCount, cg_localCount, cg_strCount, cg_staticLocalCount As Integer = 0
 
 Private Function CgNextReg() As Integer
   Dim r As Integer = cg_reg
@@ -140,7 +76,7 @@ Private Function CgNextLbl() As Integer
   Return l
 End Function
 
-Private Sub CgEmitSlice(pos As Integer, slen As Integer)
+Private Sub CgEmitSlice(pos, slen As Integer)
   Dim i As Integer = 0
   While i < slen Do
     Dim ch As Integer = g_srcPool(pos + i)
@@ -149,14 +85,14 @@ Private Sub CgEmitSlice(pos As Integer, slen As Integer)
   End While
 End Sub
 
-Private Sub CgEmitSymName(pos As Integer, slen As Integer, modId As Integer, isPrivate As Integer)
+Private Sub CgEmitSymName(pos, slen, modId, isPrivate As Integer)
   If (isPrivate = 1) And (modId > 0) Then
     fprintf(cg_out, "__mod%d_", modId)
   End If
   CgEmitSlice(pos, slen)
 End Sub
 
-Private Function CgFindEnum(pos As Integer, slen As Integer) As Integer
+Private Function CgFindEnum(pos, slen As Integer) As Integer
   Dim i As Integer = 0
   While i < cg_enumCount Do
     If SlicesEqual(cg_enums(i).namePos, cg_enums(i).nameLen, pos, slen) Then
@@ -167,10 +103,8 @@ Private Function CgFindEnum(pos As Integer, slen As Integer) As Integer
   Return -1
 End Function
 
-Private Function CgFindEnumVal(enumIdx As Integer, memPos As Integer, memLen As Integer, ByRef outVal As Integer) As Boolean
-  Dim st As Integer = cg_enums(enumIdx).memStart
-  Dim cnt As Integer = cg_enums(enumIdx).memCount
-  Dim i As Integer = 0
+Private Function CgFindEnumVal(enumIdx, memPos, memLen As Integer, ByRef outVal As Integer) As Boolean
+  Dim st = cg_enums(enumIdx).memStart, cnt = cg_enums(enumIdx).memCount, i = 0 As Integer
   While i < cnt Do
     If SlicesEqual(cg_enumMems(st + i).namePos, cg_enumMems(st + i).nameLen, memPos, memLen) Then
       outVal = cg_enumMems(st + i).value
@@ -181,7 +115,7 @@ Private Function CgFindEnumVal(enumIdx As Integer, memPos As Integer, memLen As 
   Return False
 End Function
 
-Private Function CgFindStruct(pos As Integer, slen As Integer) As Integer
+Private Function CgFindStruct(pos, slen As Integer) As Integer
   Dim i As Integer = 0
   While i < cg_structCount Do
     If SlicesEqual(cg_structs(i).namePos, cg_structs(i).nameLen, pos, slen) Then
@@ -192,10 +126,8 @@ Private Function CgFindStruct(pos As Integer, slen As Integer) As Integer
   Return -1
 End Function
 
-Private Function CgFindStructField(structIdx As Integer, fPos As Integer, fLen As Integer, ByRef outTy As TypeInfo) As Integer
-  Dim st As Integer = cg_structs(structIdx).fieldStart
-  Dim cnt As Integer = cg_structs(structIdx).fieldCount
-  Dim i As Integer = 0
+Private Function CgFindStructField(structIdx, fPos, fLen As Integer, ByRef outTy As TypeInfo) As Integer
+  Dim st = cg_structs(structIdx).fieldStart, cnt = cg_structs(structIdx).fieldCount, i = 0 As Integer
   While i < cnt Do
     If SlicesEqual(cg_fields(st + i).namePos, cg_fields(st + i).nameLen, fPos, fLen) Then
       outTy = cg_fields(st + i).ty
@@ -206,7 +138,7 @@ Private Function CgFindStructField(structIdx As Integer, fPos As Integer, fLen A
   Return -1
 End Function
 
-Private Function CgFindGlobal(pos As Integer, slen As Integer) As Integer
+Private Function CgFindGlobal(pos, slen As Integer) As Integer
   Dim i As Integer = 0
   While i < cg_globalCount Do
     If (cg_globals(i).isPrivate = 1) And (cg_globals(i).modId = cg_curModId) And SlicesEqual(cg_globals(i).namePos, cg_globals(i).nameLen, pos, slen) Then
@@ -224,7 +156,7 @@ Private Function CgFindGlobal(pos As Integer, slen As Integer) As Integer
   Return -1
 End Function
 
-Private Function CgFindFunc(pos As Integer, slen As Integer) As Integer
+Private Function CgFindFunc(pos, slen As Integer) As Integer
   Dim i As Integer = 0
   While i < cg_funcCount Do
     If (cg_funcs(i).isPrivate = 1) And (cg_funcs(i).modId = cg_curModId) And SlicesEqual(cg_funcs(i).namePos, cg_funcs(i).nameLen, pos, slen) Then
@@ -242,7 +174,7 @@ Private Function CgFindFunc(pos As Integer, slen As Integer) As Integer
   Return -1
 End Function
 
-Private Function CgFindLocal(pos As Integer, slen As Integer) As Integer
+Private Function CgFindLocal(pos, slen As Integer) As Integer
   Dim i As Integer = cg_localCount - 1
   While i >= 0 Do
     If SlicesEqual(cg_locals(i).namePos, cg_locals(i).nameLen, pos, slen) Then
@@ -253,7 +185,7 @@ Private Function CgFindLocal(pos As Integer, slen As Integer) As Integer
   Return -1
 End Function
 
-Private Function CgResolveType(rawKind As Integer, arrLen As Integer, nPos As Integer, nLen As Integer) As TypeInfo
+Private Function CgResolveType(rawKind, arrLen, nPos, nLen As Integer) As TypeInfo
   Dim res As TypeInfo With (
     kind = rawKind,
     typeIdx = -1,

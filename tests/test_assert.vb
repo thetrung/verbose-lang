@@ -3,8 +3,7 @@
 Include "harness.vb"
 
 Private Structure Pair
-  Dim a As Integer
-  Dim b As Integer
+  Dim a, b As Integer
 End Structure
 
 Private Function AddPair(p As Pair) As Integer
@@ -58,14 +57,9 @@ Test "failing Assert inside Test reports line, message, continues other tests, a
 End Test
 
 Test "Assert in normal main() aborts with exit 1 on failure and passes when true"
-  Dim comp(768) As Byte
+  Dim comp(768), okFile(256), badFile(256), outBin(256), okLl(256), badLl(256) As Byte
   GetCompilerAbs(comp, 768)
   Dim pid As Integer = getpid()
-  Dim okFile(256) As Byte
-  Dim badFile(256) As Byte
-  Dim outBin(256) As Byte
-  Dim okLl(256) As Byte
-  Dim badLl(256) As Byte
   snprintf(okFile, 256, "/tmp/vb_assert_ok_%d.vb", pid)
   snprintf(okLl, 256, "/tmp/vb_assert_ok_%d.ll", pid)
   snprintf(badFile, 256, "/tmp/vb_assert_bad_%d.vb", pid)
@@ -95,12 +89,9 @@ Test "Assert in normal main() aborts with exit 1 on failure and passes when true
 End Test
 
 Test "file with both main() and Test blocks runs main normally and Tests in test mode"
-  Dim comp(768) As Byte
+  Dim comp(768), dualFile(256), dualLl(256), dualBin(256) As Byte
   GetCompilerAbs(comp, 768)
   Dim pid As Integer = getpid()
-  Dim dualFile(256) As Byte
-  Dim dualLl(256) As Byte
-  Dim dualBin(256) As Byte
   snprintf(dualFile, 256, "/tmp/vb_dual_%d.vb", pid)
   snprintf(dualLl, 256, "/tmp/vb_dual_%d.ll", pid)
   snprintf(dualBin, 256, "/tmp/vb_dual_bin_%d", pid)
@@ -129,11 +120,9 @@ Test "file with both main() and Test blocks runs main normally and Tests in test
 End Test
 
 Test "Type Analyzer validates Assert condition and message types"
-  Dim comp(768) As Byte
+  Dim comp(768), badCond(256), badMsg(256) As Byte
   GetCompilerAbs(comp, 768)
   Dim pid As Integer = getpid()
-  Dim badCond(256) As Byte
-  Dim badMsg(256) As Byte
   snprintf(badCond, 256, "/tmp/vb_ta_acond_%d.vb", pid)
   snprintf(badMsg, 256, "/tmp/vb_ta_amsg_%d.vb", pid)
 

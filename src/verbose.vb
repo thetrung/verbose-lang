@@ -8,11 +8,11 @@ Include "type_analyzer.vb"
 Include "codegen.vb"
 
 Declare Function system(cmd As Pointer) As Integer
-Declare Function strcmp(a As Pointer, b As Pointer) As Integer
-Declare Function strncmp(a As Pointer, b As Pointer, n As Long) As Integer
+Declare Function strcmp(a, b As Pointer) As Integer
+Declare Function strncmp(a, b As Pointer, n As Long) As Integer
 Declare Function strlen(s As Pointer) As Long
 Declare Function getpid() As Integer
-Declare Function popen(cmd As Pointer, mode As Pointer) As Pointer
+Declare Function popen(cmd, mode As Pointer) As Pointer
 Declare Function pclose(fp As Pointer) As Integer
 Declare Function unlink(path As Pointer) As Integer
 Declare Function fflush(fp As Pointer) As Integer
@@ -22,15 +22,12 @@ Private Sub PrintUsage()
   Printf(MSG_CLI_USAGE)
 End Sub
 
-Private Function CliHasSuffix(s As Pointer, suf As Pointer) As Boolean
-  Dim slen As Long = strlen(s)
-  Dim flen As Long = strlen(suf)
+Private Function CliHasSuffix(s, suf As Pointer) As Boolean
+  Dim slen = strlen(s), flen = strlen(suf) As Long
   If slen < flen Then
     Return False
   End If
-  Dim start As Integer = slen - flen
-  Dim i As Integer = 0
-  Dim fInt As Integer = flen
+  Dim start = slen - flen, i = 0, fInt = flen As Integer
   While i < fInt Do
     If s(start + i) <> suf(i) Then
       Return False
@@ -41,8 +38,7 @@ Private Function CliHasSuffix(s As Pointer, suf As Pointer) As Boolean
 End Function
 
 Private Function CliHasSlash(s As Pointer) As Boolean
-  Dim slen As Integer = strlen(s)
-  Dim i As Integer = 0
+  Dim slen = strlen(s), i = 0 As Integer
   While i < slen Do
     If s(i) = 47 Then
       Return True
@@ -52,7 +48,7 @@ Private Function CliHasSlash(s As Pointer) As Boolean
   Return False
 End Function
 
-Private Sub CliAppendChar(buf As Pointer, ByRef pos As Integer, cap As Integer, ch As Integer)
+Private Sub CliAppendChar(buf As Pointer, ByRef pos As Integer, cap, ch As Integer)
   If pos < (cap - 1) Then
     buf(pos) = ch
     pos = pos + 1
@@ -61,8 +57,7 @@ Private Sub CliAppendChar(buf As Pointer, ByRef pos As Integer, cap As Integer, 
 End Sub
 
 Private Sub CliAppendStr(buf As Pointer, ByRef pos As Integer, cap As Integer, s As Pointer)
-  Dim slen As Integer = strlen(s)
-  Dim i As Integer = 0
+  Dim slen = strlen(s), i = 0 As Integer
   While i < slen Do
     CliAppendChar(buf, ByRef pos, cap, s(i))
     i = i + 1
@@ -71,8 +66,7 @@ End Sub
 
 Private Sub CliAppendQuoted(buf As Pointer, ByRef pos As Integer, cap As Integer, s As Pointer)
   CliAppendChar(buf, ByRef pos, cap, 39)
-  Dim slen As Integer = strlen(s)
-  Dim i As Integer = 0
+  Dim slen = strlen(s), i = 0 As Integer
   While i < slen Do
     Dim ch As Integer = s(i)
     If ch = 39 Then
@@ -85,14 +79,12 @@ Private Sub CliAppendQuoted(buf As Pointer, ByRef pos As Integer, cap As Integer
   CliAppendChar(buf, ByRef pos, cap, 39)
 End Sub
 
-Private Sub CliStripVbExt(src As Pointer, dst As Pointer, cap As Integer)
-  Dim slen As Integer = strlen(src)
-  Dim copyLen As Integer = slen
+Private Sub CliStripVbExt(src, dst As Pointer, cap As Integer)
+  Dim slen = strlen(src), copyLen = slen As Integer
   If CliHasSuffix(src, ".vb") Then
     copyLen = slen - 3
   End If
-  Dim pos As Integer = 0
-  Dim i As Integer = 0
+  Dim pos = 0, i = 0 As Integer
   While i < copyLen Do
     CliAppendChar(dst, ByRef pos, cap, src(i))
     i = i + 1
@@ -136,7 +128,7 @@ Private Function CliCountTests(progRoot As Integer) As Integer
   Return cnt
 End Function
 
-Private Function RunSingleTarget(inPath As Pointer, testMode As Integer, showAst As Integer, showIr As Integer, showTa As Integer, skipTa As Integer, emitOnly As Integer, noRun As Integer, outPath As Pointer, extraInputs() As Pointer, extraInputCount As Integer, clangFlags() As Pointer, clangFlagCount As Integer) As Integer
+Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, showTa, skipTa, emitOnly, noRun As Integer, outPath As Pointer, extraInputs() As Pointer, extraInputCount As Integer, clangFlags() As Pointer, clangFlagCount As Integer) As Integer
   ' 32 MiB deterministic Arena for all source pools, tokens, AST nodes, and symbol tables
   Dim arena As Arena = ArenaCreate(33554432)
   Dim tokCount As Integer = LexerLoadEntry(ByRef arena, inPath)
@@ -181,14 +173,9 @@ Private Function RunSingleTarget(inPath As Pointer, testMode As Integer, showAst
   CgSetTestMode(testMode)
 
   ' Determine .ll and binary output paths
-  Dim baseBuf(512) As Byte
+  Dim baseBuf(512), llPathBuf(512) As Byte
   CliStripVbExt(inPath, baseBuf, 512)
-
-  Dim llPathBuf(512) As Byte
-  Dim llPos As Integer = 0
-  Dim cleanupLl As Integer = 0
-  Dim cleanupBin As Integer = 0
-  Dim pid As Integer = getpid()
+  Dim llPos = 0, cleanupLl = 0, cleanupBin = 0, pid = getpid() As Integer
 
   If (emitOnly = 1) And (Not IsNull(outPath)) Then
     CliAppendStr(llPathBuf, ByRef llPos, 512, outPath)
@@ -299,7 +286,7 @@ Private Function RunSingleTarget(inPath As Pointer, testMode As Integer, showAst
   Return 0
 End Function
 
-Private Function RunTestDirectory(dirPath As Pointer, showAst As Integer, showIr As Integer, showTa As Integer, skipTa As Integer, emitOnly As Integer, noRun As Integer, extraInputs() As Pointer, extraInputCount As Integer, clangFlags() As Pointer, clangFlagCount As Integer) As Integer
+Private Function RunTestDirectory(dirPath As Pointer, showAst, showIr, showTa, skipTa, emitOnly, noRun As Integer, extraInputs() As Pointer, extraInputCount As Integer, clangFlags() As Pointer, clangFlagCount As Integer) As Integer
   ' Trim trailing slashes unless path is "/"
   Dim cleanDir(512) As Byte
   Dim dlen As Integer = strlen(dirPath)
@@ -388,20 +375,10 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
     Return 0
   End If
 
-  Dim testMode As Integer = 0
-  Dim showAst As Integer = 0
-  Dim showIr As Integer = 0
-  Dim showTa As Integer = 0
-  Dim skipTa As Integer = 0
-  Dim emitOnly As Integer = 0
-  Dim noRun As Integer = 0
-  Dim targets(64) As Pointer
-  Dim targetCount As Integer = 0
+  Dim testMode, showAst, showIr, showTa, skipTa, emitOnly, noRun As Integer = 0
+  Dim targets(64), extraInputs(32), clangFlags(32) As Pointer
+  Dim targetCount, extraInputCount, clangFlagCount As Integer = 0
   Dim outPath As Pointer = 0
-  Dim extraInputs(32) As Pointer
-  Dim extraInputCount As Integer = 0
-  Dim clangFlags(32) As Pointer
-  Dim clangFlagCount As Integer = 0
 
   LexerClearIncludeDirs()
 

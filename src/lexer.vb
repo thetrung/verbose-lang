@@ -8,25 +8,15 @@ Declare Function fseek(fp As Pointer, offset As Long, whence As Integer) As Inte
 Declare Function ftell(fp As Pointer) As Long
 Declare Function fread(buf As Pointer, size As Long, count As Long, fp As Pointer) As Long
 
-Public Static g_srcPool As Pointer
-Public Static g_srcPoolLen As Integer
-Public Static g_srcPoolCap As Integer
-
-Public Static g_tokens() As Token
-Public Static g_tokCount As Integer
-Public Static g_tokCap As Integer
+Public Static g_srcPool As Pointer, g_srcPoolLen, g_srcPoolCap As Integer
+Public Static g_tokens() As Token, g_tokCount, g_tokCap As Integer
 
 Structure LoadedFile
-  Dim pathPos As Integer
-  Dim pathLen As Integer
-  Dim inProgress As Integer
+  Dim pathPos, pathLen, inProgress As Integer
 End Structure
 
-Private Static lx_loaded(64) As LoadedFile
-Private Static lx_loadedCount As Integer = 0
-Private Static lx_curModId As Integer = 0
-Private Static lx_incDirs(32) As Pointer
-Private Static lx_incDirCount As Integer = 0
+Private Static lx_loaded(64) As LoadedFile, lx_incDirs(32) As Pointer
+Private Static lx_loadedCount = 0, lx_curModId = 0, lx_incDirCount = 0 As Integer
 
 Public Sub LexerClearIncludeDirs()
   lx_incDirCount = 0
@@ -83,14 +73,13 @@ Private Function LxIsAlnum(c As Integer) As Boolean
   Return LxIsAlpha(c) Or LxIsDigit(c)
 End Function
 
-Public Function SliceEqualsStr(pos As Integer, slen As Integer, lit As Pointer, litLen As Integer) As Boolean
+Public Function SliceEqualsStr(pos, slen As Integer, lit As Pointer, litLen As Integer) As Boolean
   If slen <> litLen Then
     Return False
   End If
   Dim i As Integer = 0
   While i < slen Do
-    Dim a As Integer = g_srcPool(pos + i)
-    Dim b As Integer = lit(i)
+    Dim a = g_srcPool(pos + i), b = lit(i) As Integer
     If a <> b Then
       Return False
     End If
@@ -99,14 +88,13 @@ Public Function SliceEqualsStr(pos As Integer, slen As Integer, lit As Pointer, 
   Return True
 End Function
 
-Public Function SlicesEqual(p1 As Integer, l1 As Integer, p2 As Integer, l2 As Integer) As Boolean
+Public Function SlicesEqual(p1, l1, p2, l2 As Integer) As Boolean
   If l1 <> l2 Then
     Return False
   End If
   Dim i As Integer = 0
   While i < l1 Do
-    Dim a As Integer = g_srcPool(p1 + i)
-    Dim b As Integer = g_srcPool(p2 + i)
+    Dim a = g_srcPool(p1 + i), b = g_srcPool(p2 + i) As Integer
     If a <> b Then
       Return False
     End If
@@ -115,7 +103,7 @@ Public Function SlicesEqual(p1 As Integer, l1 As Integer, p2 As Integer, l2 As I
   Return True
 End Function
 
-Private Function LxClassifyKeyword(pos As Integer, slen As Integer) As Integer
+Private Function LxClassifyKeyword(pos, slen As Integer) As Integer
   If SliceEqualsStr(pos, slen, "Include", 7) Then
     Return TokenKind.TkInclude
   End If
@@ -269,7 +257,7 @@ Private Function LxClassifyKeyword(pos As Integer, slen As Integer) As Integer
   Return TokenKind.TkIdent
 End Function
 
-Private Sub LxEmitTok(kind As Integer, pos As Integer, slen As Integer, ival As Integer, line As Integer)
+Private Sub LxEmitTok(kind, pos, slen, ival, line As Integer)
   If g_tokCount < g_tokCap Then
     g_tokens(g_tokCount) = Token With (
       kind = kind,
@@ -283,7 +271,7 @@ Private Sub LxEmitTok(kind As Integer, pos As Integer, slen As Integer, ival As 
   End If
 End Sub
 
-Private Function LxFindLoaded(pPos As Integer, pLen As Integer) As Integer
+Private Function LxFindLoaded(pPos, pLen As Integer) As Integer
   Dim i As Integer = 0
   While i < lx_loadedCount Do
     If SlicesEqual(lx_loaded(i).pathPos, lx_loaded(i).pathLen, pPos, pLen) Then
@@ -294,7 +282,7 @@ Private Function LxFindLoaded(pPos As Integer, pLen As Integer) As Integer
   Return -1
 End Function
 
-Private Function LxFileExists(pPos As Integer, pLen As Integer) As Boolean
+Private Function LxFileExists(pPos, pLen As Integer) As Boolean
   Dim pathBuf(512) As Byte
   Dim pi As Integer = 0
   While (pi < pLen) And (pi < 511) Do
@@ -330,11 +318,9 @@ Private Function LxCopyCStringToPool(s As Pointer) As Integer
 End Function
 
 ' Canonicalize path (collapse '.' and '..') into g_srcPool
-Private Function LxNormalizePath(rawPos As Integer, rawLen As Integer, ByRef outLen As Integer) As Integer
-  Dim segPos(64) As Integer
-  Dim segLen(64) As Integer
-  Dim segCnt As Integer = 0
-  Dim isAbs As Boolean = False
+Private Function LxNormalizePath(rawPos, rawLen As Integer, ByRef outLen As Integer) As Integer
+  Dim segPos(64), segLen(64) As Integer
+  Dim segCnt = 0 As Integer, isAbs = False As Boolean
   If (rawLen > 0) And (g_srcPool(rawPos) = 47) Then
     isAbs = True
   End If
@@ -406,7 +392,7 @@ Private Function LxNormalizePath(rawPos As Integer, rawLen As Integer, ByRef out
 End Function
 
 ' Resolve relPos..relPos+relLen relative to curPathPos..curPathPos+curPathLen into g_srcPool
-Private Function LxResolveRelPath(curPos As Integer, curLen As Integer, relPos As Integer, relLen As Integer, ByRef outLen As Integer) As Integer
+Private Function LxResolveRelPath(curPos, curLen, relPos, relLen As Integer, ByRef outLen As Integer) As Integer
   Dim startPos As Integer = g_srcPoolLen
   Dim firstRel As Integer = 0
   If relLen > 0 Then
@@ -443,7 +429,7 @@ Private Function LxResolveRelPath(curPos As Integer, curLen As Integer, relPos A
   Return LxNormalizePath(startPos, rawLen, ByRef outLen)
 End Function
 
-Private Function LxResolveIncludePath(curPos As Integer, curLen As Integer, incPos As Integer, incLen As Integer, ByRef outLen As Integer) As Integer
+Private Function LxResolveIncludePath(curPos, curLen, incPos, incLen As Integer, ByRef outLen As Integer) As Integer
   Dim candLen As Integer = 0
   Dim candPos As Integer = LxResolveRelPath(curPos, curLen, incPos, incLen, ByRef candLen)
   If LxFileExists(candPos, candLen) Then
@@ -501,7 +487,7 @@ Private Function LxResolveIncludePath(curPos As Integer, curLen As Integer, incP
   Return -1
 End Function
 
-Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen As Integer) As Integer
+Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer) As Integer
   Dim loadedIdx As Integer = LxFindLoaded(pathPos, pathLen)
   If loadedIdx >= 0 Then
     If lx_loaded(loadedIdx).inProgress = 1 Then

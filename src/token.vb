@@ -88,10 +88,5 @@ Public Enum TokenKind
 End Enum
 
 Public Structure Token
-  Dim kind As Integer
-  Dim pos As Integer
-  Dim len As Integer
-  Dim intVal As Integer
-  Dim line As Integer
-  Dim modId As Integer
+  Dim kind, pos, len, intVal, line, modId As Integer
 End Structure

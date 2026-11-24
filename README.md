@@ -1,5 +1,9 @@
 # VerBose Language
 
+[![CI](https://github.com/thetrung/verbose-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/thetrung/verbose-lang/actions/workflows/ci.yml)
+[![Release](https://github.com/thetrung/verbose-lang/actions/workflows/release.yml/badge.svg)](https://github.com/thetrung/verbose-lang/actions/workflows/release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/thetrung/verbose-lang)](https://github.com/thetrung/verbose-lang/releases/latest)
+
 Just Another Human-Readable Systems Programming Language — inspired by Visual Basic 6.0 / VB.NET, compiled directly to LLVM IR without a garbage collector, **brace-free**, and **100% self-hosted**!
 
 ---
@@ -9,7 +13,7 @@ Just Another Human-Readable Systems Programming Language — inspired by Visual 
 VerBose-Lang combines classic Visual Basic readability with deterministic, C-speed systems programming on top of LLVM:
 - **Zero GC**: Stack values, `Static` storage, explicit `HeapAlloc`/`HeapFree`, and a first-class deterministic `Arena` bump allocator.
 - **Native C FFI**: Direct `Declare Function`/`Sub` bindings with SysV x86-64 ByVal struct ABI lowering (including Raylib 5.x).
-- **100% Self-Hosted (`./verbose`)**: The compiler (`src/`) is written entirely in VerBose-Lang itself, includes a full semantic Type Analyzer, built-in `Test`/`Assure` test runner (`./verbose test`), and direct compile-and-run CLI, compiles itself to a byte-for-byte Stage 3 fixpoint, and passes **11/11** pure-VerBose test suites (**99** `Test` blocks, zero Python). The archival OCaml bootstrap compiler is preserved on the `stage0` branch.
+- **100% Self-Hosted (`./verbose`)**: The compiler (`src/`) is written entirely in VerBose-Lang itself, includes a full semantic Type Analyzer, built-in `Test`/`Assert` test runner (`./verbose test`), and direct compile-and-run CLI, compiles itself to a byte-for-byte Stage 3 fixpoint, and passes **12/12** pure-VerBose test suites (**105** `Test` blocks, zero Python). The archival OCaml bootstrap compiler is preserved on the `stage0` branch.
 
 See **[FEATURES.md](FEATURES.md)** for the full list of implemented language, compiler, and tooling features.
 
@@ -29,8 +33,7 @@ Public Enum Status
 End Enum
 
 Public Structure Vec2
-  Dim x As Single
-  Dim y As Single
+  Dim x, y As Single
 End Structure
 
 Public Structure Entity
@@ -122,8 +125,8 @@ End Function
 ```text
 verbose-lang/
 ├── .github/workflows/          # GitHub Actions CI & Release workflows (ci.yml, release.yml)
-├── src/                        # Self-hosted VerBose compiler (verbose, token, lexer, ast, printer, parser, type_analyzer, codegen)
-├── tests/                      # Pure-VerBose Test/Assure suites, regression cases & Raylib 5.x demo (tests/raylib/)
+├── src/                        # Self-hosted VerBose compiler (verbose, constants, token, lexer, ast, printer, parser, type_analyzer, codegen)
+├── tests/                      # Pure-VerBose Test/Assert suites, regression cases & Raylib 5.x demo (tests/raylib/)
 ├── prototype.vb                # Scratch prototype
 ├── makefile                    # Build, run, test, install, and dist targets
 ├── FEATURES.md                 # Full list of implemented language & compiler features
@@ -148,7 +151,7 @@ make build
 # Compile and execute any .vb file directly (default mode)
 ./verbose your_file.vb
 
-# Run built-in Test/Assure blocks in a file or directory (default: tests/)
+# Run built-in Test/Assert blocks in a file or directory (default: tests/)
 ./verbose test your_tests.vb
 ./verbose test
 
@@ -160,7 +163,7 @@ make install          # or: make install PREFIX=$HOME/.local
 make dist             # builds stripped dist/verbose, dist/verbose-linux-x86_64, dist/SHA256SUMS.txt
 
 # Run pure-VerBose test suites (zero Python!)
-make test             # runs ./verbose test (11/11 suites, 99 Test blocks)
+make test             # runs ./verbose test (12/12 suites, 105 Test blocks)
 make test-all         # Full pipeline: Stage 1-3 build fixpoint + make test
 ```
 
@@ -169,7 +172,7 @@ make test-all         # Full pipeline: Stage 1-3 build fixpoint + make test
 | Flag | Description |
 | --- | --- |
 | `verbose <file.vb>` | Type-check, emit `.ll`, compile with `clang -O2`, and **execute directly** |
-| `verbose test [file.vb \| dir]` | Compile & run built-in `Test`/`Assure` blocks (auto-discovers `test_*.vb`/`*_test.vb` in directories; default `tests`) |
+| `verbose test [file.vb \| dir]` | Compile & run built-in `Test`/`Assert` blocks (auto-discovers `test_*.vb`/`*_test.vb` in directories; default `tests`) |
 | `--test` | Alias for `verbose test` |
 | `--ast` | Pretty-print the parsed AST |
 | `--ir` | Print the generated LLVM IR to stdout |
