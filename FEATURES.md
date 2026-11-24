@@ -31,7 +31,7 @@ VerBose-Lang is a brace-free, VB6/VB.NET-inspired systems programming language c
 
 ## Compiler, Tooling & CI
 
-- **100% Self-Hosted Compiler (`src/`)**: 9-module compiler (`verbose.vb`, `constants.vb`, `token.vb`, `lexer.vb`, `ast.vb`, `printer.vb`, `parser.vb`, `type_analyzer.vb`, `codegen.vb`) backed by a single 32 MiB deterministic `Arena`. Verified to a byte-for-byte Stage 3 self-hosting fixpoint and passing pure-VerBose test suites via `./verbose test` with zero Python. The original OCaml Stage 0 bootstrap compiler is preserved on the `stage0` git branch.
+- **100% Self-Hosted Compiler (`src/`)**: 9-module compiler (`verbose.vb`, `constants.vb`, `token.vb`, `lexer.vb`, `ast.vb`, `printer.vb`, `parser.vb`, `type_analyzer.vb`, `codegen.vb`) backed by a single 32 MiB deterministic `Arena`. Compiles itself to a byte-for-byte Stage 3 self-hosting fixpoint and passes **18/18** pure-VerBose test suites (**145** `Test` blocks + **6/6** bootstrap tests) via `./verbose test` with zero OCaml or Python dependencies. The archival OCaml Stage 0 bootstrap compiler is preserved on the `stage0` git branch.
 - **Cross-Compilation & Target Triples**:
   - Target presets via `--target <name>` / `--target=<name>`: `linux-x86_64` (default), `macos-arm64` (Apple Silicon), and `arm-m` (bare-metal 32-bit Cortex-M / Thumbv7EM).
   - Target-specific LLVM `target datalayout` and `target triple` emission, eliminating `clang -Woverride-module` warnings.

@@ -4,22 +4,15 @@
 [![Release](https://github.com/thetrung/verbose-lang/actions/workflows/release.yml/badge.svg)](https://github.com/thetrung/verbose-lang/actions/workflows/release.yml)
 [![Latest Release](https://img.shields.io/github/v/release/thetrung/verbose-lang)](https://github.com/thetrung/verbose-lang/releases/latest)
 
-A Human-Readable Programming Language — inspired by Visual Basic, compiled directly to LLVM-IR without a garbage collector, **brace-free**, and **100% self-hosted**!
+A Human-Readable Language inspired by Visual Basic, compiled directly to LLVM-IR without a garbage collector, **brace-free**, and **100% self-hosted**!
 
 ---
 
 ## Overview
 
-VerBose-Lang combines classic Visual Basic readability with deterministic, C-speed systems programming on top of LLVM:
-- **Zero GC**: Stack values, `Static` storage, explicit `HeapAlloc`/`HeapFree`, and a first-class deterministic `Arena` bump allocator.
-- **Cross-Compilation & Target Triples**: First-class target support via `--target` for Linux x86-64, macOS arm64, and bare-metal 32-bit ARM-M microcontrollers (with `-c` object emission and zero `clang -Woverride-module` warnings).
-- **Volatile, MMIO & Low-Level Primitives**: `Volatile Dim`/`Static`, fixed-address `At <addr>` MMIO mapping, `VolatileLoad`/`VolatileStore`, `AddressOf`, `PtrRead`/`PtrWrite`/`PtrAdd`, and function-scoped `Label`/`GoTo`.
-- **Structured Concurrency (`Async`/`Await`)**: Zero-GC `Async Function`/`Sub`, `Task(T)`/`Task`, and `Await` — true `pthread` parallelism on Linux/macOS and zero-dependency deferred thunks on freestanding `arm-m`.
-- **Standard Library (`std/`)**: Pure-VerBose, zero-GC, Arena-backed standard library modules for strings (`std/strings.vb`), pure math (`std/math.vb`), collections (`std/collections.vb`), and file/console I/O (`std/io.vb`).
-- **Native C FFI**: Direct `Declare Function`/`Sub` bindings with SysV x86-64 ByVal struct ABI lowering (including Raylib 5.x).
-- **100% Self-Hosted (`./verbose`)**: The compiler (`src/`) is written entirely in VerBose-Lang itself, includes a full semantic Type Analyzer, built-in `Test`/`Assert` test runner (`./verbose test`), and direct compile-and-run CLI, compiles itself to a byte-for-byte Stage 3 fixpoint, and passes **18/18** pure-VerBose test suites (**145** `Test` blocks, zero Python). The archival OCaml bootstrap compiler is preserved on the `stage0` branch.
+Verbose-Lang pairs Visual Basic's brace-free readability with C-speed, zero-GC systems programming directly on LLVM IR. It compiles natively for Linux x86-64, macOS arm64, and bare-metal 32-bit ARM-M, providing deterministic memory (`Static`, `Heap`, `Arena`), hardware MMIO (`Volatile`, `At`), native C FFI, structured `Async`/`Await` concurrency, a pure-VerBose standard library (`std/`), and built-in `Test`/`Assert` suites. The compiler (`./verbose`) is 100% self-hosted in VerBose-Lang itself with zero OCaml or Python dependencies.
 
-See **[FEATURES.md](FEATURES.md)** for the full list of implemented language, compiler, and tooling features.
+See **[FEATURES.md](FEATURES.md)** for the complete feature catalog.
 
 ---
 
