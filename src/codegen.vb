@@ -51,7 +51,7 @@ Structure CgStrConst
 End Structure
 
 Private Static cg_out As Pointer, cg_curRetTy As TypeInfo
-Private Static cg_reg = 1, cg_lbl = 1, cg_usesArena = 0, cg_usesAssert = 0, cg_usesStrConcat = 0, cg_usesAsync = 0, cg_blockEnded = 0, cg_testMode = 0, cg_inTestFn = 0, cg_testCount = 0, cg_curModId = 0 As Integer
+Private Static cg_reg = 1, cg_lbl = 1, cg_usesArena = 0, cg_usesAssert = 0, cg_usesStrConcat = 0, cg_usesStrInterp = 0, cg_usesAsync = 0, cg_blockEnded = 0, cg_testMode = 0, cg_inTestFn = 0, cg_testCount = 0, cg_curModId = 0 As Integer
 Private Static cg_target = 0, cg_ptrSize = 8, cg_ptrAlign = 8, cg_isFreestanding = 0 As Integer
 Private Static cg_usesPrintf = 0, cg_usesMalloc = 0, cg_usesCalloc = 0, cg_usesRealloc = 0, cg_usesFree = 0, cg_usesFopen = 0, cg_usesGetc = 0, cg_usesPutc = 0 As Integer
 
@@ -788,6 +788,19 @@ Private Sub CgCollectStrings(id As Integer)
     g_nodes(id).op = sid
     Return
   End If
+  If k = NodeKind.NdStrInterp Then
+    cg_usesStrInterp = 1
+    cg_usesCalloc = 1
+    Dim ii As Integer = 0
+    While ii < g_nodes(id).childCount Do
+      Dim ch As Integer = g_kids(g_nodes(id).firstChild + ii)
+      If g_nodes(ch).kind <> NodeKind.NdStrLit Then
+        CgCollectStrings(ch)
+      End If
+      ii = ii + 1
+    End While
+    Return
+  End If
   If k = NodeKind.NdStaticDim Then
     Dim sid As Integer = cg_staticLocalCount
     g_nodes(id).op = sid
@@ -874,9 +887,9 @@ Private Sub CgCollectStrings(id As Integer)
   End While
 End Sub
 
-Private Sub CgEmitStringGlobals()
-  Dim i As Integer = 0
-  While i < cg_strCount Do
+Private Sub CgEmitStringGlobalsRange(startIdx, endIdx As Integer)
+  Dim i As Integer = startIdx
+  While i < endIdx Do
     Dim sp As Integer = cg_strs(i).srcPos
     Dim sl As Integer = cg_strs(i).srcLen
     Dim bl As Integer = cg_strs(i).byteLen
@@ -916,6 +929,25 @@ Private Sub CgEmitStringGlobals()
       End If
     End While
     fprintf(cg_out, "\\00\", align 1\n")
+    i = i + 1
+  End While
+End Sub
+
+Private Sub CgEmitStringGlobals()
+  CgEmitStringGlobalsRange(0, cg_strCount)
+End Sub
+
+Private Sub CgAppendPoolChar(ch As Integer)
+  If g_srcPoolLen < (g_srcPoolCap - 1) Then
+    g_srcPool(g_srcPoolLen) = ch
+    g_srcPoolLen = g_srcPoolLen + 1
+  End If
+End Sub
+
+Private Sub CgAppendPoolStr(s As Pointer, slen As Integer)
+  Dim i As Integer = 0
+  While i < slen Do
+    CgAppendPoolChar(s(i))
     i = i + 1
   End While
 End Sub
@@ -1422,6 +1454,155 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     fprintf(cg_out, "  %%r%d = getelementptr inbounds [%d x i8], ptr @.str_%d, i64 0, i64 0\n", r, bl, sid)
     outTy = TypeInfo With ( kind = TypeKind.TyPointer, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
+  End If
+
+  If k = NodeKind.NdStrInterp Then
+    cg_usesStrInterp = 1
+    cg_usesCalloc = 1
+    Dim pStart As Integer = g_nodes(id).firstChild
+    Dim pCount As Integer = g_nodes(id).childCount
+    Dim argRegs(64), argKinds(64) As Integer
+    Dim argTys(64) As TypeInfo
+    Dim argCount As Integer = 0
+    Dim ptrTy As TypeInfo With ( kind = TypeKind.TyPointer, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+
+    ' Pass 1: Evaluate all interpolated expressions before writing format string to g_srcPool
+    Dim pi As Integer = 0
+    While pi < pCount Do
+      Dim ch As Integer = g_kids(pStart + pi)
+      If g_nodes(ch).kind <> NodeKind.NdStrLit Then
+        Dim aTy As TypeInfo
+        Dim aReg As Integer = CgEmitExpr(ch, ByRef aTy)
+        If (aTy.arrLen = 0) And (aTy.kind = TypeKind.TyBoolean) Then
+          Dim bSel As Integer = CgNextReg()
+          fprintf(cg_out, "  %%r%d = select i1 %%r%d, ptr @__vb_true_str, ptr @__vb_false_str\n", bSel, aReg)
+          argRegs(argCount) = bSel
+          argTys(argCount) = ptrTy
+          argKinds(argCount) = 4
+        Else
+          If ((aTy.arrLen = 0) And (aTy.kind = TypeKind.TyPointer)) Or ((aTy.arrLen <> 0) And (aTy.kind = TypeKind.TyByte)) Then
+            Dim nCmp As Integer = CgNextReg()
+            Dim nSel As Integer = CgNextReg()
+            fprintf(cg_out, "  %%r%d = icmp eq ptr %%r%d, null\n", nCmp, aReg)
+            fprintf(cg_out, "  %%r%d = select i1 %%r%d, ptr @__vb_empty_str, ptr %%r%d\n", nSel, nCmp, aReg)
+            argRegs(argCount) = nSel
+            argTys(argCount) = ptrTy
+            argKinds(argCount) = 4
+          Else
+            If aTy.kind = TypeKind.TyLong Then
+              argRegs(argCount) = aReg
+              argTys(argCount) = aTy
+              argKinds(argCount) = 2
+            Else
+              If (aTy.kind = TypeKind.TySingle) Or (aTy.kind = TypeKind.TyDouble) Then
+                aReg = CgPromoteVariadic(aReg, ByRef aTy)
+                argRegs(argCount) = aReg
+                argTys(argCount) = aTy
+                argKinds(argCount) = 3
+              Else
+                aReg = CgPromoteVariadic(aReg, ByRef aTy)
+                argRegs(argCount) = aReg
+                argTys(argCount) = aTy
+                argKinds(argCount) = 1
+              End If
+            End If
+          End If
+        End If
+        argCount = argCount + 1
+      End If
+      pi = pi + 1
+    End While
+
+    ' Pass 2: Build synthesized printf format string contiguously in g_srcPool
+    Dim fmtStart As Integer = g_srcPoolLen
+    Dim ai As Integer = 0
+    pi = 0
+    While pi < pCount Do
+      Dim ch As Integer = g_kids(pStart + pi)
+      If g_nodes(ch).kind = NodeKind.NdStrLit Then
+        Dim sp = g_nodes(ch).intVal, sl = g_nodes(ch).lenVal, j = 0 As Integer
+        While j < sl Do
+          Dim b As Integer = g_srcPool(sp + j)
+          If (b = 92) And ((j + 1) < sl) Then
+            CgAppendPoolChar(b)
+            CgAppendPoolChar(g_srcPool(sp + j + 1))
+            j = j + 2
+          Else
+            If b = 37 Then
+              CgAppendPoolChar(37)
+              CgAppendPoolChar(37)
+            Else
+              CgAppendPoolChar(b)
+            End If
+            j = j + 1
+          End If
+        End While
+      Else
+        Select Case argKinds(ai)
+          Case 2
+            CgAppendPoolStr("%lld", 4)
+          Case 3
+            CgAppendPoolStr("%g", 2)
+          Case 4
+            CgAppendPoolStr("%s", 2)
+          Case Else
+            CgAppendPoolStr("%d", 2)
+        End Select
+        ai = ai + 1
+      End If
+      pi = pi + 1
+    End While
+    Dim fmtLen As Integer = g_srcPoolLen - fmtStart
+    Dim fmtSid As Integer = CgRegisterString(fmtStart, fmtLen)
+    Dim fmtBl As Integer = cg_strs(fmtSid).byteLen
+
+    ' Pass 3: Exact-sized two-pass snprintf + calloc
+    Dim fmtPtr As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = getelementptr inbounds [%d x i8], ptr @.str_%d, i64 0, i64 0\n", fmtPtr, fmtBl, fmtSid)
+    Dim szTyStr As Pointer = "i64"
+    If cg_ptrSize = 4 Then
+      szTyStr = "i32"
+    End If
+    Dim lenReg As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = call i32 (ptr, %s, ptr, ...) @snprintf(ptr null, %s 0, ptr %%r%d", lenReg, szTyStr, szTyStr, fmtPtr)
+    ai = 0
+    While ai < argCount Do
+      fprintf(cg_out, ", ")
+      CgEmitLlvmType(argTys(ai))
+      fprintf(cg_out, " %%r%d", argRegs(ai))
+      ai = ai + 1
+    End While
+    fprintf(cg_out, ")\n")
+
+    Dim posCmp = CgNextReg(), safeLen = CgNextReg(), len64 = CgNextReg(), tot64 = CgNextReg(), bufReg = CgNextReg() As Integer
+    fprintf(cg_out, "  %%r%d = icmp sgt i32 %%r%d, 0\n", posCmp, lenReg)
+    fprintf(cg_out, "  %%r%d = select i1 %%r%d, i32 %%r%d, i32 0\n", safeLen, posCmp, lenReg)
+    fprintf(cg_out, "  %%r%d = sext i32 %%r%d to i64\n", len64, safeLen)
+    fprintf(cg_out, "  %%r%d = add i64 %%r%d, 1\n", tot64, len64)
+    fprintf(cg_out, "  %%r%d = call ptr @calloc(i64 %%r%d, i64 1)\n", bufReg, tot64)
+
+    Dim nullCmp = CgNextReg(), lFill = CgNextLbl(), lDone = CgNextLbl() As Integer
+    fprintf(cg_out, "  %%r%d = icmp eq ptr %%r%d, null\n", nullCmp, bufReg)
+    fprintf(cg_out, "  br i1 %%r%d, label %%L%d, label %%L%d\n", nullCmp, lDone, lFill)
+    fprintf(cg_out, "L%d:\n", lFill)
+    Dim totSzReg As Integer = tot64
+    If cg_ptrSize = 4 Then
+      totSzReg = CgNextReg()
+      fprintf(cg_out, "  %%r%d = trunc i64 %%r%d to i32\n", totSzReg, tot64)
+    End If
+    fprintf(cg_out, "  call i32 (ptr, %s, ptr, ...) @snprintf(ptr %%r%d, %s %%r%d, ptr %%r%d", szTyStr, bufReg, szTyStr, totSzReg, fmtPtr)
+    ai = 0
+    While ai < argCount Do
+      fprintf(cg_out, ", ")
+      CgEmitLlvmType(argTys(ai))
+      fprintf(cg_out, " %%r%d", argRegs(ai))
+      ai = ai + 1
+    End While
+    fprintf(cg_out, ")\n")
+    fprintf(cg_out, "  br label %%L%d\n", lDone)
+    fprintf(cg_out, "L%d:\n", lDone)
+    outTy = ptrTy
+    Return bufReg
   End If
 
   If k = NodeKind.NdVar Then
@@ -3436,6 +3617,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   cg_usesArena = 0
   cg_usesAssert = 0
   cg_usesStrConcat = 0
+  cg_usesStrInterp = 0
   cg_usesAsync = 0
   cg_blockEnded = 0
   cg_usesPrintf = 0
@@ -3734,6 +3916,10 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
 
   ' Emit string literal globals
   CgEmitStringGlobals()
+  Dim interpFmtStart As Integer = cg_strCount
+  If cg_usesStrInterp = 1 Then
+    fputs(IR_INTERP_STR_CONSTS, cg_out)
+  End If
   fprintf(cg_out, "\n")
 
   ' Emit default C runtime declarations (skipping any overridden by Declare, and unused ones in freestanding mode)
@@ -3804,6 +3990,14 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
     End If
   End If
 
+  If (cg_usesStrInterp = 1) And (Not CgHasExtern("snprintf", 8)) Then
+    If cg_ptrSize = 4 Then
+      fputs("declare i32 @snprintf(ptr, i32, ptr, ...)\n", cg_out)
+    Else
+      fputs("declare i32 @snprintf(ptr, i64, ptr, ...)\n", cg_out)
+    End If
+  End If
+
   fputs(IR_MEMCPY_DECL, cg_out)
   If cg_usesArena = 1 Then
     CgEmitArenaRuntime()
@@ -3832,6 +4026,11 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
       i = i + 1
     End While
     CgEmitTestMain(progRoot)
+  End If
+
+  If cg_strCount > interpFmtStart Then
+    CgEmitStringGlobalsRange(interpFmtStart, cg_strCount)
+    fprintf(cg_out, "\n")
   End If
 
   If cg_usesStrConcat = 1 Then

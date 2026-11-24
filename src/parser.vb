@@ -60,7 +60,7 @@ Private Sub PParseBaseType(ByRef outKind, outNamePos, outNameLen As Integer)
     Case TokenKind.TkBoolean
       outKind = TypeKind.TyBoolean
       PAdvance()
-    Case TokenKind.TkPointer
+    Case TokenKind.TkPointer, TokenKind.TkString
       outKind = TypeKind.TyPointer
       PAdvance()
     Case TokenKind.TkArena
@@ -227,6 +227,59 @@ Private Function PParsePrimary() As Integer
     g_nodes(id).intVal = g_tokens(p_pos).pos
     g_nodes(id).lenVal = g_tokens(p_pos).len
     PAdvance()
+    Return id
+  End If
+
+  If k = TokenKind.TkInterpStart Then
+    PAdvance()
+    Dim partBuf(64) As Integer
+    Dim partCount As Integer = 0
+    While (PPeekKind() <> TokenKind.TkInterpEnd) And (PPeekKind() <> TokenKind.TkEof) Do
+      If PPeekKind() = TokenKind.TkStrLit Then
+        Dim sId As Integer = NewNode(NodeKind.NdStrLit)
+        g_nodes(sId).intVal = g_tokens(p_pos).pos
+        g_nodes(sId).lenVal = g_tokens(p_pos).len
+        PAdvance()
+        If partCount < 64 Then
+          partBuf(partCount) = sId
+          partCount = partCount + 1
+        End If
+      Else
+        If PPeekKind() = TokenKind.TkInterpExprStart Then
+          PAdvance()
+          PSkipNewlines()
+          Dim eId As Integer = ParseExpr()
+          PSkipNewlines()
+          PExpect(TokenKind.TkInterpExprEnd)
+          If partCount < 64 Then
+            partBuf(partCount) = eId
+            partCount = partCount + 1
+          End If
+        Else
+          Printf(MSG_PARSE_UNEXPECTED_PRIMARY, PPeekKind(), g_tokens(p_pos).line)
+          p_errors = p_errors + 1
+          PAdvance()
+        End If
+      End If
+    End While
+    PExpect(TokenKind.TkInterpEnd)
+    If partCount = 0 Then
+      Dim emptyId As Integer = NewNode(NodeKind.NdStrLit)
+      g_nodes(emptyId).intVal = 0
+      g_nodes(emptyId).lenVal = 0
+      Return emptyId
+    End If
+    If (partCount = 1) And (g_nodes(partBuf(0)).kind = NodeKind.NdStrLit) Then
+      Return partBuf(0)
+    End If
+    Dim id As Integer = NewNode(NodeKind.NdStrInterp)
+    g_nodes(id).firstChild = g_kidCount
+    g_nodes(id).childCount = partCount
+    Dim pi As Integer = 0
+    While pi < partCount Do
+      PushKid(partBuf(pi))
+      pi = pi + 1
+    End While
     Return id
   End If
 

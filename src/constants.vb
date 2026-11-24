@@ -45,7 +45,8 @@ Public Static MSG_LEX_INC_NOT_FOUND = "Module Load Error: Included file not foun
   MSG_LEX_CIRCULAR_INC = "Module Load Error: Circular Include detected: '%s'\n",
   MSG_LEX_OPEN_FAIL = "verbose error: cannot open file '%s'\n",
   MSG_LEX_OOM = "verbose error: arena OOM reading file\n",
-  MSG_LEX_UNEXPECTED_CHAR = "verbose lexer error: unexpected char %d at line %d\n" As Pointer
+  MSG_LEX_UNEXPECTED_CHAR = "verbose lexer error: unexpected char %d at line %d\n",
+  MSG_LEX_UNTERM_INTERP = "verbose lexer error: unterminated interpolated string at line %d\n" As Pointer
 
 ' --- Parser Diagnostics ---
 Public Static MSG_PARSE_EXPECT = "verbose parse error: expected token %d, got %d at line %d\n",
@@ -82,7 +83,8 @@ Public Static MSG_TA_ARRAY_SIZE_POS = "Semantic Type Error: Array size must be g
   MSG_TA_DUP_LABEL = "Semantic Type Error: Duplicate label '",
   MSG_TA_UNDEF_LABEL = "Semantic Type Error: Undefined GoTo label '",
   MSG_TA_AWAIT_NON_TASK = "Semantic Type Error: Await requires a Task expression\n",
-  MSG_TA_ASYNC_MAIN = "Semantic Type Error: Entry point 'main' cannot be Async\n" As Pointer
+  MSG_TA_ASYNC_MAIN = "Semantic Type Error: Entry point 'main' cannot be Async\n",
+  MSG_TA_INTERP_TYPE = "Semantic Type Error: Unsupported type in string interpolation\n" As Pointer
 
 ' --- Codegen Diagnostics ---
 Public Static MSG_CG_OPEN_FAIL = "verbose codegen error: cannot open output file\n",
@@ -298,6 +300,10 @@ Public Static IR_TEST_MAIN_EPILOGUE As Pointer = "  %tot_p = load i32, ptr %pass
   "  %rc = zext i1 %any_fail to i32\n" &
   "  ret i32 %rc\n" &
   "}\n\n"
+
+Public Static IR_INTERP_STR_CONSTS As Pointer = "@__vb_true_str = private unnamed_addr constant [5 x i8] c\"True\\00\", align 1\n" &
+  "@__vb_false_str = private unnamed_addr constant [6 x i8] c\"False\\00\", align 1\n" &
+  "@__vb_empty_str = private unnamed_addr constant [1 x i8] c\"\\00\", align 1\n\n"
 
 Public Static IR_STR_CONCAT_RT As Pointer = "define internal ptr @__vb_str_concat(ptr %a, ptr %b) {\n" &
   "entry:\n" &

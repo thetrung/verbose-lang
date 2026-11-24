@@ -16,7 +16,7 @@ Structure LoadedFile
 End Structure
 
 Private Static lx_loaded(64) As LoadedFile, lx_incDirs(32) As Pointer
-Private Static lx_loadedCount = 0, lx_curModId = 0, lx_incDirCount = 0 As Integer
+Private Static lx_loadedCount = 0, lx_curModId = 0, lx_incDirCount = 0, lx_interpDepth = 0 As Integer
 
 Public Sub LexerClearIncludeDirs()
   lx_incDirCount = 0
@@ -212,6 +212,9 @@ Private Function LxClassifyKeyword(pos, slen As Integer) As Integer
   If SliceEqualsStr(pos, slen, "Pointer", 7) Then
     Return TokenKind.TkPointer
   End If
+  If SliceEqualsStr(pos, slen, "String", 6) Then
+    Return TokenKind.TkString
+  End If
   If SliceEqualsStr(pos, slen, "Arena", 5) Then
     Return TokenKind.TkArena
   End If
@@ -306,6 +309,73 @@ Private Sub LxEmitTok(kind, pos, slen, ival, line As Integer)
     g_tokCount = g_tokCount + 1
   End If
 End Sub
+
+Private Function LxLexInterpChunk(ByRef pos As Integer, fileEnd As Integer, line As Integer) As Integer
+  Dim chunkStart As Integer = g_srcPoolLen
+  While pos < fileEnd Do
+    Dim sc As Integer = g_srcPool(pos)
+    If sc = 34 Then
+      Dim cLen As Integer = g_srcPoolLen - chunkStart
+      If cLen > 0 Then
+        LxEmitTok(TokenKind.TkStrLit, chunkStart, cLen, 0, line)
+      End If
+      LxEmitTok(TokenKind.TkInterpEnd, pos, 1, 0, line)
+      pos = pos + 1
+      Return 0
+    End If
+    If (sc = 92) And ((pos + 1) < fileEnd) Then
+      If g_srcPoolLen < (g_srcPoolCap - 2) Then
+        g_srcPool(g_srcPoolLen) = sc
+        g_srcPool(g_srcPoolLen + 1) = g_srcPool(pos + 1)
+        g_srcPoolLen = g_srcPoolLen + 2
+      End If
+      pos = pos + 2
+    Else
+      If sc = 123 Then
+        If ((pos + 1) < fileEnd) And (g_srcPool(pos + 1) = 123) Then
+          If g_srcPoolLen < (g_srcPoolCap - 1) Then
+            g_srcPool(g_srcPoolLen) = 123
+            g_srcPoolLen = g_srcPoolLen + 1
+          End If
+          pos = pos + 2
+        Else
+          Dim cLen As Integer = g_srcPoolLen - chunkStart
+          If cLen > 0 Then
+            LxEmitTok(TokenKind.TkStrLit, chunkStart, cLen, 0, line)
+          End If
+          LxEmitTok(TokenKind.TkInterpExprStart, pos, 1, 0, line)
+          pos = pos + 1
+          lx_interpDepth = lx_interpDepth + 1
+          Return 0
+        End If
+      Else
+        If sc = 125 Then
+          If ((pos + 1) < fileEnd) And (g_srcPool(pos + 1) = 125) Then
+            If g_srcPoolLen < (g_srcPoolCap - 1) Then
+              g_srcPool(g_srcPoolLen) = 125
+              g_srcPoolLen = g_srcPoolLen + 1
+            End If
+            pos = pos + 2
+          Else
+            If g_srcPoolLen < (g_srcPoolCap - 1) Then
+              g_srcPool(g_srcPoolLen) = 125
+              g_srcPoolLen = g_srcPoolLen + 1
+            End If
+            pos = pos + 1
+          End If
+        Else
+          If g_srcPoolLen < (g_srcPoolCap - 1) Then
+            g_srcPool(g_srcPoolLen) = sc
+            g_srcPoolLen = g_srcPoolLen + 1
+          End If
+          pos = pos + 1
+        End If
+      End If
+    End If
+  End While
+  Printf(MSG_LEX_UNTERM_INTERP, line)
+  Return -1
+End Function
 
 Private Function LxFindLoaded(pPos, pLen As Integer) As Integer
   Dim i As Integer = 0
@@ -629,6 +699,21 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
             pos = pos + 1
           End While
         Else
+          If (c = 36) And ((pos + 1) < fileEnd) And (g_srcPool(pos + 1) = 34) Then
+            LxEmitTok(TokenKind.TkInterpStart, pos, 2, 0, line)
+            pos = pos + 2
+            If LxLexInterpChunk(ByRef pos, fileEnd, line) < 0 Then
+              Return -1
+            End If
+          Else
+          If (c = 125) And (lx_interpDepth > 0) Then
+            LxEmitTok(TokenKind.TkInterpExprEnd, pos, 1, 0, line)
+            pos = pos + 1
+            lx_interpDepth = lx_interpDepth - 1
+            If LxLexInterpChunk(ByRef pos, fileEnd, line) < 0 Then
+              Return -1
+            End If
+          Else
           If c = 34 Then
             pos = pos + 1
             Dim sStart As Integer = pos
@@ -779,6 +864,8 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
               End If
             End If
           End If
+          End If
+          End If
         End If
       End If
     End If
@@ -799,6 +886,7 @@ Public Function LexerLoadEntry(ByRef arena As Arena, entryPath As Pointer) As In
   g_tokens = ArenaAlloc(ByRef arena, Token, g_tokCap)
   lx_loadedCount = 0
   lx_curModId = 0
+  lx_interpDepth = 0
 
   Dim rawPos As Integer = LxCopyCStringToPool(entryPath)
   Dim rawLen As Integer = g_srcPoolLen - rawPos - 1

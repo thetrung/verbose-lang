@@ -1071,6 +1071,22 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
   If k = NodeKind.NdStrLit Then
     Return TaMakePrim(TypeKind.TyPointer)
   End If
+  If k = NodeKind.NdStrInterp Then
+    Dim ii As Integer = 0
+    While ii < g_nodes(id).childCount Do
+      Dim ch As Integer = g_kids(g_nodes(id).firstChild + ii)
+      If g_nodes(ch).kind <> NodeKind.NdStrLit Then
+        Dim ct As TypeInfo = TaTypeOfExpr(ch)
+        Dim okPart As Boolean = TaIsIntType(ct) Or TaIsFloatType(ct) Or ((ct.arrLen = 0) And (ct.kind = TypeKind.TyBoolean)) Or TaIsStrLike(ct)
+        If Not okPart Then
+          Printf(MSG_TA_INTERP_TYPE)
+          ta_errCount = ta_errCount + 1
+        End If
+      End If
+      ii = ii + 1
+    End While
+    Return TaMakePrim(TypeKind.TyPointer)
+  End If
 
   If k = NodeKind.NdVar Then
     Dim nPos As Integer = g_nodes(id).intVal

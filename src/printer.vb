@@ -135,6 +135,23 @@ Private Sub PrExpr(id As Integer)
     Printf("\"")
     Return
   End If
+  If k = NodeKind.NdStrInterp Then
+    Printf("$\"")
+    Dim ii As Integer = 0
+    While ii < g_nodes(id).childCount Do
+      Dim ch As Integer = g_kids(g_nodes(id).firstChild + ii)
+      If g_nodes(ch).kind = NodeKind.NdStrLit Then
+        PrSlice(g_nodes(ch).intVal, g_nodes(ch).lenVal)
+      Else
+        Printf("{")
+        PrExpr(ch)
+        Printf("}")
+      End If
+      ii = ii + 1
+    End While
+    Printf("\"")
+    Return
+  End If
   If k = NodeKind.NdVar Then
     PrSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
     Return

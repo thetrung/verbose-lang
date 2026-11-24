@@ -77,6 +77,7 @@ Public Enum NodeKind
   NdLabel = 56
   NdGoTo = 57
   NdAwait = 58
+  NdStrInterp = 59
 End Enum
 
 Public Structure AstNode

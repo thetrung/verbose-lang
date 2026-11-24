@@ -40,6 +40,7 @@ Public Enum TokenKind
   TkNothing = 37
   TkSingle = 38
   TkDouble = 39
+  TkString = 48
 
   ' Literals & Builtin keywords
   TkTrue = 40
@@ -88,6 +89,8 @@ Public Enum TokenKind
   TkStar = 85
   TkSlash = 86
   TkAmp = 87
+  TkInterpStart = 88
+  TkInterpExprStart = 89
 
   ' Language extensions (raw memory, labels/jumps, structured concurrency)
   TkAddressOf = 90
@@ -99,6 +102,8 @@ Public Enum TokenKind
   TkAsync = 96
   TkAwait = 97
   TkTask = 98
+  TkInterpExprEnd = 100
+  TkInterpEnd = 101
 End Enum
 
 Public Structure Token
