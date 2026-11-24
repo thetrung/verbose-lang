@@ -25,11 +25,24 @@ demo: build
 	./verbose examples/arena.vb
 	rm -rf examples && git checkout examples
 
+test: build
+	python3 test/run_syntax_tests.py
+	python3 test/run_byref_tests.py
+	python3 test/run_array_tests.py
+	python3 test/run_static_heap_tests.py
+	python3 test/run_arena_tests.py
+	python3 test/run_ta_tests.py
+	python3 test/run_module_tests.py
+	python3 test/run_c_interop_tests.py
+	python3 test/run_bootstrap_tests.py
+
 clean:
 	rm -rf _build \
-		${TARGET}.ll ${TARGET}.s ${TARGET}
+		${TARGET}.ll ${TARGET}.s ${TARGET} \
+		bootstrap/*.ll bootstrap/vbc \
+		examples/raylib/*.ll examples/raylib/bouncing_ball
 	@for dir in test/byref test/syntax test/arrays test/static_heap test/arena test/type_analyzer test/modules test/c_interop; do \
 		if [ -d "$$dir" ]; then \
-			find "$$dir" -maxdepth 1 -type f ! -name '*.vb' -delete; \
+			find "$$dir" -maxdepth 1 -type f ! -name '*.vb' ! -name '*.c' -delete; \
 		fi; \
 	done

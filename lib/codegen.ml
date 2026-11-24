@@ -51,7 +51,7 @@ let enum_values = Hashtbl.create 50
 let emit ctx str = Buffer.add_string ctx.buf (str ^ "\n")
 
 let next_reg ctx =
-  let r = "%" ^ string_of_int ctx.reg_counter in
+  let r = "%r" ^ string_of_int ctx.reg_counter in
   ctx.reg_counter <- ctx.reg_counter + 1;
   r
 
@@ -286,44 +286,9 @@ let emit_store_typed ctx expected_dt v dt_str target_ptr =
     emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)"
                target_ptr v byte_size)
   end else begin
-    let expected_dt_str = string_of_dt expected_dt in
     let align = max 1 (get_type_align expected_dt) in
-    let is_reg = String.length v > 0 && (v.[0] = '%' || v.[0] = '@') in
-    if expected_dt_str = "ptr" && dt_str = "i32" then begin
-      let cast_reg = next_reg ctx in
-      emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
-      emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 8" cast_reg target_ptr)
-    end else if expected_dt_str = "float" && dt_str = "double" && is_reg then begin
-      let cast_reg = next_reg ctx in
-      emit ctx (Printf.sprintf "  %s = fptrunc double %s to float" cast_reg v);
-      emit ctx (Printf.sprintf "  store float %s, ptr %s, align 4" cast_reg target_ptr)
-    end else if expected_dt_str = "double" && dt_str = "float" && is_reg then begin
-      let cast_reg = next_reg ctx in
-      emit ctx (Printf.sprintf "  %s = fpext float %s to double" cast_reg v);
-      emit ctx (Printf.sprintf "  store double %s, ptr %s, align 8" cast_reg target_ptr)
-    end else if expected_dt_str = "float" && dt_str = "double" && not is_reg then begin
-      let f = float_of_string v in
-      let f32 = Int32.float_of_bits (Int32.bits_of_float f) in
-      let hex_bits = Printf.sprintf "0x%016LX" (Int64.bits_of_float f32) in
-      emit ctx (Printf.sprintf "  store float %s, ptr %s, align 4" hex_bits target_ptr)
-    end else if expected_dt_str = "i8" && (dt_str = "i32" || dt_str = "i64" || dt_str = "i16") && is_reg then begin
-      let cast_reg = next_reg ctx in
-      emit ctx (Printf.sprintf "  %s = trunc %s %s to i8" cast_reg dt_str v);
-      emit ctx (Printf.sprintf "  store i8 %s, ptr %s, align 1" cast_reg target_ptr)
-    end else if expected_dt_str = "i16" && (dt_str = "i32" || dt_str = "i64") && is_reg then begin
-      let cast_reg = next_reg ctx in
-      emit ctx (Printf.sprintf "  %s = trunc %s %s to i16" cast_reg dt_str v);
-      emit ctx (Printf.sprintf "  store i16 %s, ptr %s, align 2" cast_reg target_ptr)
-    end else if expected_dt_str = "i64" && (dt_str = "i32" || dt_str = "i16" || dt_str = "i8") && is_reg then begin
-      let cast_reg = next_reg ctx in
-      emit ctx (Printf.sprintf "  %s = sext %s %s to i64" cast_reg dt_str v);
-      emit ctx (Printf.sprintf "  store i64 %s, ptr %s, align 8" cast_reg target_ptr)
-    end else if expected_dt_str = "i32" && (dt_str = "i8" || dt_str = "i16") && is_reg then begin
-      let cast_reg = next_reg ctx in
-      emit ctx (Printf.sprintf "  %s = sext %s %s to i32" cast_reg dt_str v);
-      emit ctx (Printf.sprintf "  store i32 %s, ptr %s, align 4" cast_reg target_ptr)
-    end else
-      emit ctx (Printf.sprintf "  store %s %s, ptr %s, align %d" expected_dt_str v target_ptr align)
+    let cv, ct = coerce_value_to_llvm ctx expected_dt v dt_str in
+    emit ctx (Printf.sprintf "  store %s %s, ptr %s, align %d" ct cv target_ptr align)
   end
 
 let lookup_var ctx name =
@@ -426,8 +391,8 @@ let rec codegen_expr ctx = function
       let bool_value = if b then "1" else "0" 
       in (bool_value, "i1")
   | StringLit s ->
-      let global_reg = "@.str_" ^ string_of_int (ctx.reg_counter) in
-      ctx.reg_counter <- ctx.reg_counter + 1;
+      incr static_counter;
+      let global_reg = "@.str_" ^ string_of_int !static_counter in
       
       let len = String.length s + 1 in
       let esc = escape_llvm_string s in
