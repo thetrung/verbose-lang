@@ -20,6 +20,10 @@ rule tokenize = parse
   | "Private"        { PRIVATE }
   | "Declare"        { DECLARE }
   | "With"           { WITH }
+  | "Static"         { STATIC }
+  | "SizeOf"         { SIZEOF }
+  | "HeapAlloc"      { HEAP_ALLOC }
+  | "HeapRealloc"    { HEAP_REALLOC }
   | "Structure"      { STRUCTURE }
   | "Enum"           { ENUM }
   | "Function"       { FUNCTION }

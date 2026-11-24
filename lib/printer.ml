@@ -46,11 +46,17 @@ let rec string_of_expr = function
   | StructInit (name, inits) ->
       let fmt_init (f, e) = f ^ " = " ^ string_of_expr e in
       name ^ " With { " ^ String.concat ", " (List.map fmt_init inits) ^ " }"
+  | SizeOf dt -> "SizeOf(" ^ string_of_dt dt ^ ")"
+  | HeapAlloc (dt, count) -> "HeapAlloc(" ^ string_of_dt dt ^ ", " ^ string_of_expr count ^ ")"
+  | HeapRealloc (p, dt, count) -> "HeapRealloc(" ^ string_of_expr p ^ ", " ^ string_of_dt dt ^ ", " ^ string_of_expr count ^ ")"
 
 let rec string_of_stmt indent = function
   | Dim (v, dt, opt_e) -> 
       let init_expr = match opt_e with | Some e -> " = " ^ string_of_expr e | None -> "" in
       indent ^ "Dim " ^ v ^ " As " ^ string_of_dt dt ^ init_expr ^ "\n"
+  | StaticDim (v, dt, opt_e) ->
+      let init_expr = match opt_e with | Some e -> " = " ^ string_of_expr e | None -> "" in
+      indent ^ "Static " ^ v ^ " As " ^ string_of_dt dt ^ init_expr ^ "\n"
   | Assign (v, e) -> indent ^ v ^ " = " ^ string_of_expr e ^ "\n"
   | FieldAssign (obj, field, e) -> indent ^ string_of_expr obj ^ "." ^ field ^ " = " ^ string_of_expr e ^ "\n"
   | IndexAssign (base, idx, e) -> indent ^ string_of_expr base ^ "[" ^ string_of_expr idx ^ "] = " ^ string_of_expr e ^ "\n"
@@ -86,6 +92,10 @@ let string_of_def = function
       let prefix = if is_public then "Public " else "" in
       let ml = String.concat "" (List.map (fun (n, v) -> "  " ^ n ^ " = " ^ string_of_int v ^ "\n") members) in
       prefix ^ "Enum " ^ name ^ "\n" ^ ml ^ "End Enum\n"
+    | GlobalVar (is_public, name, dt, opt_e) ->
+      let prefix = if is_public then "Public " else "" in
+      let init_expr = match opt_e with | Some e -> " = " ^ string_of_expr e | None -> "" in
+      prefix ^ "Static " ^ name ^ " As " ^ string_of_dt dt ^ init_expr ^ "\n"
     | FuncDef (is_public, name, params, rt, body) ->
       let prefix = if is_public then "Public " else "" in
       let keyword = if rt = Nothing then "Sub " else "Function " in

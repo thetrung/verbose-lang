@@ -21,12 +21,13 @@ demo: build
 	./verbose examples/structure2.vb
 	./verbose examples/nested_struct.vb
 	./verbose examples/arrays.vb
+	./verbose examples/static_heap.vb
 	rm -rf examples && git checkout examples
 
 clean:
 	rm -rf _build \
 		${TARGET}.ll ${TARGET}.s ${TARGET}
-	@for dir in test/byref test/syntax test/arrays; do \
+	@for dir in test/byref test/syntax test/arrays test/static_heap; do \
 		if [ -d "$$dir" ]; then \
 			find "$$dir" -maxdepth 1 -type f ! -name '*.vb' -delete; \
 		fi; \

@@ -10,7 +10,7 @@ open Ast
 %token <string> ID
 
 (* Core structural tokens *)
-%token PUBLIC PRIVATE DECLARE WITH STRUCTURE FUNCTION SUB BYVAL BYREF END AS DIM RETURN 
+%token PUBLIC PRIVATE DECLARE WITH STATIC SIZEOF HEAP_ALLOC HEAP_REALLOC STRUCTURE FUNCTION SUB BYVAL BYREF END AS DIM RETURN 
 %token NOTHING POINTER_TYPE ENUM INT_TYPE BYTE_TYPE SHORT_TYPE LONG_TYPE SINGLE_TYPE DOUBLE_TYPE BOOLEAN_TYPE 
 %token EOF LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET COMMA NEWLINE DOT ELLIPSIS
 
@@ -80,6 +80,25 @@ definition:
 
   | vis=visibility ENUM name=ID mandatory_newlines members=list(enum_member) END ENUM mandatory_newlines
     { Ast.EnumDef(vis, name, members) }
+
+  | vis=visibility STATIC name=ID AS t=data_type mandatory_newlines
+    { Ast.GlobalVar(vis, name, t, None) }
+  | vis=visibility STATIC name=ID AS t=data_type EQUALS e=expr mandatory_newlines
+    { Ast.GlobalVar(vis, name, t, Some(e)) }
+  | vis=visibility STATIC name=ID AS struct_name=ID WITH LBRACE optional_newlines inits=field_init_list RBRACE mandatory_newlines
+    { Ast.GlobalVar(vis, name, Ast.Custom(struct_name), Some(Ast.StructInit(struct_name, inits))) }
+  | vis=visibility STATIC name=ID LBRACKET size=INT_LIT RBRACKET AS t=data_type mandatory_newlines
+    { Ast.GlobalVar(vis, name, Ast.Array(t, size), None) }
+  | vis=visibility STATIC name=ID LBRACKET size=INT_LIT RBRACKET AS t=data_type EQUALS e=expr mandatory_newlines
+    { Ast.GlobalVar(vis, name, Ast.Array(t, size), Some(e)) }
+  | vis=visibility STATIC name=ID LBRACKET RBRACKET AS t=data_type mandatory_newlines
+    { Ast.GlobalVar(vis, name, Ast.Array(t, -1), None) }
+  | vis=visibility STATIC name=ID LBRACKET RBRACKET AS t=data_type EQUALS e=expr mandatory_newlines
+    {
+      match e with
+      | Ast.ArrayLit elems -> Ast.GlobalVar(vis, name, Ast.Array(t, List.length elems), Some(e))
+      | _ -> Ast.GlobalVar(vis, name, Ast.Array(t, -1), Some(e))
+    }
   
   | vis=visibility DECLARE FUNCTION name=ID LPAREN ep=extern_params RPAREN AS ret=data_type mandatory_newlines
     { let (params, is_var) = ep in Ast.ExternDecl(vis, name, params, ret, is_var) }
@@ -150,6 +169,25 @@ code_stmt:
   | DIM name=ID AS struct_name=ID WITH LBRACE optional_newlines inits=field_init_list RBRACE
     { Ast.Dim(name, Ast.Custom(struct_name), Some(Ast.StructInit(struct_name, inits))) }
 
+  | STATIC name=ID AS t=data_type
+    { Ast.StaticDim(name, t, None) }
+  | STATIC name=ID AS t=data_type EQUALS e=expr
+    { Ast.StaticDim(name, t, Some(e)) }
+  | STATIC name=ID AS struct_name=ID WITH LBRACE optional_newlines inits=field_init_list RBRACE
+    { Ast.StaticDim(name, Ast.Custom(struct_name), Some(Ast.StructInit(struct_name, inits))) }
+  | STATIC name=ID LBRACKET size=INT_LIT RBRACKET AS t=data_type
+    { Ast.StaticDim(name, Ast.Array(t, size), None) }
+  | STATIC name=ID LBRACKET size=INT_LIT RBRACKET AS t=data_type EQUALS e=expr
+    { Ast.StaticDim(name, Ast.Array(t, size), Some(e)) }
+  | STATIC name=ID LBRACKET RBRACKET AS t=data_type
+    { Ast.StaticDim(name, Ast.Array(t, -1), None) }
+  | STATIC name=ID LBRACKET RBRACKET AS t=data_type EQUALS e=expr
+    {
+      match e with
+      | Ast.ArrayLit elems -> Ast.StaticDim(name, Ast.Array(t, List.length elems), Some(e))
+      | _ -> Ast.StaticDim(name, Ast.Array(t, -1), Some(e))
+    }
+
   | obj=expr; DOT; field=ID; EQUALS; e=expr                  { Ast.FieldAssign(obj, field, e) }
   | base=expr; LBRACKET; idx=expr; RBRACKET; EQUALS; e=expr  { Ast.IndexAssign(base, idx, e) }
   | name=ID EQUALS e=expr                                    { Ast.Assign(name, e) }
@@ -216,6 +254,10 @@ expr:
   | NOT e=expr                                              { Ast.UnaryOp("Not", e) }
   | name=ID LPAREN args=separated_list(COMMA, call_arg) RPAREN  { Ast.Call(name, args) }
   | name=ID WITH LBRACE optional_newlines inits=field_init_list RBRACE { Ast.StructInit(name, inits) }
+  | SIZEOF LPAREN t=data_type RPAREN { Ast.SizeOf(t) }
+  | HEAP_ALLOC LPAREN t=data_type RPAREN { Ast.HeapAlloc(t, Ast.IntLit(1)) }
+  | HEAP_ALLOC LPAREN t=data_type COMMA count=expr RPAREN { Ast.HeapAlloc(t, count) }
+  | HEAP_REALLOC LPAREN p=expr COMMA t=data_type COMMA count=expr RPAREN { Ast.HeapRealloc(p, t, count) }
   | LBRACKET optional_newlines elems=separated_list(COMMA, expr) optional_newlines RBRACKET { Ast.ArrayLit(elems) }
   
   /* FieldAccess & IndexAccess */
