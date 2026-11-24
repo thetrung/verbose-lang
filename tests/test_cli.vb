@@ -1,4 +1,4 @@
-' CLI flag checks & all 14 standalone example tests (replaces run_verbose_tests.py).
+' CLI flag checks & root prototype.vb smoke test.
 
 Include "harness.vb"
 
@@ -97,64 +97,7 @@ Test "cli: --ast, --ir, --no-run, --emit-only, --ta, bad-code rejection, --help,
   system(mkCmd)
 End Test
 
-Test "examples: prototype.vb"
+Test "prototype.vb smoke test"
   Assure RunVb("prototype.vb", "") = 0
   Assure OutHas("vec1.z ^ 2 =")
-End Test
-
-Test "examples: arena.vb"
-  Assure RunVb("examples/arena.vb", "") = 0
-End Test
-
-Test "examples: arrays.vb"
-  Assure RunVb("examples/arrays.vb", "") = 0
-End Test
-
-Test "examples: boolean.vb"
-  Assure RunVb("examples/boolean.vb", "") = 0
-  Assure OutHas("logic = 1(True)")
-  Assure OutHas("logic = 0(False)")
-End Test
-
-Test "examples: byref.vb"
-  Assure RunVb("examples/byref.vb", "") = 0
-End Test
-
-Test "examples: compute.vb"
-  Assure RunVb("examples/compute.vb", "") = 0
-End Test
-
-Test "examples: enum.vb"
-  Assure RunVb("examples/enum.vb", "") = 0
-End Test
-
-Test "examples: loop_while.vb"
-  Assure RunVb("examples/loop_while.vb", "") = 0
-End Test
-
-Test "examples: nested_struct.vb"
-  Assure RunVb("examples/nested_struct.vb", "") = 0
-End Test
-
-Test "examples: numberic.vb"
-  Assure RunVb("examples/numberic.vb", "") = 0
-End Test
-
-Test "examples: read_file.vb"
-  Assure RunVb("examples/read_file.vb", "") = 0
-End Test
-
-Test "examples: static_heap.vb"
-  Assure RunVb("examples/static_heap.vb", "") = 0
-End Test
-
-Test "examples: structure.vb"
-  Assure RunVb("examples/structure.vb", "") = 0
-  Assure OutHas("t.Kind = 4")
-  Assure OutHas("t.Value = 4660")
-End Test
-
-Test "examples: structure2.vb"
-  Assure RunVb("examples/structure2.vb", "") = 0
-  Assure OutHas("node = 3")
 End Test

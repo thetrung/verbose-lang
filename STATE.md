@@ -8,11 +8,10 @@
 
 | Component | Location | Description |
 | --- | --- | --- |
-| **Self-Hosted Compiler (`verbose`)** | `src/` (`verbose.vb`, `token.vb`, `lexer.vb`, `ast.vb`, `printer.vb`, `parser.vb`, `type_analyzer.vb`, `codegen.vb`) | 8-module compiler written in VerBose-Lang using a single 32 MiB deterministic `Arena`. Features full semantic Type Analyzer (`--ta`/`--no-ta`), AST/IR inspection (`--ast`/`--ir`), built-in `Test`/`Assure` & `./verbose test` runner, direct compile-and-run CLI (`./verbose file.vb`), brace-free `(..)` array & `With (..)` syntax, Stage 1 → Stage 2 → Stage 3 byte-for-byte fixpoint (`make build`), and **10/10** pure-VerBose test suites (**105** `Test` blocks, zero Python). |
+| **Self-Hosted Compiler (`verbose`)** | `src/` (`verbose.vb`, `token.vb`, `lexer.vb`, `ast.vb`, `printer.vb`, `parser.vb`, `type_analyzer.vb`, `codegen.vb`) | 8-module compiler written in VerBose-Lang using a single 32 MiB deterministic `Arena`. Features full semantic Type Analyzer (`--ta`/`--no-ta`), AST/IR inspection (`--ast`/`--ir`), built-in `Test`/`Assure` & `./verbose test` runner, direct compile-and-run CLI (`./verbose file.vb`), brace-free `(..)` array & `With (..)` syntax, Stage 1 → Stage 2 → Stage 3 byte-for-byte fixpoint (`make build`), and **11/11** pure-VerBose test suites (**99** `Test` blocks, zero Python). |
 | **Stage 0 Bootstrap Archive** | `stage0` git branch (`stage0/bin/`, `stage0/lib/`, `stage0/verbose`) | Original OCaml/ocamllex/Menhir compiler updated with `(..)` array literals and archived off `main` into the `stage0` branch. `main` bootstraps directly from an existing `./verbose` binary or the latest GitHub Release (`clang` + `curl` only — no OCaml or Python). |
 | **Tooling & CI** | `makefile`, `.github/workflows/` (`ci.yml`, `release.yml`) | `make install`/`uninstall`/`dist` packaging and pure self-hosted GitHub Actions CI + automated Linux x86-64 binary releases (`clang` + `curl` only). |
-| **Examples & Bindings** | `examples/`, `examples/raylib/`, `prototype.vb` | 14 standalone language examples plus the consolidated Raylib 5.x demo, headless test shim, and legacy 3D camera draft (`examples/raylib/`). |
-| **Documentation & Tests** | `README.md`, `Features.md`, `STATE.md`, `test/` | Full feature catalog extracted to `Features.md`; 100% pure-VerBose `Test`/`Assure` test suites (`test/harness.vb`, `test/test_*.vb`, `test/bootstrap_suite.vb`) run natively via `./verbose test`. |
+| **Tests, Demos & Docs** | `tests/`, `tests/raylib/`, `prototype.vb`, `README.md`, `FEATURES.md`, `STATE.md` | Unified pure-VerBose `Test`/`Assure` suites (`tests/harness.vb`, `tests/test_*.vb`, `tests/bootstrap_suite.vb`) plus the Raylib 5.x demo & headless test shim (`tests/raylib/`), run natively via `./verbose test`. |
 
 ---
 
@@ -34,7 +33,7 @@
 
 ## Implemented Features
 
-See **[Features.md](Features.md)** for the full user-facing catalog. Milestone checklist:
+See **[FEATURES.md](FEATURES.md)** for the full user-facing catalog. Milestone checklist:
 
 - [x] **Primitive & Numeric Types**: `Byte`, `Short`, `Integer`, `Long`, `Single`, `Double`, `Boolean`, `Pointer`, `Nothing`, hex literals (`0x...`), unary negation (`-x`), contextual literal typing
 - [x] **Operators**: Arithmetic (`+`, `-`, `*`, `/`, `Mod`), Comparisons (`=`, `<>`, `<`, `>`, `<=`, `>=`), Boolean & Bitwise (`And`, `Or`, `Xor`, `Not`, `Shl`, `Shr`)
@@ -45,11 +44,11 @@ See **[Features.md](Features.md)** for the full user-facing catalog. Milestone c
 - [x] **Static & Heap Memory**: Module-level & function-local `Static` globals, `SizeOf(Type)`, `HeapAlloc`, `HeapRealloc`, `HeapAllocBytes`, `HeapFree`
 - [x] **Deterministic Arena Allocator**: `Arena` type, `ArenaCreate`, `ArenaFromBuffer`, `ArenaAlloc`, `ArenaAllocBytes`, `ArenaReset`, `ArenaMark`, `ArenaRewind`, `ArenaUsed`, `ArenaRemaining`, `ArenaCapacity`, `ArenaDestroy`, `IsNull`
 - [x] **Multi-File Modules & Encapsulation**: `Include "path.vb"`, `-I` search paths, `.`/`..` path canonicalization, circular-include detection, diamond include-once deduplication, `Public`/`Private`/`Default` visibility & module-scoped `Private` isolation
-- [x] **Native C Interop (FFI)**: `Declare Function/Sub`, variadic `...`, `ByRef` out-pointers, SysV x86-64 ByVal struct lowering, full string escapes (`\n`, `\r`, `\t`, `\"`, `\\`, `\0`), Raylib 5.x demo consolidated under `examples/raylib/`
+- [x] **Native C Interop (FFI)**: `Declare Function/Sub`, variadic `...`, `ByRef` out-pointers, SysV x86-64 ByVal struct lowering, full string escapes (`\n`, `\r`, `\t`, `\"`, `\\`, `\0`), Raylib 5.x demo consolidated under `tests/raylib/`
 - [x] **Self-Hosted Semantic Type Analyzer & Full CLI (`src/`)**: Full Type Analyzer (`src/type_analyzer.vb`), AST pretty-printer (`src/printer.vb`), direct compile-and-execute (`./verbose file.vb`), and all driver flags (`--ast`, `--ir`, `--ta`, `--no-ta`, `--emit-only`, `--no-run`, `-o`, `-I`, `-l`, `-L`, `-W`, extra `.c/.o/.a`)
-- [x] **100% Self-Hosting & Stage 0 Retirement**: `stage0/` archived on the `stage0` branch (with `(..)` array literal parity) and removed from `main`; `main` self-bootstraps to a Stage 3 byte-for-byte fixpoint and passes **105/105** tests
-- [x] **Built-in `Test` / `Assure` & Zero-Python Test Suite**: Added first-class `Test "name" ... End Test` blocks, `Assure cond [, "msg"]` statements (runtime assertions in normal mode, isolated test assertions with line/message reporting in test mode), and `./verbose test [file.vb | dir]` CLI runner with directory auto-discovery; replaced all 10 Python runners (`test/run_*.py`) with pure-VerBose suites (`test/harness.vb`, `test/test_*.vb`, `test/bootstrap_suite.vb`) and removed `python3` from CI/Release workflows
-- [x] **Tooling, Docs & CI**: `make install` / `uninstall` / `dist` packaging, `Features.md` extracted from `README.md`, lightweight self-hosted GitHub Actions CI (`.github/workflows/ci.yml` — `clang` + `curl` only), and automated GitHub Release publishing (`.github/workflows/release.yml`)
+- [x] **100% Self-Hosting & Stage 0 Retirement**: `stage0/` archived on the `stage0` branch (with `(..)` array literal parity) and removed from `main`; `main` self-bootstraps to a Stage 3 byte-for-byte fixpoint and passes **11/11** pure-VerBose test suites
+- [x] **Built-in `Test` / `Assure` & Zero-Python Test Suite**: Added first-class `Test "name" ... End Test` blocks, `Assure cond [, "msg"]` statements (runtime assertions in normal mode, isolated test assertions with line/message reporting in test mode), and `./verbose test [file.vb | dir]` CLI runner with directory auto-discovery (default `tests/`); consolidated `examples/` into `tests/`, replaced all 10 Python runners with pure-VerBose suites (`tests/harness.vb`, `tests/test_*.vb`, `tests/bootstrap_suite.vb`), and removed `python3` from CI/Release workflows
+- [x] **Tooling, Docs & CI**: `make install` / `uninstall` / `dist` packaging, `FEATURES.md` extracted from `README.md`, lightweight self-hosted GitHub Actions CI (`.github/workflows/ci.yml` — `clang` + `curl` only), and automated GitHub Release publishing (`.github/workflows/release.yml`)
 
 ---
 
@@ -57,9 +56,8 @@ See **[Features.md](Features.md)** for the full user-facing catalog. Milestone c
 
 | Suite / Command | Result | Scope |
 | --- | --- | --- |
-| `make build` | **6/6 PASS** + Stage 3 fixpoint | Bootstrap (`./verbose` or latest release) → `verbose1` → `./verbose` → `verbose2.ll == verbose3.ll` byte-for-byte identical + `./verbose test test/bootstrap_suite.vb` |
-| `make test` | **10/10 suites (105/105 Test blocks) PASS** | `./verbose test test/`: `test_arena` 11/11, `test_arrays` 12/12, `test_assure` 5/5, `test_byref` 16/16, `test_c_interop` 4/4, `test_cli` 16/16 (CLI + 14 examples), `test_modules` 8/8, `test_static_heap` 11/11, `test_syntax` 10/10, `test_type_analyzer` 12/12 |
-| `make demo` | **13/13 PASS** | All standalone examples under `examples/` compiled & executed directly via `./verbose` |
+| `make build` | **6/6 PASS** + Stage 3 fixpoint | Bootstrap (`./verbose` or latest release) → `verbose1` → `./verbose` → `verbose2.ll == verbose3.ll` byte-for-byte identical + `./verbose test tests/bootstrap_suite.vb` |
+| `make test` | **11/11 suites (99/99 Test blocks) PASS** | `./verbose test`: `test_arena` 11/11, `test_arrays` 12/12, `test_assure` 5/5, `test_byref` 16/16, `test_c_interop` 4/4 (incl. `tests/raylib/bouncing_ball.vb`), `test_cli` 3/3 (CLI + `prototype.vb`), `test_core` 7/7 (consolidated core feature tests), `test_modules` 8/8, `test_static_heap` 11/11, `test_syntax` 10/10, `test_type_analyzer` 12/12 |
 | `stage0` branch (`bc91476`) | **92/92 PASS** | Archived OCaml Stage 0 compiler verified with `(..)` array literal parity prior to retiring `stage0/` from `main` |
 
 ---

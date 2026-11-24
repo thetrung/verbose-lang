@@ -18,7 +18,7 @@ Declare Function fflush(fp As Pointer) As Integer
 Declare Function snprintf(buf As Pointer, sz As Long, fmt As Pointer, ...) As Integer
 
 Private Sub PrintUsage()
-  Printf("Usage: verbose <filename>.vb [options]\n       verbose test [file.vb | dir] [options]\n  test         Run built-in Test/Assure blocks in a .vb file or directory (default: test)\n  --test       Alias for 'verbose test'\n  --ast        Show parsed AST\n  --ir         Show generated LLVM-IR\n  --ta         Verbose type-analyzer pass (runs automatically before codegen)\n  --no-ta      Skip semantic type-analyzer pass\n  --emit-only  Emit .ll only (skip clang & execution)\n  --no-run     Compile binary with clang without executing it\n  -I <dir>     Add module Include search directory\n  -o <path>    Specify output binary path (or .ll path with --emit-only)\n  -l<lib>      Link external C library (e.g. -lm, -lraylib)\n  -L<dir>      Add library search path for clang\n  <file.c/.o>  Additional C/object files to compile and link with clang\n  -h, --help   Show this help message\n  --version    Show compiler version\n")
+  Printf("Usage: verbose <filename>.vb [options]\n       verbose test [file.vb | dir] [options]\n  test         Run built-in Test/Assure blocks in a .vb file or directory (default: tests)\n  --test       Alias for 'verbose test'\n  --ast        Show parsed AST\n  --ir         Show generated LLVM-IR\n  --ta         Verbose type-analyzer pass (runs automatically before codegen)\n  --no-ta      Skip semantic type-analyzer pass\n  --emit-only  Emit .ll only (skip clang & execution)\n  --no-run     Compile binary with clang without executing it\n  -I <dir>     Add module Include search directory\n  -o <path>    Specify output binary path (or .ll path with --emit-only)\n  -l<lib>      Link external C library (e.g. -lm, -lraylib)\n  -L<dir>      Add library search path for clang\n  <file.c/.o>  Additional C/object files to compile and link with clang\n  -h, --help   Show this help message\n  --version    Show compiler version\n")
 End Sub
 
 Private Function CliHasSuffix(s As Pointer, suf As Pointer) As Boolean
@@ -536,7 +536,7 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
 
   If testMode = 1 Then
     If targetCount = 0 Then
-      Return RunTestDirectory("test", showAst, showIr, showTa, skipTa, emitOnly, noRun, extraInputs, extraInputCount, clangFlags, clangFlagCount)
+      Return RunTestDirectory("tests", showAst, showIr, showTa, skipTa, emitOnly, noRun, extraInputs, extraInputCount, clangFlags, clangFlagCount)
     End If
     If targetCount = 1 Then
       If CliIsDir(targets(0)) Then

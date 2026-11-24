@@ -1,8 +1,8 @@
 ' Raylib Bouncing Ball + Trail Demo written in VerBose-Lang
 ' Build with real Raylib:
-'   ./verbose examples/raylib/bouncing_ball.vb -lraylib -lm
+'   ./verbose tests/raylib/bouncing_ball.vb -lraylib -lm
 ' Build & run headless verification shim:
-'   ./verbose examples/raylib/bouncing_ball.vb examples/raylib/raylib_headless_shim.c -lm
+'   ./verbose tests/raylib/bouncing_ball.vb tests/raylib/raylib_headless_shim.c -lm
 
 Include "raylib.vb"
 

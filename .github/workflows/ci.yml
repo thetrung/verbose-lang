@@ -21,11 +21,8 @@ jobs:
       - name: Build self-hosted compiler (Stage 1 -> Stage 2 -> Stage 3 fixpoint)
         run: make build
 
-      - name: Run self-hosted compiler test suite (CLI, examples, semantic & negative checks)
+      - name: Run self-hosted pure-VerBose test suite (./verbose test)
         run: make test
-
-      - name: Run all standalone examples via ./verbose
-        run: make demo
 
       - name: Verify install & dist packaging
         run: |
