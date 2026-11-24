@@ -9,10 +9,17 @@ Private Sub EnsureBootstrapDir()
     Return
   End If
   Dim pid As Integer = getpid()
-  snprintf(b_tmpDir, 256, "/tmp/vb_selfhost_%d", pid)
-  snprintf(b_v2, 300, "%s/verbose2", b_tmpDir)
+  Dim isWin As Boolean = IsWindowsHost()
   Dim cmd(512) As Byte
-  snprintf(cmd, 512, "mkdir -p '%s'", b_tmpDir)
+  If isWin Then
+    snprintf(b_tmpDir, 256, "%s\\vb_selfhost_%d", GetTempDir(), pid)
+    snprintf(b_v2, 300, "%s\\verbose2.exe", b_tmpDir)
+    snprintf(cmd, 512, "mkdir \"%s\" 2>nul", b_tmpDir)
+  Else
+    snprintf(b_tmpDir, 256, "%s/vb_selfhost_%d", GetTempDir(), pid)
+    snprintf(b_v2, 300, "%s/verbose2", b_tmpDir)
+    snprintf(cmd, 512, "mkdir -p \"%s\"", b_tmpDir)
+  End If
   system(cmd)
   Dim helper(300) As Byte
   snprintf(helper, 300, "%s/helper_mod.vb", b_tmpDir)
@@ -22,13 +29,19 @@ End Sub
 
 Private Function RunStage2Prog(fname, source As Pointer) As Integer
   Dim srcPath(320), llPath(320), exePath(320) As Byte
-  snprintf(srcPath, 320, "%s/%s.vb", b_tmpDir, fname)
-  snprintf(llPath, 320, "%s/%s.ll", b_tmpDir, fname)
-  snprintf(exePath, 320, "%s/%s", b_tmpDir, fname)
+  If IsWindowsHost() Then
+    snprintf(srcPath, 320, "%s\\%s.vb", b_tmpDir, fname)
+    snprintf(llPath, 320, "%s\\%s.ll", b_tmpDir, fname)
+    snprintf(exePath, 320, "%s\\%s.exe", b_tmpDir, fname)
+  Else
+    snprintf(srcPath, 320, "%s/%s.vb", b_tmpDir, fname)
+    snprintf(llPath, 320, "%s/%s.ll", b_tmpDir, fname)
+    snprintf(exePath, 320, "%s/%s", b_tmpDir, fname)
+  End If
   WriteTextFile(srcPath, source)
 
   Dim cmd(1536) As Byte
-  snprintf(cmd, 1536, "'%s' '%s' '%s' && clang -O2 '%s' -o '%s' && '%s'", b_v2, srcPath, llPath, llPath, exePath, exePath)
+  snprintf(cmd, 1536, "\"%s\" \"%s\" \"%s\" && clang -O2 \"%s\" -o \"%s\" && \"%s\"", b_v2, srcPath, llPath, llPath, exePath, exePath)
   Return RunShell(cmd)
 End Function
 
@@ -36,22 +49,33 @@ Test "(STAGE-1 -> STAGE-2 -> STAGE-3 FIXPOINT) self-hosted compiler byte-for-byt
   EnsureBootstrapDir()
   Dim comp(768), v1(300), v2ll(300), v3ll(300) As Byte
   GetCompilerAbs(comp, 768)
-  snprintf(v1, 300, "%s/verbose1", b_tmpDir)
-  snprintf(v2ll, 300, "%s/verbose2.ll", b_tmpDir)
-  snprintf(v3ll, 300, "%s/verbose3.ll", b_tmpDir)
+  Dim isWin As Boolean = IsWindowsHost()
+  If isWin Then
+    snprintf(v1, 300, "%s\\verbose1.exe", b_tmpDir)
+    snprintf(v2ll, 300, "%s\\verbose2.ll", b_tmpDir)
+    snprintf(v3ll, 300, "%s\\verbose3.ll", b_tmpDir)
+  Else
+    snprintf(v1, 300, "%s/verbose1", b_tmpDir)
+    snprintf(v2ll, 300, "%s/verbose2.ll", b_tmpDir)
+    snprintf(v3ll, 300, "%s/verbose3.ll", b_tmpDir)
+  End If
 
   Dim cmd(2048) As Byte
   ' Stage 1
-  snprintf(cmd, 2048, "'%s' src/verbose.vb --no-run -o '%s'", comp, v1)
+  snprintf(cmd, 2048, "\"%s\" src/verbose.vb --no-run -o \"%s\"", comp, v1)
   Assert RunShell(cmd) = 0, "Stage 1 failed to compile src/verbose.vb"
   unlink("src/verbose.ll")
 
   ' Stage 2
-  snprintf(cmd, 2048, "'%s' src/verbose.vb '%s' && clang -O2 '%s' -o '%s'", v1, v2ll, v2ll, b_v2)
+  snprintf(cmd, 2048, "\"%s\" src/verbose.vb \"%s\" && clang -O2 \"%s\" -o \"%s\"", v1, v2ll, v2ll, b_v2)
   Assert RunShell(cmd) = 0, "Stage 2 failed to compile src/verbose.vb"
 
   ' Stage 3 fixpoint
-  snprintf(cmd, 2048, "'%s' src/verbose.vb '%s' && diff -q '%s' '%s'", b_v2, v3ll, v2ll, v3ll)
+  If isWin Then
+    snprintf(cmd, 2048, "\"%s\" src/verbose.vb \"%s\" && fc /b \"%s\" \"%s\"", b_v2, v3ll, v2ll, v3ll)
+  Else
+    snprintf(cmd, 2048, "\"%s\" src/verbose.vb \"%s\" && diff -q \"%s\" \"%s\"", b_v2, v3ll, v2ll, v3ll)
+  End If
   Assert RunShell(cmd) = 0, "Stage 3 fixpoint diff failed (verbose2.ll != verbose3.ll)"
 End Test
 
@@ -83,7 +107,11 @@ Test "(STAGE-2) 05_arena_and_include — Include module, Static globals, Arena l
   EnsureBootstrapDir()
   Dim rc As Integer = RunStage2Prog("p05", "Include \"helper_mod.vb\"\nStatic g_total As Integer = 100\nPublic Function main() As Integer\n  Dim a As Arena = ArenaCreate(256)\n  Dim xs() As Integer = ArenaAlloc(ByRef a, Integer, 4)\n  xs(0) = DoubleIt(7)\n  xs(3) = g_total + xs(0)\n  Dim x0 As Integer = xs(0)\n  Dim x3 As Integer = xs(3)\n  Dim used1 As Long = ArenaUsed(ByRef a)\n  ArenaReset(ByRef a)\n  Dim used2 As Long = ArenaUsed(ByRef a)\n  ArenaDestroy(ByRef a)\n  Dim dead As Pointer = ArenaAllocBytes(ByRef a, 8)\n  Printf(\"xs=%d,%d used=%ld,%ld null=%d\\n\", x0, x3, used1, used2, IsNull(dead))\n  Return 0\nEnd Function\n")
   Dim rmCmd(512) As Byte
-  snprintf(rmCmd, 512, "rm -rf '%s'", b_tmpDir)
+  If IsWindowsHost() Then
+    snprintf(rmCmd, 512, "rmdir /s /q \"%s\"", b_tmpDir)
+  Else
+    snprintf(rmCmd, 512, "rm -rf \"%s\"", b_tmpDir)
+  End If
   system(rmCmd)
   Assert rc = 0
   Assert OutHas("xs=14,114 used=16,0 null=1")

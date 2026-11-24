@@ -11,26 +11,59 @@ Declare Function unlink(path As Pointer) As Integer
 Declare Function getpid() As Integer
 Declare Function snprintf(buf As Pointer, sz As Long, fmt As Pointer, ...) As Integer
 Declare Function strlen(s As Pointer) As Long
+Declare Function strcmp(a, b As Pointer) As Integer
 Declare Function getenv(name As Pointer) As Pointer
 Declare Function getcwd(buf As Pointer, sz As Long) As Pointer
 
 Public Static g_out(131072) As Byte, g_outLen = 0, g_exitCode = 0 As Integer
 
+Public Function IsWindowsHost() As Boolean
+  Dim envOs As Pointer = getenv("OS")
+  If Not IsNull(envOs) Then
+    If strcmp(envOs, "Windows_NT") = 0 Then
+      Return True
+    End If
+  End If
+  Return False
+End Function
+
+Public Function GetTempDir() As Pointer
+  If IsWindowsHost() Then
+    Dim t1 As Pointer = getenv("TEMP")
+    If (Not IsNull(t1)) And (t1(0) <> 0) Then
+      Return t1
+    End If
+    Dim t2 As Pointer = getenv("TMP")
+    If (Not IsNull(t2)) And (t2(0) <> 0) Then
+      Return t2
+    End If
+    Return "."
+  End If
+  Return "/tmp"
+End Function
+
 Public Sub GetCompilerAbs(dst As Pointer, cap As Integer)
   Dim envC As Pointer = getenv("VERBOSE_COMPILER")
   Dim raw As Pointer = "./verbose"
+  If IsWindowsHost() Then
+    raw = "verbose.exe"
+  End If
   If Not IsNull(envC) Then
     If envC(0) <> 0 Then
       raw = envC
     End If
   End If
-  If raw(0) = 47 Then
+  If (raw(0) = 47) Or (raw(0) = 92) Or ((raw(0) <> 0) And (raw(1) = 58)) Then
     snprintf(dst, cap, "%s", raw)
     Return
   End If
   Dim cwdBuf(512) As Byte
   getcwd(cwdBuf, 512)
-  snprintf(dst, cap, "%s/%s", cwdBuf, raw)
+  If IsWindowsHost() Then
+    snprintf(dst, cap, "%s\\%s", cwdBuf, raw)
+  Else
+    snprintf(dst, cap, "%s/%s", cwdBuf, raw)
+  End If
 End Sub
 
 Public Function RunShell(cmd As Pointer) As Integer
@@ -66,11 +99,15 @@ Public Function RunShell(cmd As Pointer) As Integer
 
   Dim st As Integer = pclose(fp)
   If st <> 0 Then
-    Dim ec As Integer = (st Shr 8) And 255
-    If ec = 0 Then
-      g_exitCode = 1
+    If IsWindowsHost() Then
+      g_exitCode = st
     Else
-      g_exitCode = ec
+      Dim ec As Integer = (st Shr 8) And 255
+      If ec = 0 Then
+        g_exitCode = 1
+      Else
+        g_exitCode = ec
+      End If
     End If
   Else
     g_exitCode = 0
@@ -123,7 +160,11 @@ Public Function RunVb(vbPath, extraArgs As Pointer) As Integer
 
   Dim pid As Integer = getpid()
   Dim outBin(256) As Byte
-  snprintf(outBin, 256, "/tmp/vb_case_%d", pid)
+  If IsWindowsHost() Then
+    snprintf(outBin, 256, "%s\\vb_case_%d.exe", GetTempDir(), pid)
+  Else
+    snprintf(outBin, 256, "%s/vb_case_%d", GetTempDir(), pid)
+  End If
 
   Dim llPath(512) As Byte
   Dim slen As Integer = strlen(vbPath)
@@ -143,9 +184,9 @@ Public Function RunVb(vbPath, extraArgs As Pointer) As Integer
 
   Dim cmd(2048) As Byte
   If (Not IsNull(extraArgs)) And (extraArgs(0) <> 0) Then
-    snprintf(cmd, 2048, "'%s' '%s' -o '%s' %s", comp, vbPath, outBin, extraArgs)
+    snprintf(cmd, 2048, "\"%s\" \"%s\" -o \"%s\" %s", comp, vbPath, outBin, extraArgs)
   Else
-    snprintf(cmd, 2048, "'%s' '%s' -o '%s'", comp, vbPath, outBin)
+    snprintf(cmd, 2048, "\"%s\" \"%s\" -o \"%s\"", comp, vbPath, outBin)
   End If
 
   Dim rc As Integer = RunShell(cmd)

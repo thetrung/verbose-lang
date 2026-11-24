@@ -85,7 +85,7 @@ jobs:
 
   build-macos-arm64:
     needs: bootstrap-linux-x86_64
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -139,10 +139,11 @@ jobs:
         run: |
           clang -O2 cross-ir/verbose-windows-x86_64.ll -o ./.verbose.boot.exe
           make build BOOTSTRAP=./.verbose.boot.exe
-          ./verbose.exe test tests/test_assert.vb
-          ./verbose.exe test tests/test_compress.vb
           ./verbose.exe test tests/test_core.vb
-          ./verbose.exe test tests/test_lang_ext.vb
+          ./verbose.exe test tests/test_c_interop.vb
+          ./verbose.exe test tests/test_arena.vb
+          ./verbose.exe test tests/test_arrays.vb
+          ./verbose.exe test tests/test_byref.vb
           ./verbose.exe test tests/test_std_collections.vb
           ./verbose.exe test tests/test_std_math.vb
           ./verbose.exe test tests/test_std_strings.vb
