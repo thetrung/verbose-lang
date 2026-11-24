@@ -1173,6 +1173,32 @@ Private Function CgWidenToI64(valReg As Integer, fromTy As TypeInfo) As Integer
   Return CgCoerceScalar(valReg, fromTy, longTy)
 End Function
 
+' C default argument promotions for variadic (...) calls (float->double, i1/i8/i16->i32)
+Private Function CgPromoteVariadic(aReg As Integer, ByRef aTy As TypeInfo) As Integer
+  If aTy.arrLen <> 0 Then
+    Return aReg
+  End If
+  If aTy.kind = TypeKind.TySingle Then
+    Dim dblTy As TypeInfo With ( kind = TypeKind.TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+    Dim r As Integer = CgCoerceScalar(aReg, aTy, dblTy)
+    aTy = dblTy
+    Return r
+  End If
+  If aTy.kind = TypeKind.TyBoolean Then
+    Dim r As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = zext i1 %%r%d to i32\n", r, aReg)
+    aTy = TypeInfo With ( kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+    Return r
+  End If
+  If (aTy.kind = TypeKind.TyByte) Or (aTy.kind = TypeKind.TyShort) Then
+    Dim intTy As TypeInfo With ( kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+    Dim r As Integer = CgCoerceScalar(aReg, aTy, intTy)
+    aTy = intTy
+    Return r
+  End If
+  Return aReg
+End Function
+
 Private Sub CgEmitStoreTypedEx(dstPtrReg As Integer, dstTy As TypeInfo, valReg As Integer, valTy As TypeInfo, isVol As Integer)
   If CgIsAggregate(dstTy) Then
     Dim sz As Integer = CgTypeSize(dstTy)
@@ -2134,10 +2160,8 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
       Dim aNode As Integer = g_kids(aStart + i)
       Dim aTy As TypeInfo
       Dim aReg As Integer = CgEmitExpr(g_nodes(aNode).left, ByRef aTy)
-      If aTy.kind = TypeKind.TySingle Then
-        Dim dblTy As TypeInfo With ( kind = TypeKind.TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
-        aReg = CgCoerceScalar(aReg, aTy, dblTy)
-        aTy = dblTy
+      If i > 0 Then
+        aReg = CgPromoteVariadic(aReg, ByRef aTy)
       End If
       argRegs(i) = aReg
       argTys(i) = aTy
@@ -2348,10 +2372,8 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
           End If
         End If
       Else
-        If (fnIdx >= 0) And (cg_funcs(fnIdx).isVariadic = 1) And (aTy.kind = TypeKind.TySingle) Then
-          Dim dblTy As TypeInfo With ( kind = TypeKind.TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
-          aReg = CgCoerceScalar(aReg, aTy, dblTy)
-          aTy = dblTy
+        If (fnIdx >= 0) And (cg_funcs(fnIdx).isVariadic = 1) Then
+          aReg = CgPromoteVariadic(aReg, ByRef aTy)
         End If
         argRegs(emitArgCnt) = aReg
         If CgIsAggregate(aTy) Or (aTy.arrLen < 0) Then
