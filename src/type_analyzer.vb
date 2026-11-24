@@ -28,19 +28,24 @@ Structure TaParamInfo
 End Structure
 
 Structure TaFuncInfo
-  Dim namePos, nameLen, isExtern, isVariadic, isPrivate, modId, paramStart, paramCount As Integer
-  Dim retTy As TypeInfo
+  Dim namePos, nameLen, isExtern, isVariadic, isPrivate, isAsync, modId, paramStart, paramCount As Integer
+  Dim retTy, bodyRetTy As TypeInfo
 End Structure
 
 Structure TaLocalSym
   Dim namePos, nameLen As Integer, ty As TypeInfo
 End Structure
 
+Structure TaLabelInfo
+  Dim namePos, nameLen As Integer
+End Structure
+
 Private Static ta_enums() As TaEnumInfo, ta_enumMems() As TaEnumMem
 Private Static ta_structs() As TaStructInfo, ta_fields() As TaFieldInfo
 Private Static ta_globals() As TaGlobalInfo, ta_funcs() As TaFuncInfo
 Private Static ta_params() As TaParamInfo, ta_locals() As TaLocalSym
-Private Static ta_enumCount, ta_enumMemCount, ta_structCount, ta_fieldCount, ta_globalCount, ta_funcCount, ta_paramCount, ta_localCount, ta_curModId, ta_errCount As Integer = 0
+Private Static ta_labels(128) As TaLabelInfo
+Private Static ta_enumCount, ta_enumMemCount, ta_structCount, ta_fieldCount, ta_globalCount, ta_funcCount, ta_paramCount, ta_localCount, ta_labelCount, ta_curModId, ta_errCount As Integer = 0
 Private Static ta_curRetTy As TypeInfo
 
 Private Sub TaPrintSlice(pos, slen As Integer)
@@ -74,6 +79,15 @@ Private Sub TaPrintType(ty As TypeInfo)
       Printf("Pointer")
     Case TypeKind.TyArena
       Printf("Arena")
+    Case TypeKind.TyTask
+      If ty.innerKind = TypeKind.TyNothing Then
+        Printf("Task")
+      Else
+        Printf("Task(")
+        Dim innerT As TypeInfo With ( kind = ty.innerKind, typeIdx = ty.typeIdx, arrLen = 0, namePos = ty.namePos, nameLen = ty.nameLen, innerKind = 0 )
+        TaPrintType(innerT)
+        Printf(")")
+      End If
     Case TypeKind.TyStruct, TypeKind.TyEnum
       TaPrintSlice(ty.namePos, ty.nameLen)
     Case Else
@@ -257,13 +271,14 @@ Private Function TaLookupVar(pos, slen As Integer, ByRef outTy As TypeInfo) As B
   Return False
 End Function
 
-Private Function TaResolveType(rawKind As Integer, arrLen As Integer, nPos As Integer, nLen As Integer) As TypeInfo
+Private Function TaResolveTypeEx(rawKind As Integer, rawInnerKind As Integer, arrLen As Integer, nPos As Integer, nLen As Integer) As TypeInfo
   Dim res As TypeInfo With (
     kind = rawKind,
     typeIdx = -1,
     arrLen = arrLen,
     namePos = nPos,
-    nameLen = nLen
+    nameLen = nLen,
+    innerKind = rawInnerKind
   )
   If rawKind = TypeKind.TyStruct Then
     Dim eIdx As Integer = TaFindEnum(nPos, nLen)
@@ -274,8 +289,23 @@ Private Function TaResolveType(rawKind As Integer, arrLen As Integer, nPos As In
       Dim sIdx As Integer = TaFindStruct(nPos, nLen)
       res.typeIdx = sIdx
     End If
+  Else
+    If (rawKind = TypeKind.TyTask) And (rawInnerKind = TypeKind.TyStruct) Then
+      Dim eIdx As Integer = TaFindEnum(nPos, nLen)
+      If eIdx >= 0 Then
+        res.innerKind = TypeKind.TyEnum
+        res.typeIdx = eIdx
+      Else
+        Dim sIdx As Integer = TaFindStruct(nPos, nLen)
+        res.typeIdx = sIdx
+      End If
+    End If
   End If
   Return res
+End Function
+
+Private Function TaResolveType(rawKind As Integer, arrLen As Integer, nPos As Integer, nLen As Integer) As TypeInfo
+  Return TaResolveTypeEx(rawKind, TypeKind.TyNothing, arrLen, nPos, nLen)
 End Function
 
 Private Sub TaValidateType(ty As TypeInfo)
@@ -283,7 +313,8 @@ Private Sub TaValidateType(ty As TypeInfo)
     Printf(MSG_TA_ARRAY_SIZE_POS)
     ta_errCount = ta_errCount + 1
   End If
-  If (ty.kind = TypeKind.TyStruct) And (ty.typeIdx < 0) Then
+  Dim badStruct As Boolean = ((ty.kind = TypeKind.TyStruct) And (ty.typeIdx < 0)) Or ((ty.kind = TypeKind.TyTask) And (ty.innerKind = TypeKind.TyStruct) And (ty.typeIdx < 0))
+  If badStruct Then
     If TaHasPrivateStructOther(ty.namePos, ty.nameLen) Or TaHasPrivateEnumOther(ty.namePos, ty.nameLen) Then
       Printf(MSG_TA_PRIVATE_TYPE)
       TaPrintSlice(ty.namePos, ty.nameLen)
@@ -339,6 +370,17 @@ Private Function TaBaseTypesEqual(t1 As TypeInfo, t2 As TypeInfo) As Boolean
   If k1 = TypeKind.TyStruct Then
     Return t1.typeIdx = t2.typeIdx
   End If
+  If k1 = TypeKind.TyTask Then
+    Dim ik1 As Integer = TaNormKind(t1.innerKind)
+    Dim ik2 As Integer = TaNormKind(t2.innerKind)
+    If ik1 <> ik2 Then
+      Return False
+    End If
+    If ik1 = TypeKind.TyStruct Then
+      Return t1.typeIdx = t2.typeIdx
+    End If
+    Return True
+  End If
   Return True
 End Function
 
@@ -376,6 +418,12 @@ Private Function TaIsAssignable(target As TypeInfo, actual As TypeInfo, rhsNode 
     If (actual.arrLen <> 0) And TaBaseTypesEqual(target, actual) Then
       Return True
     End If
+    If (rhsNode >= 0) And (g_nodes(rhsNode).kind = NodeKind.NdIntLit) And (g_nodes(rhsNode).intVal = 0) Then
+      Return True
+    End If
+  End If
+  ' Task(T) <- literal 0 (null handle)
+  If (target.arrLen = 0) And (target.kind = TypeKind.TyTask) Then
     If (rhsNode >= 0) And (g_nodes(rhsNode).kind = NodeKind.NdIntLit) And (g_nodes(rhsNode).intVal = 0) Then
       Return True
     End If
@@ -453,15 +501,26 @@ Private Function TaIsConstExpr(ty As TypeInfo, exprId As Integer) As Boolean
     Return True
   End If
   Dim k As Integer = g_nodes(exprId).kind
-  ' Pointer or unsized slice initialized to 0 or StringLit
+  ' Pointer or unsized slice initialized to integer address / 0, StringLit, or AddressOf(func/global)
   If ((ty.arrLen = 0) And (ty.kind = TypeKind.TyPointer)) Or (ty.arrLen = -1) Then
-    If (k = NodeKind.NdIntLit) And (g_nodes(exprId).intVal = 0) Then
+    If (k = NodeKind.NdIntLit) And ((g_nodes(exprId).intVal = 0) Or ((ty.arrLen = 0) And (ty.kind = TypeKind.TyPointer))) Then
       Return True
     End If
     If (ty.arrLen = 0) And (k = NodeKind.NdStrLit) Then
       Return True
     End If
+    If (ty.arrLen = 0) And (k = NodeKind.NdAddressOf) Then
+      Dim tgt As Integer = g_nodes(exprId).left
+      If (tgt >= 0) And (g_nodes(tgt).kind = NodeKind.NdVar) Then
+        If (TaFindFunc(g_nodes(tgt).intVal, g_nodes(tgt).lenVal) >= 0) Or (TaFindGlobal(g_nodes(tgt).intVal, g_nodes(tgt).lenVal) >= 0) Then
+          Return True
+        End If
+      End If
+    End If
     Return False
+  End If
+  If (ty.arrLen = 0) And (ty.kind = TypeKind.TyTask) Then
+    Return (k = NodeKind.NdIntLit) And (g_nodes(exprId).intVal = 0)
   End If
   If TaIsIntType(ty) Then
     If TaIsIntLitNode(exprId) Then
@@ -490,7 +549,7 @@ Private Function TaIsConstExpr(ty As TypeInfo, exprId As Integer) As Boolean
       ta_errCount = ta_errCount + 1
       Return True
     End If
-    Dim elemTy As TypeInfo With ( kind = ty.kind, typeIdx = ty.typeIdx, arrLen = 0, namePos = ty.namePos, nameLen = ty.nameLen )
+    Dim elemTy As TypeInfo With ( kind = ty.kind, typeIdx = ty.typeIdx, arrLen = 0, namePos = ty.namePos, nameLen = ty.nameLen, innerKind = ty.innerKind )
     Dim i As Integer = 0
     While i < g_nodes(exprId).childCount Do
       If Not TaIsConstExpr(elemTy, g_kids(g_nodes(exprId).firstChild + i)) Then
@@ -551,7 +610,7 @@ Private Function TaCheckIndex(baseTy As TypeInfo, idxExpr As Integer) As TypeInf
     ta_errCount = ta_errCount + 1
   End If
   If baseTy.arrLen <> 0 Then
-    Dim elemTy As TypeInfo With ( kind = baseTy.kind, typeIdx = baseTy.typeIdx, arrLen = 0, namePos = baseTy.namePos, nameLen = baseTy.nameLen )
+    Dim elemTy As TypeInfo With ( kind = baseTy.kind, typeIdx = baseTy.typeIdx, arrLen = 0, namePos = baseTy.namePos, nameLen = baseTy.nameLen, innerKind = baseTy.innerKind )
     Return elemTy
   End If
   If baseTy.kind = TypeKind.TyPointer Then
@@ -582,7 +641,7 @@ Private Function TaTypeOfCall(id As Integer) As TypeInfo
       Return TaMakePrim(TypeKind.TyBoolean)
     End If
     Dim pt As TypeInfo = TaTypeOfExpr(g_nodes(a0).left)
-    If (pt.arrLen = 0) And (pt.kind <> TypeKind.TyPointer) Then
+    If (pt.arrLen = 0) And (pt.kind <> TypeKind.TyPointer) And (pt.kind <> TypeKind.TyTask) Then
       Printf("Semantic Type Error: IsNull expects a Pointer or slice argument\n")
       ta_errCount = ta_errCount + 1
     End If
@@ -1187,7 +1246,7 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
       TaTypeOfExpr(g_kids(g_nodes(id).firstChild + i))
       i = i + 1
     End While
-    Dim arrTy As TypeInfo With ( kind = firstTy.kind, typeIdx = firstTy.typeIdx, arrLen = cnt, namePos = firstTy.namePos, nameLen = firstTy.nameLen )
+    Dim arrTy As TypeInfo With ( kind = firstTy.kind, typeIdx = firstTy.typeIdx, arrLen = cnt, namePos = firstTy.namePos, nameLen = firstTy.nameLen, innerKind = firstTy.innerKind )
     Return arrTy
   End If
 
@@ -1288,6 +1347,146 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
     Return res
   End If
 
+  If k = NodeKind.NdVolatileLoad Then
+    Dim addrTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
+    Dim addrOk As Boolean = ((addrTy.arrLen = 0) And (addrTy.kind = TypeKind.TyPointer)) Or (addrTy.arrLen <> 0) Or TaIsIntType(addrTy)
+    If Not addrOk Then
+      Printf(MSG_TA_VOLATILE_ADDR)
+      ta_errCount = ta_errCount + 1
+    End If
+    Dim valTy As TypeInfo = TaResolveType(g_nodes(id).tyKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    TaValidateType(valTy)
+    If valTy.kind = TypeKind.TyNothing Then
+      Printf(MSG_TA_VOLATILE_TYPE)
+      ta_errCount = ta_errCount + 1
+    End If
+    Return valTy
+  End If
+
+  If k = NodeKind.NdVolatileStore Then
+    Dim addrTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
+    Dim addrOk As Boolean = ((addrTy.arrLen = 0) And (addrTy.kind = TypeKind.TyPointer)) Or (addrTy.arrLen <> 0) Or TaIsIntType(addrTy)
+    If Not addrOk Then
+      Printf(MSG_TA_VOLATILE_ADDR)
+      ta_errCount = ta_errCount + 1
+    End If
+    Dim targetTy As TypeInfo = TaResolveTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    TaValidateType(targetTy)
+    If targetTy.kind = TypeKind.TyNothing Then
+      Printf(MSG_TA_VOLATILE_TYPE)
+      ta_errCount = ta_errCount + 1
+    End If
+    Dim valTy As TypeInfo = TaTypeOfExpr(g_nodes(id).right)
+    If Not TaIsAssignable(targetTy, valTy, g_nodes(id).right) Then
+      Printf(MSG_TA_VOLATILE_STORE_MISMATCH)
+      ta_errCount = ta_errCount + 1
+    End If
+    Return TaMakePrim(TypeKind.TyNothing)
+  End If
+
+  If k = NodeKind.NdAddressOf Then
+    Dim tgt As Integer = g_nodes(id).left
+    If tgt >= 0 Then
+      Dim tk As Integer = g_nodes(tgt).kind
+      If tk = NodeKind.NdVar Then
+        Dim vp = g_nodes(tgt).intVal, vl = g_nodes(tgt).lenVal As Integer
+        Dim dummyTy As TypeInfo
+        If TaLookupVar(vp, vl, ByRef dummyTy) Or (TaFindFunc(vp, vl) >= 0) Then
+          Return TaMakePrim(TypeKind.TyPointer)
+        End If
+        If TaFindEnum(vp, vl) >= 0 Then
+          Printf(MSG_TA_ADDRESSOF_TARGET)
+          ta_errCount = ta_errCount + 1
+          Return TaMakePrim(TypeKind.TyPointer)
+        End If
+        TaTypeOfExpr(tgt)
+        Return TaMakePrim(TypeKind.TyPointer)
+      End If
+      If tk = NodeKind.NdFieldAccess Then
+        Dim baseId As Integer = g_nodes(tgt).left
+        If (baseId >= 0) And (g_nodes(baseId).kind = NodeKind.NdVar) Then
+          If TaFindEnum(g_nodes(baseId).intVal, g_nodes(baseId).lenVal) >= 0 Then
+            Printf(MSG_TA_ADDRESSOF_TARGET)
+            ta_errCount = ta_errCount + 1
+            Return TaMakePrim(TypeKind.TyPointer)
+          End If
+        End If
+        TaTypeOfExpr(tgt)
+        Return TaMakePrim(TypeKind.TyPointer)
+      End If
+      If TaIsLValue(tgt) Then
+        TaTypeOfExpr(tgt)
+        Return TaMakePrim(TypeKind.TyPointer)
+      End If
+    End If
+    Printf(MSG_TA_ADDRESSOF_TARGET)
+    ta_errCount = ta_errCount + 1
+    Return TaMakePrim(TypeKind.TyPointer)
+  End If
+
+  If k = NodeKind.NdPtrRead Then
+    Dim addrTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
+    Dim addrOk As Boolean = ((addrTy.arrLen = 0) And (addrTy.kind = TypeKind.TyPointer)) Or (addrTy.arrLen <> 0) Or TaIsIntType(addrTy)
+    If Not addrOk Then
+      Printf(MSG_TA_PTR_ADDR)
+      ta_errCount = ta_errCount + 1
+    End If
+    Dim valTy As TypeInfo = TaResolveTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    TaValidateType(valTy)
+    If valTy.kind = TypeKind.TyNothing Then
+      Printf(MSG_TA_PTR_TYPE)
+      ta_errCount = ta_errCount + 1
+    End If
+    Return valTy
+  End If
+
+  If k = NodeKind.NdPtrWrite Then
+    Dim addrTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
+    Dim addrOk As Boolean = ((addrTy.arrLen = 0) And (addrTy.kind = TypeKind.TyPointer)) Or (addrTy.arrLen <> 0) Or TaIsIntType(addrTy)
+    If Not addrOk Then
+      Printf(MSG_TA_PTR_ADDR)
+      ta_errCount = ta_errCount + 1
+    End If
+    Dim targetTy As TypeInfo = TaResolveTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    TaValidateType(targetTy)
+    If targetTy.kind = TypeKind.TyNothing Then
+      Printf(MSG_TA_PTR_TYPE)
+      ta_errCount = ta_errCount + 1
+    End If
+    Dim valTy As TypeInfo = TaTypeOfExpr(g_nodes(id).right)
+    If Not TaIsAssignable(targetTy, valTy, g_nodes(id).right) Then
+      Printf(MSG_TA_PTR_WRITE_MISMATCH)
+      ta_errCount = ta_errCount + 1
+    End If
+    Return TaMakePrim(TypeKind.TyNothing)
+  End If
+
+  If k = NodeKind.NdPtrAdd Then
+    Dim addrTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
+    Dim addrOk As Boolean = ((addrTy.arrLen = 0) And (addrTy.kind = TypeKind.TyPointer)) Or (addrTy.arrLen <> 0) Or TaIsIntType(addrTy)
+    If Not addrOk Then
+      Printf(MSG_TA_PTR_ADDR)
+      ta_errCount = ta_errCount + 1
+    End If
+    Dim offTy As TypeInfo = TaTypeOfExpr(g_nodes(id).right)
+    If Not TaIsIntType(offTy) Then
+      Printf(MSG_TA_PTR_OFFSET_INT)
+      ta_errCount = ta_errCount + 1
+    End If
+    Return TaMakePrim(TypeKind.TyPointer)
+  End If
+
+  If k = NodeKind.NdAwait Then
+    Dim t As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
+    If (t.arrLen <> 0) Or (t.kind <> TypeKind.TyTask) Then
+      Printf(MSG_TA_AWAIT_NON_TASK)
+      ta_errCount = ta_errCount + 1
+      Return TaMakePrim(TypeKind.TyInt)
+    End If
+    Dim unwrapped As TypeInfo With ( kind = t.innerKind, typeIdx = t.typeIdx, arrLen = 0, namePos = t.namePos, nameLen = t.nameLen, innerKind = 0 )
+    Return unwrapped
+  End If
+
   If k = NodeKind.NdArenaAlloc Then
     If g_nodes(id).op <> 1 Then
       Printf("Semantic Type Error: ArenaAlloc expects ByRef arena as argument 1\n")
@@ -1322,8 +1521,73 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
   Return TaMakePrim(TypeKind.TyInt)
 End Function
 
+Private Function TaFindLabel(pos, slen As Integer) As Integer
+  Dim i As Integer = 0
+  While i < ta_labelCount Do
+    If SlicesEqual(ta_labels(i).namePos, ta_labels(i).nameLen, pos, slen) Then
+      Return i
+    End If
+    i = i + 1
+  End While
+  Return -1
+End Function
+
+Private Sub TaCollectLabels(startIdx, cnt As Integer)
+  Dim i As Integer = 0
+  While i < cnt Do
+    Dim sid As Integer = g_kids(startIdx + i)
+    Dim sk As Integer = g_nodes(sid).kind
+    If sk = NodeKind.NdLabel Then
+      If TaFindLabel(g_nodes(sid).intVal, g_nodes(sid).lenVal) >= 0 Then
+        Printf(MSG_TA_DUP_LABEL)
+        TaPrintSlice(g_nodes(sid).intVal, g_nodes(sid).lenVal)
+        Printf("'\n")
+        ta_errCount = ta_errCount + 1
+      Else
+        If ta_labelCount < 128 Then
+          ta_labels(ta_labelCount) = TaLabelInfo With ( namePos = g_nodes(sid).intVal, nameLen = g_nodes(sid).lenVal )
+          ta_labelCount = ta_labelCount + 1
+        End If
+      End If
+    End If
+    If sk = NodeKind.NdIf Then
+      TaCollectLabels(g_nodes(sid).firstChild, g_nodes(sid).childCount)
+      TaCollectLabels(g_nodes(sid).extraStart, g_nodes(sid).extraCount)
+    End If
+    If (sk = NodeKind.NdWhile) Or (sk = NodeKind.NdFor) Then
+      TaCollectLabels(g_nodes(sid).firstChild, g_nodes(sid).childCount)
+    End If
+    If sk = NodeKind.NdSelect Then
+      Dim bi As Integer = 0
+      While bi < g_nodes(sid).childCount Do
+        Dim br As Integer = g_kids(g_nodes(sid).firstChild + bi)
+        TaCollectLabels(g_nodes(br).firstChild, g_nodes(br).childCount)
+        bi = bi + 1
+      End While
+      If g_nodes(sid).op = 1 Then
+        TaCollectLabels(g_nodes(sid).extraStart, g_nodes(sid).extraCount)
+      End If
+    End If
+    i = i + 1
+  End While
+End Sub
+
 Private Sub TaCheckStmt(id As Integer)
   Dim k As Integer = g_nodes(id).kind
+
+  If k = NodeKind.NdLabel Then
+    Return
+  End If
+
+  If k = NodeKind.NdGoTo Then
+    If TaFindLabel(g_nodes(id).intVal, g_nodes(id).lenVal) < 0 Then
+      Printf(MSG_TA_UNDEF_LABEL)
+      TaPrintSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
+      Printf("'\n")
+      ta_errCount = ta_errCount + 1
+    End If
+    Return
+  End If
 
   If k = NodeKind.NdDim Then
     Dim nPos As Integer = g_nodes(id).intVal
@@ -1334,7 +1598,11 @@ Private Sub TaCheckStmt(id As Integer)
       Printf("' is already declared\n")
       ta_errCount = ta_errCount + 1
     End If
-    Dim ty As TypeInfo = TaResolveType(g_nodes(id).tyKind, g_nodes(id).tyArrLen, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    Dim ty As TypeInfo = TaResolveTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, g_nodes(id).tyArrLen, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    If g_nodes(id).right >= 0 Then
+      Printf(MSG_TA_AT_NON_STATIC)
+      ta_errCount = ta_errCount + 1
+    End If
     Dim initId As Integer = g_nodes(id).left
     If (ty.arrLen = 0) And (ty.kind = TypeKind.TyPointer) And (initId >= 0) Then
       Dim ik As Integer = g_nodes(initId).kind
@@ -1356,7 +1624,7 @@ Private Sub TaCheckStmt(id As Integer)
             Printf("' has %d elements, exceeding size %d\n", litCnt, ty.arrLen)
             ta_errCount = ta_errCount + 1
           End If
-          Dim elemTy As TypeInfo With ( kind = ty.kind, typeIdx = ty.typeIdx, arrLen = 0, namePos = ty.namePos, nameLen = ty.nameLen )
+          Dim elemTy As TypeInfo With ( kind = ty.kind, typeIdx = ty.typeIdx, arrLen = 0, namePos = ty.namePos, nameLen = ty.nameLen, innerKind = ty.innerKind )
           Dim ei As Integer = 0
           While ei < litCnt Do
             Dim eNode As Integer = g_kids(g_nodes(initId).firstChild + ei)
@@ -1397,8 +1665,12 @@ Private Sub TaCheckStmt(id As Integer)
       Printf("' is already declared\n")
       ta_errCount = ta_errCount + 1
     End If
-    Dim ty As TypeInfo = TaResolveType(g_nodes(id).tyKind, g_nodes(id).tyArrLen, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    Dim ty As TypeInfo = TaResolveTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, g_nodes(id).tyArrLen, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
     TaValidateType(ty)
+    If g_nodes(id).right >= 0 Then
+      Printf(MSG_TA_AT_NON_STATIC)
+      ta_errCount = ta_errCount + 1
+    End If
     Dim initId As Integer = g_nodes(id).left
     If initId >= 0 Then
       TaTypeOfExpr(initId)
@@ -1703,7 +1975,7 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       Dim j As Integer = 0
       While j < fc Do
         Dim f As Integer = g_kids(g_nodes(d).firstChild + j)
-        Dim fty As TypeInfo = TaResolveType(g_nodes(f).tyKind, g_nodes(f).tyArrLen, g_nodes(f).tyNamePos, g_nodes(f).tyNameLen)
+        Dim fty As TypeInfo = TaResolveTypeEx(g_nodes(f).tyKind, g_nodes(f).tyInnerKind, g_nodes(f).tyArrLen, g_nodes(f).tyNamePos, g_nodes(f).tyNameLen)
         TaValidateType(fty)
         ta_fields(ta_fieldCount) = TaFieldInfo With (
           namePos = g_nodes(f).intVal,
@@ -1731,7 +2003,7 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       If g_nodes(d).op = 2 Then
         isPriv = 1
       End If
-      Dim gty As TypeInfo = TaResolveType(g_nodes(d).tyKind, g_nodes(d).tyArrLen, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen)
+      Dim gty As TypeInfo = TaResolveTypeEx(g_nodes(d).tyKind, g_nodes(d).tyInnerKind, g_nodes(d).tyArrLen, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen)
       ta_globals(ta_globalCount) = TaGlobalInfo With (
         namePos = g_nodes(d).intVal,
         nameLen = g_nodes(d).lenVal,
@@ -1748,14 +2020,12 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       Dim j As Integer = 0
       While j < pc Do
         Dim pn As Integer = g_kids(g_nodes(d).extraStart + j)
-        Dim pty As TypeInfo = TaResolveType(g_nodes(pn).tyKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen)
+        Dim pty As TypeInfo = TaResolveTypeEx(g_nodes(pn).tyKind, g_nodes(pn).tyInnerKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen)
         ta_params(ta_paramCount) = TaParamInfo With ( isByRef = g_nodes(pn).op, ty = pty )
         ta_paramCount = ta_paramCount + 1
         j = j + 1
       End While
-      Dim isExt As Integer = 0
-      Dim isVar As Integer = 0
-      Dim isPriv As Integer = 0
+      Dim isExt = 0, isVar = 0, isPriv = 0, isAsy = 0 As Integer
       If dk = NodeKind.NdExternDecl Then
         isExt = 1
         isVar = g_nodes(d).op
@@ -1763,6 +2033,25 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
         If g_nodes(d).op = 2 Then
           isPriv = 1
         End If
+        If g_nodes(d).flags = 1 Then
+          isAsy = 1
+        End If
+      End If
+      Dim bRetTy As TypeInfo = TaResolveTypeEx(g_nodes(d).tyKind, g_nodes(d).tyInnerKind, 0, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen)
+      Dim cRetTy As TypeInfo = bRetTy
+      If isAsy = 1 Then
+        If SliceEqualsStr(g_nodes(d).intVal, g_nodes(d).lenVal, "main", 4) Then
+          Printf(MSG_TA_ASYNC_MAIN)
+          ta_errCount = ta_errCount + 1
+        End If
+        cRetTy = TypeInfo With (
+          kind = TypeKind.TyTask,
+          typeIdx = bRetTy.typeIdx,
+          arrLen = 0,
+          namePos = bRetTy.namePos,
+          nameLen = bRetTy.nameLen,
+          innerKind = bRetTy.kind
+        )
       End If
       ta_funcs(ta_funcCount) = TaFuncInfo With (
         namePos = g_nodes(d).intVal,
@@ -1770,8 +2059,10 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
         isExtern = isExt,
         isVariadic = isVar,
         isPrivate = isPriv,
+        isAsync = isAsy,
         modId = g_nodes(d).modId,
-        retTy = TaResolveType(g_nodes(d).tyKind, 0, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen),
+        retTy = cRetTy,
+        bodyRetTy = bRetTy,
         paramStart = ps,
         paramCount = pc
       )
@@ -1792,13 +2083,24 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       Dim gty As TypeInfo = ta_globals(gi).ty
       TaValidateType(gty)
       Dim initId As Integer = ta_globals(gi).initNode
+      Dim atNode As Integer = g_nodes(d).right
+      If atNode >= 0 Then
+        If initId >= 0 Then
+          Printf(MSG_TA_AT_WITH_INIT)
+          ta_errCount = ta_errCount + 1
+        End If
+        If g_nodes(atNode).kind <> NodeKind.NdIntLit Then
+          Printf(MSG_TA_AT_CONST_ADDR)
+          ta_errCount = ta_errCount + 1
+        End If
+      End If
       If initId >= 0 Then
         If (gty.arrLen > 0) And (g_nodes(initId).kind = NodeKind.NdArrayLit) Then
           If g_nodes(initId).childCount > gty.arrLen Then
             Printf("Semantic Type Error: Static array initializer has %d elements, exceeding size %d\n", g_nodes(initId).childCount, gty.arrLen)
             ta_errCount = ta_errCount + 1
           Else
-            Dim elemTy As TypeInfo With ( kind = gty.kind, typeIdx = gty.typeIdx, arrLen = 0, namePos = gty.namePos, nameLen = gty.nameLen )
+            Dim elemTy As TypeInfo With ( kind = gty.kind, typeIdx = gty.typeIdx, arrLen = 0, namePos = gty.namePos, nameLen = gty.nameLen, innerKind = gty.innerKind )
             Dim ei As Integer = 0
             While ei < g_nodes(initId).childCount Do
               Dim el As Integer = g_kids(g_nodes(initId).firstChild + ei)
@@ -1834,9 +2136,10 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       fi = fi + 1
     End If
     If dk = NodeKind.NdFuncDef Then
-      ta_curRetTy = ta_funcs(fi).retTy
+      ta_curRetTy = ta_funcs(fi).bodyRetTy
       TaValidateType(ta_curRetTy)
       ta_localCount = 0
+      ta_labelCount = 0
       Dim j As Integer = 0
       While j < g_nodes(d).extraCount Do
         Dim pn As Integer = g_kids(g_nodes(d).extraStart + j)
@@ -1846,6 +2149,7 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
         ta_localCount = ta_localCount + 1
         j = j + 1
       End While
+      TaCollectLabels(g_nodes(d).firstChild, g_nodes(d).childCount)
       j = 0
       While j < g_nodes(d).childCount Do
         TaCheckStmt(g_kids(g_nodes(d).firstChild + j))
@@ -1856,6 +2160,8 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
     If dk = NodeKind.NdTestDef Then
       ta_curRetTy = TaMakePrim(TypeKind.TyNothing)
       ta_localCount = 0
+      ta_labelCount = 0
+      TaCollectLabels(g_nodes(d).firstChild, g_nodes(d).childCount)
       Dim j As Integer = 0
       While j < g_nodes(d).childCount Do
         TaCheckStmt(g_kids(g_nodes(d).firstChild + j))

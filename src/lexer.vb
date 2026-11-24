@@ -158,6 +158,42 @@ Private Function LxClassifyKeyword(pos, slen As Integer) As Integer
   If SliceEqualsStr(pos, slen, "Assert", 6) Then
     Return TokenKind.TkAssert
   End If
+  If SliceEqualsStr(pos, slen, "Volatile", 8) Then
+    Return TokenKind.TkVolatile
+  End If
+  If SliceEqualsStr(pos, slen, "VolatileLoad", 12) Then
+    Return TokenKind.TkVolatileLoad
+  End If
+  If SliceEqualsStr(pos, slen, "VolatileStore", 13) Then
+    Return TokenKind.TkVolatileStore
+  End If
+  If SliceEqualsStr(pos, slen, "AddressOf", 9) Then
+    Return TokenKind.TkAddressOf
+  End If
+  If SliceEqualsStr(pos, slen, "PtrRead", 7) Then
+    Return TokenKind.TkPtrRead
+  End If
+  If SliceEqualsStr(pos, slen, "PtrWrite", 8) Then
+    Return TokenKind.TkPtrWrite
+  End If
+  If SliceEqualsStr(pos, slen, "PtrAdd", 6) Then
+    Return TokenKind.TkPtrAdd
+  End If
+  If SliceEqualsStr(pos, slen, "Label", 5) Then
+    Return TokenKind.TkLabel
+  End If
+  If SliceEqualsStr(pos, slen, "GoTo", 4) Then
+    Return TokenKind.TkGoTo
+  End If
+  If SliceEqualsStr(pos, slen, "Async", 5) Then
+    Return TokenKind.TkAsync
+  End If
+  If SliceEqualsStr(pos, slen, "Await", 5) Then
+    Return TokenKind.TkAwait
+  End If
+  If SliceEqualsStr(pos, slen, "Task", 4) Then
+    Return TokenKind.TkTask
+  End If
   If SliceEqualsStr(pos, slen, "Integer", 7) Then
     Return TokenKind.TkInteger
   End If
@@ -475,6 +511,14 @@ Private Function LxResolveIncludePath(curPos, curLen, incPos, incLen As Integer,
     End If
     d = d + 1
   End While
+
+  ' Lowest-priority fallback: resolve relative to current working directory (.) so Include "std/..." works from subdirs
+  Dim cwdLen As Integer = 0
+  Dim cwdPos As Integer = LxNormalizePath(incPos, incLen, ByRef cwdLen)
+  If LxFileExists(cwdPos, cwdLen) Then
+    outLen = cwdLen
+    Return cwdPos
+  End If
 
   Dim incBuf(512) As Byte
   Dim ii As Integer = 0

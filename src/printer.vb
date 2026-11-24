@@ -19,7 +19,7 @@ Private Sub PrSlice(pos, slen As Integer)
   End While
 End Sub
 
-Private Sub PrType(tk, arrLen, nPos, nLen As Integer)
+Private Sub PrTypeEx(tk, innerKind, arrLen, nPos, nLen As Integer)
   Select Case tk
     Case TypeKind.TyNothing
       Printf("Nothing")
@@ -41,6 +41,14 @@ Private Sub PrType(tk, arrLen, nPos, nLen As Integer)
       Printf("Pointer")
     Case TypeKind.TyArena
       Printf("Arena")
+    Case TypeKind.TyTask
+      If innerKind = TypeKind.TyNothing Then
+        Printf("Task")
+      Else
+        Printf("Task(")
+        PrTypeEx(innerKind, TypeKind.TyNothing, 0, nPos, nLen)
+        Printf(")")
+      End If
     Case TypeKind.TyStruct, TypeKind.TyEnum
       PrSlice(nPos, nLen)
     Case Else
@@ -53,6 +61,10 @@ Private Sub PrType(tk, arrLen, nPos, nLen As Integer)
       Printf("()")
     End If
   End If
+End Sub
+
+Private Sub PrType(tk, arrLen, nPos, nLen As Integer)
+  PrTypeEx(tk, TypeKind.TyNothing, arrLen, nPos, nLen)
 End Sub
 
 Private Sub PrOp(op As Integer)
@@ -164,13 +176,13 @@ Private Sub PrExpr(id As Integer)
   End If
   If k = NodeKind.NdSizeOf Then
     Printf("SizeOf(")
-    PrType(g_nodes(id).tyKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
     Printf(")")
     Return
   End If
   If k = NodeKind.NdHeapAlloc Then
     Printf("HeapAlloc(")
-    PrType(g_nodes(id).tyKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
     Printf(", ")
     PrExpr(g_nodes(id).left)
     Printf(")")
@@ -180,9 +192,65 @@ Private Sub PrExpr(id As Integer)
     Printf("HeapRealloc(")
     PrExpr(g_nodes(id).left)
     Printf(", ")
-    PrType(g_nodes(id).tyKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
     Printf(", ")
     PrExpr(g_nodes(id).right)
+    Printf(")")
+    Return
+  End If
+  If k = NodeKind.NdVolatileLoad Then
+    Printf("VolatileLoad(")
+    PrExpr(g_nodes(id).left)
+    Printf(", ")
+    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    Printf(")")
+    Return
+  End If
+  If k = NodeKind.NdVolatileStore Then
+    Printf("VolatileStore(")
+    PrExpr(g_nodes(id).left)
+    Printf(", ")
+    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    Printf(", ")
+    PrExpr(g_nodes(id).right)
+    Printf(")")
+    Return
+  End If
+  If k = NodeKind.NdAddressOf Then
+    Printf("AddressOf(")
+    PrExpr(g_nodes(id).left)
+    Printf(")")
+    Return
+  End If
+  If k = NodeKind.NdPtrRead Then
+    Printf("PtrRead(")
+    PrExpr(g_nodes(id).left)
+    Printf(", ")
+    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    Printf(")")
+    Return
+  End If
+  If k = NodeKind.NdPtrWrite Then
+    Printf("PtrWrite(")
+    PrExpr(g_nodes(id).left)
+    Printf(", ")
+    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    Printf(", ")
+    PrExpr(g_nodes(id).right)
+    Printf(")")
+    Return
+  End If
+  If k = NodeKind.NdPtrAdd Then
+    Printf("PtrAdd(")
+    PrExpr(g_nodes(id).left)
+    Printf(", ")
+    PrExpr(g_nodes(id).right)
+    Printf(")")
+    Return
+  End If
+  If k = NodeKind.NdAwait Then
+    Printf("(Await ")
+    PrExpr(g_nodes(id).left)
     Printf(")")
     Return
   End If
@@ -253,6 +321,9 @@ Private Sub PrStmt(id, depth As Integer)
   Dim k As Integer = g_nodes(id).kind
   PrIndent(depth)
   If (k = NodeKind.NdDim) Or (k = NodeKind.NdStaticDim) Then
+    If g_nodes(id).flags = 1 Then
+      Printf("Volatile ")
+    End If
     If k = NodeKind.NdStaticDim Then
       Printf("Static ")
     Else
@@ -260,7 +331,11 @@ Private Sub PrStmt(id, depth As Integer)
     End If
     PrSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
     Printf(" As ")
-    PrType(g_nodes(id).tyKind, g_nodes(id).tyArrLen, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, g_nodes(id).tyArrLen, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    If g_nodes(id).right >= 0 Then
+      Printf(" At ")
+      PrExpr(g_nodes(id).right)
+    End If
     If g_nodes(id).left >= 0 Then
       Printf(" = ")
       PrExpr(g_nodes(id).left)
@@ -304,6 +379,18 @@ Private Sub PrStmt(id, depth As Integer)
       Printf(" ")
       PrExpr(g_nodes(id).left)
     End If
+    Printf("\n")
+    Return
+  End If
+  If k = NodeKind.NdLabel Then
+    Printf("Label ")
+    PrSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
+    Printf("\n")
+    Return
+  End If
+  If k = NodeKind.NdGoTo Then
+    Printf("GoTo ")
+    PrSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
     Printf("\n")
     Return
   End If
@@ -440,10 +527,24 @@ Public Sub PrintProgramAst(progRoot As Integer)
       Printf("End Structure\n\n")
     End If
     If dk = NodeKind.NdGlobalVar Then
+      If g_nodes(d).op = 1 Then
+        Printf("Public ")
+      Else
+        If g_nodes(d).op = 2 Then
+          Printf("Private ")
+        End If
+      End If
+      If g_nodes(d).flags = 1 Then
+        Printf("Volatile ")
+      End If
       Printf("Static ")
       PrSlice(g_nodes(d).intVal, g_nodes(d).lenVal)
       Printf(" As ")
       PrType(g_nodes(d).tyKind, g_nodes(d).tyArrLen, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen)
+      If g_nodes(d).right >= 0 Then
+        Printf(" At ")
+        PrExpr(g_nodes(d).right)
+      End If
       If g_nodes(d).left >= 0 Then
         Printf(" = ")
         PrExpr(g_nodes(d).left)
@@ -495,6 +596,9 @@ Public Sub PrintProgramAst(progRoot As Integer)
           Printf("Private ")
         End If
       End If
+      If g_nodes(d).flags = 1 Then
+        Printf("Async ")
+      End If
       If g_nodes(d).tyKind = TypeKind.TyNothing Then
         Printf("Sub ")
       Else
@@ -513,13 +617,13 @@ Public Sub PrintProgramAst(progRoot As Integer)
         End If
         PrSlice(g_nodes(pn).intVal, g_nodes(pn).lenVal)
         Printf(" As ")
-        PrType(g_nodes(pn).tyKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen)
+        PrTypeEx(g_nodes(pn).tyKind, g_nodes(pn).tyInnerKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen)
         j = j + 1
       End While
       Printf(")")
       If g_nodes(d).tyKind <> TypeKind.TyNothing Then
         Printf(" As ")
-        PrType(g_nodes(d).tyKind, 0, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen)
+        PrTypeEx(g_nodes(d).tyKind, g_nodes(d).tyInnerKind, 0, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen)
       End If
       Printf("\n")
       j = 0

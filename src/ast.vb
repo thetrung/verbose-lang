@@ -13,10 +13,11 @@ Public Enum TypeKind
   TyEnum = 9
   TySingle = 10
   TyDouble = 11
+  TyTask = 12
 End Enum
 
 Public Structure TypeInfo
-  Dim kind, typeIdx, arrLen, namePos, nameLen As Integer
+  Dim kind, typeIdx, arrLen, namePos, nameLen, innerKind As Integer
 End Structure
 
 Public Enum NodeKind
@@ -67,12 +68,21 @@ Public Enum NodeKind
   NdFuncDef = 47
   NdProgram = 48
   NdTestDef = 49
+  NdVolatileLoad = 50
+  NdVolatileStore = 51
+  NdAddressOf = 52
+  NdPtrRead = 53
+  NdPtrWrite = 54
+  NdPtrAdd = 55
+  NdLabel = 56
+  NdGoTo = 57
+  NdAwait = 58
 End Enum
 
 Public Structure AstNode
   Dim kind, op, intVal, lenVal As Integer
   Dim left, right, third, firstChild, childCount, extraStart, extraCount As Integer
-  Dim tyKind, tyArrLen, tyNamePos, tyNameLen, modId As Integer
+  Dim tyKind, tyArrLen, tyNamePos, tyNameLen, tyInnerKind, modId, flags As Integer
 End Structure
 
 Public Static g_nodes() As AstNode, g_kids() As Integer

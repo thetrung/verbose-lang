@@ -27,6 +27,7 @@ Public Enum TokenKind
   TkReturn = 25
   TkTest = 26
   TkAssert = 27
+  TkVolatile = 28
 
   ' Types
   TkInteger = 30
@@ -47,6 +48,8 @@ Public Enum TokenKind
   TkArenaAlloc = 43
   TkHeapAlloc = 44
   TkHeapRealloc = 45
+  TkVolatileLoad = 46
+  TkVolatileStore = 47
 
   ' Control flow
   TkIf = 50
@@ -85,6 +88,17 @@ Public Enum TokenKind
   TkStar = 85
   TkSlash = 86
   TkAmp = 87
+
+  ' Language extensions (raw memory, labels/jumps, structured concurrency)
+  TkAddressOf = 90
+  TkPtrRead = 91
+  TkPtrWrite = 92
+  TkPtrAdd = 93
+  TkLabel = 94
+  TkGoTo = 95
+  TkAsync = 96
+  TkAwait = 97
+  TkTask = 98
 End Enum
 
 Public Structure Token

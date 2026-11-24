@@ -1,7 +1,7 @@
 ' VerBose Self-Hosting Compiler (verbose) - Shared Diagnostics, Messages & LLVM IR Templates
 
 ' --- Compiler Version & CLI Driver Messages ---
-Public Static MSG_CLI_VERSION As Pointer = "verbose 0.4.0 (VerBose-Lang Self-Hosted Compiler)\n"
+Public Static MSG_CLI_VERSION As Pointer = "verbose 0.5.0 (VerBose-Lang Self-Hosted Compiler)\n"
 Public Static MSG_CLI_USAGE As Pointer = "Usage: verbose <filename>.vb [options]\n" &
   "       verbose test [file.vb | dir] [options]\n" &
   "  test         Run built-in Test/Assert blocks in a .vb file or directory (default: tests)\n" &
@@ -11,6 +11,8 @@ Public Static MSG_CLI_USAGE As Pointer = "Usage: verbose <filename>.vb [options]
   "  --ta         Verbose type-analyzer pass (runs automatically before codegen)\n" &
   "  --no-ta      Skip semantic type-analyzer pass\n" &
   "  --emit-only  Emit .ll only (skip clang & execution)\n" &
+  "  -c, --emit-obj Compile to object file (.o) via clang -c (skip linking & run)\n" &
+  "  --target <t> Target platform: linux-x86_64 (default), macos-arm64, arm-m\n" &
   "  --no-run     Compile binary with clang without executing it\n" &
   "  -I <dir>     Add module Include search directory\n" &
   "  -o <path>    Specify output binary path (or .ll path with --emit-only)\n" &
@@ -27,6 +29,8 @@ Public Static MSG_CLI_PARSE_ABORT = "verbose: aborting due to %d parse error(s)\
   MSG_CLI_CLANG_STATUS = "Status: clang = %d\n",
   MSG_CLI_ERR_O_ARG = "Error: -o requires a path argument\n",
   MSG_CLI_ERR_I_ARG = "Error: -I requires a directory argument\n",
+  MSG_CLI_ERR_TARGET_ARG = "Error: --target requires a target name (linux-x86_64, macos-arm64, arm-m)\n",
+  MSG_CLI_ERR_UNKNOWN_TARGET = "Error: unknown target '%s' (supported: linux-x86_64, macos-arm64, arm-m)\n",
   MSG_CLI_ERR_UNKNOWN_OPT = "Unknown option: %s\n",
   MSG_CLI_ERR_UNEXPECTED_ARG = "Unexpected argument: %s\n",
   MSG_CLI_TEST_NO_BLOCKS = "verbose test error: no Test blocks found in '%s'\n",
@@ -63,12 +67,44 @@ Public Static MSG_TA_ARRAY_SIZE_POS = "Semantic Type Error: Array size must be g
   MSG_TA_STATIC_ARR_OVERFLOW = "Semantic Type Error: Static array initializer has %d elements, exceeding size %d\n",
   MSG_TA_STATIC_STRUCT_MISMATCH = "Semantic Type Error: Static struct type mismatch\n",
   MSG_TA_STATIC_CONST_ERR = "Semantic Type Error: Static variable initializer must be a compile-time constant\n",
-  MSG_TA_BUILTIN_NO_BYREF = "Semantic Type Error: Built-in function does not accept ByRef arguments\n" As Pointer
+  MSG_TA_BUILTIN_NO_BYREF = "Semantic Type Error: Built-in function does not accept ByRef arguments\n",
+  MSG_TA_AT_NON_STATIC = "Semantic Type Error: 'At' fixed memory address is only allowed on module-level Static declarations\n",
+  MSG_TA_AT_WITH_INIT = "Semantic Type Error: Fixed-address 'At' Static variable cannot have an initializer\n",
+  MSG_TA_AT_CONST_ADDR = "Semantic Type Error: 'At' fixed memory address must be an integer literal\n",
+  MSG_TA_VOLATILE_ADDR = "Semantic Type Error: VolatileLoad/VolatileStore address must be a Pointer or integer\n",
+  MSG_TA_VOLATILE_TYPE = "Semantic Type Error: VolatileLoad/VolatileStore requires a non-empty type\n",
+  MSG_TA_VOLATILE_STORE_MISMATCH = "Semantic Type Error: VolatileStore value type mismatch\n",
+  MSG_TA_ADDRESSOF_TARGET = "Semantic Type Error: AddressOf requires a variable, struct field, array element, or function\n",
+  MSG_TA_PTR_ADDR = "Semantic Type Error: PtrRead/PtrWrite/PtrAdd address must be a Pointer, array, or integer\n",
+  MSG_TA_PTR_TYPE = "Semantic Type Error: PtrRead/PtrWrite requires a non-empty type\n",
+  MSG_TA_PTR_WRITE_MISMATCH = "Semantic Type Error: PtrWrite value type mismatch\n",
+  MSG_TA_PTR_OFFSET_INT = "Semantic Type Error: PtrAdd offset must be an integer type\n",
+  MSG_TA_DUP_LABEL = "Semantic Type Error: Duplicate label '",
+  MSG_TA_UNDEF_LABEL = "Semantic Type Error: Undefined GoTo label '",
+  MSG_TA_AWAIT_NON_TASK = "Semantic Type Error: Await requires a Task expression\n",
+  MSG_TA_ASYNC_MAIN = "Semantic Type Error: Entry point 'main' cannot be Async\n" As Pointer
 
 ' --- Codegen Diagnostics ---
 Public Static MSG_CG_OPEN_FAIL = "verbose codegen error: cannot open output file\n",
   MSG_CG_UNDEF_VAR = "verbose codegen error: undefined variable\n",
   MSG_CG_INVALID_LVAL = "verbose codegen error: invalid lvalue\n" As Pointer
+
+' --- Target Platform Presets & LLVM Target Triples / Data Layouts ---
+Public Enum TargetKind
+  TgtLinuxX64 = 0
+  TgtMacosArm64 = 1
+  TgtArmM = 2
+End Enum
+
+Public Static IR_DL_LINUX_X64 = "target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"\n",
+  IR_TRIPLE_LINUX_X64 = "target triple = \"x86_64-pc-linux-gnu\"\n\n",
+  IR_DL_MACOS_ARM64 = "target datalayout = \"e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128\"\n",
+  IR_TRIPLE_MACOS_ARM64 = "target triple = \"arm64-apple-macosx11.0.0\"\n\n",
+  IR_DL_ARM_M = "target datalayout = \"e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64\"\n",
+  IR_TRIPLE_ARM_M = "target triple = \"thumbv7em-unknown-none-eabi\"\n\n",
+  CLANG_TRIPLE_LINUX_X64 = "x86_64-pc-linux-gnu",
+  CLANG_TRIPLE_MACOS_ARM64 = "arm64-apple-macosx11.0.0",
+  CLANG_TRIPLE_ARM_M = "thumbv7em-unknown-none-eabi" As Pointer
 
 ' --- LLVM IR Module & Runtime Templates (emitted via fputs) ---
 Public Static IR_MODULE_HEADER = "; Generated by verbose (VerBose Self-Hosting Compiler)\n\n",

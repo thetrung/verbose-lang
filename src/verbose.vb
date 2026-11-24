@@ -22,6 +22,30 @@ Private Sub PrintUsage()
   Printf(MSG_CLI_USAGE)
 End Sub
 
+Private Function CliResolveTarget(name As Pointer) As Integer
+  If (strcmp(name, "linux-x86_64") = 0) Or (strcmp(name, "linux-x64") = 0) Or (strcmp(name, "x86_64-pc-linux-gnu") = 0) Or (strcmp(name, "x86_64-linux-gnu") = 0) Then
+    Return TargetKind.TgtLinuxX64
+  End If
+  If (strcmp(name, "macos-arm64") = 0) Or (strcmp(name, "darwin-arm64") = 0) Or (strcmp(name, "arm64-apple-darwin") = 0) Or (strcmp(name, "arm64-apple-macosx") = 0) Or (strcmp(name, "arm64-apple-macosx11.0.0") = 0) Then
+    Return TargetKind.TgtMacosArm64
+  End If
+  If (strcmp(name, "arm-m") = 0) Or (strcmp(name, "cortex-m") = 0) Or (strcmp(name, "cortex-m4") = 0) Or (strcmp(name, "thumbv7em-none-eabi") = 0) Or (strcmp(name, "thumbv7em-unknown-none-eabi") = 0) Then
+    Return TargetKind.TgtArmM
+  End If
+  Return -1
+End Function
+
+Private Function CliTargetTriple(targetId As Integer) As Pointer
+  Select Case targetId
+    Case TargetKind.TgtMacosArm64
+      Return CLANG_TRIPLE_MACOS_ARM64
+    Case TargetKind.TgtArmM
+      Return CLANG_TRIPLE_ARM_M
+    Case Else
+      Return CLANG_TRIPLE_LINUX_X64
+  End Select
+End Function
+
 Private Function CliHasSuffix(s, suf As Pointer) As Boolean
   Dim slen = strlen(s), flen = strlen(suf) As Long
   If slen < flen Then
@@ -128,7 +152,7 @@ Private Function CliCountTests(progRoot As Integer) As Integer
   Return cnt
 End Function
 
-Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, showTa, skipTa, emitOnly, noRun As Integer, outPath As Pointer, extraInputs() As Pointer, extraInputCount As Integer, clangFlags() As Pointer, clangFlagCount As Integer) As Integer
+Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, showTa, skipTa, emitOnly, emitObj, noRun, targetId As Integer, outPath As Pointer, extraInputs() As Pointer, extraInputCount As Integer, clangFlags() As Pointer, clangFlagCount As Integer) As Integer
   ' 32 MiB deterministic Arena for all source pools, tokens, AST nodes, and symbol tables
   Dim arena As Arena = ArenaCreate(33554432)
   Dim tokCount As Integer = LexerLoadEntry(ByRef arena, inPath)
@@ -171,6 +195,21 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
   End If
 
   CgSetTestMode(testMode)
+  CgSetTarget(targetId)
+
+  ' Cross-target execution/linking rules
+  Dim effEmitObj As Integer = emitObj
+  Dim effNoRun As Integer = noRun
+  If targetId = TargetKind.TgtArmM Then
+    If emitOnly = 0 Then
+      effEmitObj = 1
+    End If
+    effNoRun = 1
+  Else
+    If targetId <> TargetKind.TgtLinuxX64 Then
+      effNoRun = 1
+    End If
+  End If
 
   ' Determine .ll and binary output paths
   Dim baseBuf(512), llPathBuf(512) As Byte
@@ -207,19 +246,24 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
     Return 0
   End If
 
-  ' Determine output binary path
+  ' Determine output binary or object path
   Dim binPathBuf(512) As Byte
   Dim binPos As Integer = 0
   If Not IsNull(outPath) Then
     CliAppendStr(binPathBuf, ByRef binPos, 512, outPath)
   Else
-    If testMode = 1 Then
-      snprintf(binPathBuf, 512, "/tmp/vb_test_%d", pid)
-      If noRun = 0 Then
-        cleanupBin = 1
-      End If
-    Else
+    If effEmitObj = 1 Then
       CliAppendStr(binPathBuf, ByRef binPos, 512, baseBuf)
+      CliAppendStr(binPathBuf, ByRef binPos, 512, ".o")
+    Else
+      If testMode = 1 Then
+        snprintf(binPathBuf, 512, "/tmp/vb_test_%d", pid)
+        If effNoRun = 0 Then
+          cleanupBin = 1
+        End If
+      Else
+        CliAppendStr(binPathBuf, ByRef binPos, 512, baseBuf)
+      End If
     End If
   End If
 
@@ -227,13 +271,23 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
   Dim cmdBuf(4096) As Byte
   Dim cmdPos As Integer = 0
   CliAppendStr(cmdBuf, ByRef cmdPos, 4096, "clang -O2 ")
-  CliAppendQuoted(cmdBuf, ByRef cmdPos, 4096, llPathBuf)
-  Dim ei As Integer = 0
-  While ei < extraInputCount Do
+  If targetId <> TargetKind.TgtLinuxX64 Then
+    CliAppendStr(cmdBuf, ByRef cmdPos, 4096, "-target ")
+    CliAppendStr(cmdBuf, ByRef cmdPos, 4096, CliTargetTriple(targetId))
     CliAppendChar(cmdBuf, ByRef cmdPos, 4096, 32)
-    CliAppendQuoted(cmdBuf, ByRef cmdPos, 4096, extraInputs(ei))
-    ei = ei + 1
-  End While
+  End If
+  If effEmitObj = 1 Then
+    CliAppendStr(cmdBuf, ByRef cmdPos, 4096, "-c ")
+  End If
+  CliAppendQuoted(cmdBuf, ByRef cmdPos, 4096, llPathBuf)
+  If effEmitObj = 0 Then
+    Dim ei As Integer = 0
+    While ei < extraInputCount Do
+      CliAppendChar(cmdBuf, ByRef cmdPos, 4096, 32)
+      CliAppendQuoted(cmdBuf, ByRef cmdPos, 4096, extraInputs(ei))
+      ei = ei + 1
+    End While
+  End If
   CliAppendStr(cmdBuf, ByRef cmdPos, 4096, " -o ")
   CliAppendQuoted(cmdBuf, ByRef cmdPos, 4096, binPathBuf)
   Dim fi As Integer = 0
@@ -242,6 +296,9 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
     CliAppendQuoted(cmdBuf, ByRef cmdPos, 4096, clangFlags(fi))
     fi = fi + 1
   End While
+  If (effEmitObj = 0) And (targetId = TargetKind.TgtLinuxX64) And (CgUsesAsync() = 1) Then
+    CliAppendStr(cmdBuf, ByRef cmdPos, 4096, " -lpthread")
+  End If
 
   Dim clangRc As Integer = system(cmdBuf)
   If cleanupLl = 1 Then
@@ -255,7 +312,7 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
     Return 1
   End If
 
-  If noRun = 1 Then
+  If (effEmitObj = 1) Or (effNoRun = 1) Then
     Return 0
   End If
 
@@ -286,7 +343,7 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
   Return 0
 End Function
 
-Private Function RunTestDirectory(dirPath As Pointer, showAst, showIr, showTa, skipTa, emitOnly, noRun As Integer, extraInputs() As Pointer, extraInputCount As Integer, clangFlags() As Pointer, clangFlagCount As Integer) As Integer
+Private Function RunTestDirectory(dirPath As Pointer, showAst, showIr, showTa, skipTa, emitOnly, emitObj, noRun, targetId As Integer, extraInputs() As Pointer, extraInputCount As Integer, clangFlags() As Pointer, clangFlagCount As Integer) As Integer
   ' Trim trailing slashes unless path is "/"
   Dim cleanDir(512) As Byte
   Dim dlen As Integer = strlen(dirPath)
@@ -345,7 +402,7 @@ Private Function RunTestDirectory(dirPath As Pointer, showAst, showIr, showTa, s
     If cLen > 0 Then
       Printf(MSG_CLI_TEST_RUNNING, curFile)
       fflush(0)
-      Dim rc As Integer = RunSingleTarget(curFile, 1, showAst, showIr, showTa, skipTa, emitOnly, noRun, nullOut, extraInputs, extraInputCount, clangFlags, clangFlagCount)
+      Dim rc As Integer = RunSingleTarget(curFile, 1, showAst, showIr, showTa, skipTa, emitOnly, emitObj, noRun, targetId, nullOut, extraInputs, extraInputCount, clangFlags, clangFlagCount)
       If rc = 0 Then
         suitesPassed = suitesPassed + 1
       Else
@@ -375,7 +432,7 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
     Return 0
   End If
 
-  Dim testMode, showAst, showIr, showTa, skipTa, emitOnly, noRun As Integer = 0
+  Dim testMode, showAst, showIr, showTa, skipTa, emitOnly, emitObj, noRun, targetId As Integer = 0
   Dim targets(64), extraInputs(32), clangFlags(32) As Pointer
   Dim targetCount, extraInputCount, clangFlagCount As Integer = 0
   Dim outPath As Pointer = 0
@@ -422,6 +479,44 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
     End If
     If (handled = 0) And (strcmp(arg, "--emit-only") = 0) Then
       emitOnly = 1
+      handled = 1
+    End If
+    If (handled = 0) And ((strcmp(arg, "-c") = 0) Or (strcmp(arg, "--emit-obj") = 0)) Then
+      emitObj = 1
+      handled = 1
+    End If
+    If (handled = 0) And (strcmp(arg, "--target") = 0) Then
+      If (i + 1) >= argc Then
+        Printf(MSG_CLI_ERR_TARGET_ARG)
+        PrintUsage()
+        Return 1
+      End If
+      i = i + 1
+      Dim resolvedTgt As Integer = CliResolveTarget(argv(i))
+      If resolvedTgt < 0 Then
+        Printf(MSG_CLI_ERR_UNKNOWN_TARGET, argv(i))
+        Return 1
+      End If
+      targetId = resolvedTgt
+      handled = 1
+    End If
+    If (handled = 0) And (strncmp(arg, "--target=", 9) = 0) Then
+      Dim tNameBuf(128) As Byte
+      Dim alen As Integer = strlen(arg)
+      Dim tk As Integer = 9
+      Dim tp As Integer = 0
+      While (tk < alen) And (tp < 127) Do
+        tNameBuf(tp) = arg(tk)
+        tp = tp + 1
+        tk = tk + 1
+      End While
+      tNameBuf(tp) = 0
+      Dim resolvedTgt As Integer = CliResolveTarget(tNameBuf)
+      If resolvedTgt < 0 Then
+        Printf(MSG_CLI_ERR_UNKNOWN_TARGET, tNameBuf)
+        Return 1
+      End If
+      targetId = resolvedTgt
       handled = 1
     End If
     If (handled = 0) And (strcmp(arg, "--no-run") = 0) Then
@@ -514,13 +609,13 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
 
   If testMode = 1 Then
     If targetCount = 0 Then
-      Return RunTestDirectory("tests", showAst, showIr, showTa, skipTa, emitOnly, noRun, extraInputs, extraInputCount, clangFlags, clangFlagCount)
+      Return RunTestDirectory("tests", showAst, showIr, showTa, skipTa, emitOnly, emitObj, noRun, targetId, extraInputs, extraInputCount, clangFlags, clangFlagCount)
     End If
     If targetCount = 1 Then
       If CliIsDir(targets(0)) Then
-        Return RunTestDirectory(targets(0), showAst, showIr, showTa, skipTa, emitOnly, noRun, extraInputs, extraInputCount, clangFlags, clangFlagCount)
+        Return RunTestDirectory(targets(0), showAst, showIr, showTa, skipTa, emitOnly, emitObj, noRun, targetId, extraInputs, extraInputCount, clangFlags, clangFlagCount)
       End If
-      Return RunSingleTarget(targets(0), 1, showAst, showIr, showTa, skipTa, emitOnly, noRun, outPath, extraInputs, extraInputCount, clangFlags, clangFlagCount)
+      Return RunSingleTarget(targets(0), 1, showAst, showIr, showTa, skipTa, emitOnly, emitObj, noRun, targetId, outPath, extraInputs, extraInputCount, clangFlags, clangFlagCount)
     End If
     Dim suitesPassed As Integer = 0
     Dim suitesFailed As Integer = 0
@@ -530,9 +625,9 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
       fflush(0)
       Dim trc As Integer = 0
       If CliIsDir(targets(ti)) Then
-        trc = RunTestDirectory(targets(ti), showAst, showIr, showTa, skipTa, emitOnly, noRun, extraInputs, extraInputCount, clangFlags, clangFlagCount)
+        trc = RunTestDirectory(targets(ti), showAst, showIr, showTa, skipTa, emitOnly, emitObj, noRun, targetId, extraInputs, extraInputCount, clangFlags, clangFlagCount)
       Else
-        trc = RunSingleTarget(targets(ti), 1, showAst, showIr, showTa, skipTa, emitOnly, noRun, outPath, extraInputs, extraInputCount, clangFlags, clangFlagCount)
+        trc = RunSingleTarget(targets(ti), 1, showAst, showIr, showTa, skipTa, emitOnly, emitObj, noRun, targetId, outPath, extraInputs, extraInputCount, clangFlags, clangFlagCount)
       End If
       If trc = 0 Then
         suitesPassed = suitesPassed + 1
@@ -554,5 +649,5 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
     Return 1
   End If
 
-  Return RunSingleTarget(targets(0), 0, showAst, showIr, showTa, skipTa, emitOnly, noRun, outPath, extraInputs, extraInputCount, clangFlags, clangFlagCount)
+  Return RunSingleTarget(targets(0), 0, showAst, showIr, showTa, skipTa, emitOnly, emitObj, noRun, targetId, outPath, extraInputs, extraInputCount, clangFlags, clangFlagCount)
 End Function

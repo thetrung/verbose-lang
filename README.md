@@ -4,7 +4,7 @@
 [![Release](https://github.com/thetrung/verbose-lang/actions/workflows/release.yml/badge.svg)](https://github.com/thetrung/verbose-lang/actions/workflows/release.yml)
 [![Latest Release](https://img.shields.io/github/v/release/thetrung/verbose-lang)](https://github.com/thetrung/verbose-lang/releases/latest)
 
-Just Another Human-Readable Systems Programming Language — inspired by Visual Basic 6.0 / VB.NET, compiled directly to LLVM IR without a garbage collector, **brace-free**, and **100% self-hosted**!
+A Human-Readable Programming Language — inspired by Visual Basic, compiled directly to LLVM-IR without a garbage collector, **brace-free**, and **100% self-hosted**!
 
 ---
 
@@ -12,8 +12,12 @@ Just Another Human-Readable Systems Programming Language — inspired by Visual 
 
 VerBose-Lang combines classic Visual Basic readability with deterministic, C-speed systems programming on top of LLVM:
 - **Zero GC**: Stack values, `Static` storage, explicit `HeapAlloc`/`HeapFree`, and a first-class deterministic `Arena` bump allocator.
+- **Cross-Compilation & Target Triples**: First-class target support via `--target` for Linux x86-64, macOS arm64, and bare-metal 32-bit ARM-M microcontrollers (with `-c` object emission and zero `clang -Woverride-module` warnings).
+- **Volatile, MMIO & Low-Level Primitives**: `Volatile Dim`/`Static`, fixed-address `At <addr>` MMIO mapping, `VolatileLoad`/`VolatileStore`, `AddressOf`, `PtrRead`/`PtrWrite`/`PtrAdd`, and function-scoped `Label`/`GoTo`.
+- **Structured Concurrency (`Async`/`Await`)**: Zero-GC `Async Function`/`Sub`, `Task(T)`/`Task`, and `Await` — true `pthread` parallelism on Linux/macOS and zero-dependency deferred thunks on freestanding `arm-m`.
+- **Standard Library (`std/`)**: Pure-VerBose, zero-GC, Arena-backed standard library modules for strings (`std/strings.vb`), pure math (`std/math.vb`), collections (`std/collections.vb`), and file/console I/O (`std/io.vb`).
 - **Native C FFI**: Direct `Declare Function`/`Sub` bindings with SysV x86-64 ByVal struct ABI lowering (including Raylib 5.x).
-- **100% Self-Hosted (`./verbose`)**: The compiler (`src/`) is written entirely in VerBose-Lang itself, includes a full semantic Type Analyzer, built-in `Test`/`Assert` test runner (`./verbose test`), and direct compile-and-run CLI, compiles itself to a byte-for-byte Stage 3 fixpoint, and passes **12/12** pure-VerBose test suites (**105** `Test` blocks, zero Python). The archival OCaml bootstrap compiler is preserved on the `stage0` branch.
+- **100% Self-Hosted (`./verbose`)**: The compiler (`src/`) is written entirely in VerBose-Lang itself, includes a full semantic Type Analyzer, built-in `Test`/`Assert` test runner (`./verbose test`), and direct compile-and-run CLI, compiles itself to a byte-for-byte Stage 3 fixpoint, and passes **18/18** pure-VerBose test suites (**145** `Test` blocks, zero Python). The archival OCaml bootstrap compiler is preserved on the `stage0` branch.
 
 See **[FEATURES.md](FEATURES.md)** for the full list of implemented language, compiler, and tooling features.
 
@@ -98,6 +102,10 @@ Public Function main() As Integer
   pts(0) = Vec2(3.0, 4.0)
   pts(1) = hero.pos
 
+  ' Volatile variable and MMIO primitive demonstration
+  Volatile Dim ready As Integer = 1
+  VolatileStore(AddressOf(ready), Integer, 2)
+
   Dim used As Long = ArenaUsed(ByRef scratch)
   ArenaRewind(ByRef scratch, mark)
   ArenaDestroy(ByRef scratch)
@@ -113,7 +121,7 @@ Public Function main() As Integer
 
   Printf("hero#%d state=%d pos=(%.2f,%.2f) ticks=%ld\n", hero.id, hero.state, hero.pos.x, hero.pos.y, g_ticks)
   Printf("fixedLen=%d heapSum=%d sqrt=%.1f sizeof(Entity)=%d\n", Len(fixed), heapSum, root, SizeOf(Entity))
-  Printf("arenaUsed=%ld afterDestroyNull=%d mask=%d\n", used, IsNull(dead), mask)
+  Printf("arenaUsed=%ld afterDestroyNull=%d mask=%d ready=%d\n", used, IsNull(dead), mask, VolatileLoad(AddressOf(ready), Integer))
   Return 0
 End Function
 ```
@@ -122,20 +130,7 @@ End Function
 
 ## Project Layout
 
-```text
-verbose-lang/
-├── .github/workflows/          # GitHub Actions CI & Release workflows (ci.yml, release.yml)
-├── src/                        # Self-hosted VerBose compiler (verbose, constants, token, lexer, ast, printer, parser, type_analyzer, codegen)
-├── tests/                      # Pure-VerBose Test/Assert suites, regression cases & Raylib 5.x demo (tests/raylib/)
-├── prototype.vb                # Scratch prototype
-├── makefile                    # Build, run, test, install, and dist targets
-├── FEATURES.md                 # Full list of implemented language & compiler features
-├── STATE.md                    # Detailed technical state & verification metrics
-├── TODO.md                     # Active roadmap & completed milestones
-└── README.md
-```
-
-> **Stage 0 archive**: The original OCaml bootstrap compiler (`stage0/`) has been moved off `main` into the [`stage0`](../../tree/stage0) branch.
+See **[LAYOUT.md](LAYOUT.md)** for the complete repository structure and directory descriptions.
 
 ---
 
@@ -155,6 +150,10 @@ make build
 ./verbose test your_tests.vb
 ./verbose test
 
+# Cross-compile for bare-metal ARM-M or macOS arm64 to object file
+./verbose --target arm-m -c your_file.vb -o your_file.o
+./verbose --target macos-arm64 -c your_file.vb -o your_file.o
+
 # Build and run prototype.vb with ./verbose
 make
 
@@ -163,34 +162,19 @@ make install          # or: make install PREFIX=$HOME/.local
 make dist             # builds stripped dist/verbose, dist/verbose-linux-x86_64, dist/SHA256SUMS.txt
 
 # Run pure-VerBose test suites (zero Python!)
-make test             # runs ./verbose test (12/12 suites, 105 Test blocks)
+make test             # runs ./verbose test
 make test-all         # Full pipeline: Stage 1-3 build fixpoint + make test
 ```
 
-### Compiler CLI Flags (`./verbose`)
+### Compiler CLI Flags
 
-| Flag | Description |
-| --- | --- |
-| `verbose <file.vb>` | Type-check, emit `.ll`, compile with `clang -O2`, and **execute directly** |
-| `verbose test [file.vb \| dir]` | Compile & run built-in `Test`/`Assert` blocks (auto-discovers `test_*.vb`/`*_test.vb` in directories; default `tests`) |
-| `--test` | Alias for `verbose test` |
-| `--ast` | Pretty-print the parsed AST |
-| `--ir` | Print the generated LLVM IR to stdout |
-| `--ta` | Verbose semantic Type Analyzer output (runs automatically before codegen) |
-| `--no-ta` | Skip the semantic Type Analyzer pass |
-| `--emit-only` | Emit LLVM IR (`.ll`) only; skip `clang` and execution |
-| `--no-run` | Compile native executable with `clang`, skip execution |
-| `-o <path>` | Output executable path (or `.ll` path with `--emit-only`) |
-| `-I <dir>` / `-I<dir>` | Add `Include` module search directory |
-| `-l<lib>` / `-L<dir>` / `-W<flag>` | Forward linker/warning flags to `clang` (e.g. `-lm`, `-lraylib`) |
-| `<file.c/.o/.a>` | Additional C/object/archive files compiled & linked alongside `.vb` |
-| `-h`, `--help`, `--version` | Show CLI usage or compiler version |
+See **[FLAGS.md](FLAGS.md)** for the complete command-line interface flags and options reference.
 
 ---
 
 ## Features
 
-All implemented language, memory, FFI, compiler, and tooling features are documented in **[FEATURES.md](FEATURES.md)**.
+All implemented language, memory, FFI, standard library, compiler, and tooling features are documented in **[FEATURES.md](FEATURES.md)**.
 
 ---
 
@@ -199,7 +183,7 @@ All implemented language, memory, FFI, compiler, and tooling features are docume
 - Bootstrap minimally and stay 100% self-hosted.
 - Human-readable, brace-free VB6/VB.NET-inspired syntax that fits in your head (case-sensitive to eliminate C/DLL `Alias` boilerplate).
 - Fast as C/Rust with zero GC, native C interop, and deterministic memory (`Arena`, `Static`, `Heap`, raw `Pointer`).
-- Portable across LLVM targets — Linux x86-64, macOS arm64, and bare-metal 32-bit ARM-M microcontrollers.
+- Portable across LLVM targets — Linux x86-64, macOS Arm64, and bare-metal 32-bit ARM-M microcontrollers.
 
 ---
 

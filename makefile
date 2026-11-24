@@ -1,7 +1,7 @@
 TARGET ?= prototype
 PREFIX ?= /usr/local
 DESTDIR ?=
-VERSION ?= 0.4.0
+VERSION ?= 0.5.0
 BOOTSTRAP ?=
 RELEASE_URL ?= https://github.com/thetrung/verbose-lang/releases/latest/download/verbose
 
@@ -87,3 +87,4 @@ clean:
 			find "$$dir" -maxdepth 1 -type f ! -name '*.vb' ! -name '*.c' -delete; \
 		fi; \
 	done
+	@find tests -maxdepth 2 -type f \( -name '*.o' -o -name '*.ll' -o -name '*.s' \) ! -name 'camera3d_draft.ll' -delete 2>/dev/null || true
