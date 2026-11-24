@@ -356,17 +356,23 @@ End Function
 ' Canonicalize path (collapse '.' and '..') into g_srcPool
 Private Function LxNormalizePath(rawPos, rawLen As Integer, ByRef outLen As Integer) As Integer
   Dim segPos(64), segLen(64) As Integer
-  Dim segCnt = 0 As Integer, isAbs = False As Boolean
-  If (rawLen > 0) And (g_srcPool(rawPos) = 47) Then
-    isAbs = True
+  Dim segCnt = 0 As Integer, isAbs = False As Boolean, isDrive = False As Boolean
+  If rawLen > 0 Then
+    Dim c0 As Integer = g_srcPool(rawPos)
+    If (c0 = 47) Or (c0 = 92) Then
+      isAbs = True
+    End If
+  End If
+  If (rawLen >= 2) And (g_srcPool(rawPos + 1) = 58) Then
+    isDrive = True
   End If
   Dim i As Integer = 0
   While i < rawLen Do
-    While (i < rawLen) And (g_srcPool(rawPos + i) = 47) Do
+    While (i < rawLen) And ((g_srcPool(rawPos + i) = 47) Or (g_srcPool(rawPos + i) = 92)) Do
       i = i + 1
     End While
     Dim sStart As Integer = i
-    While (i < rawLen) And (g_srcPool(rawPos + i) <> 47) Do
+    While (i < rawLen) And (g_srcPool(rawPos + i) <> 47) And (g_srcPool(rawPos + i) <> 92) Do
       i = i + 1
     End While
     Dim sLen As Integer = i - sStart
@@ -380,14 +386,15 @@ Private Function LxNormalizePath(rawPos, rawLen As Integer, ByRef outLen As Inte
             Dim topLen As Integer = segLen(segCnt - 1)
             Dim topPos As Integer = segPos(segCnt - 1)
             Dim topIsDD As Boolean = (topLen = 2) And (g_srcPool(topPos) = 46) And (g_srcPool(topPos + 1) = 46)
-            If Not topIsDD Then
+            Dim topIsDrive As Boolean = isDrive And (segCnt = 1)
+            If (Not topIsDD) And (Not topIsDrive) Then
               canPop = True
             End If
           End If
           If canPop Then
             segCnt = segCnt - 1
           Else
-            If Not isAbs Then
+            If (Not isAbs) And (Not isDrive) Then
               segPos(segCnt) = rawPos + sStart
               segLen(segCnt) = sLen
               segCnt = segCnt + 1
@@ -430,16 +437,23 @@ End Function
 ' Resolve relPos..relPos+relLen relative to curPathPos..curPathPos+curPathLen into g_srcPool
 Private Function LxResolveRelPath(curPos, curLen, relPos, relLen As Integer, ByRef outLen As Integer) As Integer
   Dim startPos As Integer = g_srcPoolLen
-  Dim firstRel As Integer = 0
+  Dim isRelAbs As Boolean = False
   If relLen > 0 Then
-    firstRel = g_srcPool(relPos)
+    Dim firstRel As Integer = g_srcPool(relPos)
+    If (firstRel = 47) Or (firstRel = 92) Then
+      isRelAbs = True
+    End If
   End If
-  If firstRel <> 47 Then
-    ' Find last '/' in curPath
+  If (relLen >= 2) And (g_srcPool(relPos + 1) = 58) Then
+    isRelAbs = True
+  End If
+  If Not isRelAbs Then
+    ' Find last '/' or '\' in curPath
     Dim lastSlash As Integer = -1
     Dim i As Integer = 0
     While i < curLen Do
-      If g_srcPool(curPos + i) = 47 Then
+      Dim ch As Integer = g_srcPool(curPos + i)
+      If (ch = 47) Or (ch = 92) Then
         lastSlash = i
       End If
       i = i + 1
@@ -490,9 +504,12 @@ Private Function LxResolveIncludePath(curPos, curLen, incPos, incLen As Integer,
         j = j + 1
       End If
     End While
-    If (g_srcPoolLen > startPos) And (g_srcPool(g_srcPoolLen - 1) <> 47) Then
-      g_srcPool(g_srcPoolLen) = 47
-      g_srcPoolLen = g_srcPoolLen + 1
+    If g_srcPoolLen > startPos Then
+      Dim lastCh As Integer = g_srcPool(g_srcPoolLen - 1)
+      If (lastCh <> 47) And (lastCh <> 92) Then
+        g_srcPool(g_srcPoolLen) = 47
+        g_srcPoolLen = g_srcPoolLen + 1
+      End If
     End If
     Dim k As Integer = 0
     While k < incLen Do
