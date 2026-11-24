@@ -38,16 +38,37 @@ Test "raylib: bouncing_ball.vb passes strict --ta Type Analyzer"
   Assert exists, "expected LLVM IR output file"
 End Test
 
-Test "raylib: Color/Vector2/Rectangle SizeOf, MakeColor, GetMousePosition, IsKeyDown & 5-arg DrawText ABI"
+Test "raylib: Color/Vector2/Vector3/Rectangle/Camera3D SizeOf, MakeColor, GetMousePosition, IsKeyDown & 5-arg DrawText ABI"
   Dim srcPath(256) As Byte
   MakeTmpFile(srcPath, 256, "abi.vb")
-  WriteTextFile(srcPath, "Include \"raylib.vb\"\nPublic Function main() As Integer\n  Dim szC As Integer = SizeOf(Color)\n  Dim szV As Integer = SizeOf(Vector2)\n  Dim szR As Integer = SizeOf(Rectangle)\n  Dim c As Color = MakeColor(11, 22, 33, 255)\n  BeginDrawing()\n  Dim m1 As Vector2 = GetMousePosition()\n  Dim kSpace As Boolean = IsKeyDown(32)\n  Dim kOther As Boolean = IsKeyDown(65)\n  Dim r As Rectangle With ( x = 12.5, y = 24.5, width = 80.0, height = 40.0 )\n  DrawRectangleRec(r, c)\n  DrawText(\"ABI-OK\", 5, 10, 18, c)\n  EndDrawing()\n  Printf(\"sizes=%d,%d,%d mouse=%.1f,%.1f keys=%d,%d\\n\", szC, szV, szR, m1.x, m1.y, kSpace, kOther)\n  Return 0\nEnd Function\n")
+  WriteTextFile(srcPath, "Include \"raylib.vb\"\nPublic Function main() As Integer\n  Dim szC As Integer = SizeOf(Color)\n  Dim szV2 As Integer = SizeOf(Vector2)\n  Dim szV3 As Integer = SizeOf(Vector3)\n  Dim szR As Integer = SizeOf(Rectangle)\n  Dim szCam As Integer = SizeOf(Camera3D)\n  Dim c As Color = MakeColor(11, 22, 33, 255)\n  BeginDrawing()\n  Dim m1 As Vector2 = GetMousePosition()\n  Dim kSpace As Boolean = IsKeyDown(32)\n  Dim kOther As Boolean = IsKeyDown(65)\n  Dim r As Rectangle With ( x = 12.5, y = 24.5, width = 80.0, height = 40.0 )\n  DrawRectangleRec(r, c)\n  DrawText(\"ABI-OK\", 5, 10, 18, c)\n  EndDrawing()\n  Printf(\"sizes=%d,%d,%d,%d,%d mouse=%.1f,%.1f keys=%d,%d\\n\", szC, szV2, szV3, szR, szCam, m1.x, m1.y, kSpace, kOther)\n  Return 0\nEnd Function\n")
   Dim rc As Integer = RunVb(srcPath, "-I tests/raylib tests/raylib/raylib_headless_shim.c -lm")
   unlink(srcPath)
   Assert rc = 0, "Raylib ABI test program failed to compile/run"
   Assert OutHas("Frame 1 DrawRectangleRec(12.5,24.5,80.0,40.0 rgba=11,22,33,255)")
   Assert OutHas("Frame 1 DrawText(ABI-OK @5,10 sz=18 rgba=11,22,33,255)")
-  Assert OutHas("sizes=4,8,16 mouse=225.0,300.0 keys=1,0")
+  Assert OutHas("sizes=4,8,12,16,44 mouse=225.0,300.0 keys=1,0")
+End Test
+
+Test "raylib: camera3d_demo.vb headless 3D Camera3D (44B) & Vector3 (12B) ByVal ABI + --ta"
+  Assert RunVb("tests/raylib/camera3d_demo.vb", "tests/raylib/raylib_headless_shim.c -lm") = 0
+  Assert OutHas("InitWindow(800,450,VerBose + Raylib 3D Camera)")
+  Assert OutHas("Frame 1 BeginMode3D(pos=1.0,10.0,10.0 tgt=0.0,0.0,0.0 up=0.0,1.0,0.0 fov=45.0 proj=0)")
+  Assert OutHas("Frame 1 DrawCube(0.0,1.0,0.0 sz=2.0,2.0,2.0 rgba=230,41,55,255)")
+  Assert OutHas("Frame 1 DrawGrid(10,1.0)")
+  Assert OutHas("Frame 1 EndMode3D()")
+  Assert OutHas("Frame 3 BeginMode3D(pos=3.0,10.0,10.0 tgt=0.0,0.0,0.0 up=0.0,1.0,0.0 fov=45.0 proj=0)")
+  Assert OutHas("CloseWindow(frames=3)")
+
+  Dim comp(768), llOut(256), cmd(2048) As Byte
+  GetCompilerAbs(comp, 768)
+  MakeTmpFile(llOut, 256, "cam3d_ta.ll")
+  snprintf(cmd, 2048, "\"%s\" --ta --emit-only tests/raylib/camera3d_demo.vb -o \"%s\"", comp, llOut)
+  Dim rc As Integer = RunShell(cmd)
+  Dim exists As Boolean = FileExists(llOut)
+  unlink(llOut)
+  Assert rc = 0, "camera3d_demo.vb failed --ta Type Analyzer"
+  Assert exists, "expected LLVM IR output file for camera3d_demo"
 End Test
 
 Test "raylib: cross-target -c object compilation (linux-x86_64, linux-arm64, macos-arm64, windows-x86_64)"

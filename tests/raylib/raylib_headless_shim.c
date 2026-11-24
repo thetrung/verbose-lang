@@ -11,9 +11,21 @@ typedef struct Vector2 {
     float x, y;
 } Vector2;
 
+typedef struct Vector3 {
+    float x, y, z;
+} Vector3;
+
 typedef struct Rectangle {
     float x, y, width, height;
 } Rectangle;
+
+typedef struct Camera3D {
+    Vector3 position;
+    Vector3 target;
+    Vector3 up;
+    float fovy;
+    int projection;
+} Camera3D;
 
 static int g_frame = 0;
 
@@ -69,4 +81,26 @@ Vector2 GetMousePosition(void) {
 
 bool IsKeyDown(int key) {
     return key == 32;
+}
+
+void BeginMode3D(Camera3D cam) {
+    printf("Frame %d BeginMode3D(pos=%.1f,%.1f,%.1f tgt=%.1f,%.1f,%.1f up=%.1f,%.1f,%.1f fov=%.1f proj=%d)\n",
+           g_frame,
+           cam.position.x, cam.position.y, cam.position.z,
+           cam.target.x, cam.target.y, cam.target.z,
+           cam.up.x, cam.up.y, cam.up.z,
+           cam.fovy, cam.projection);
+}
+
+void EndMode3D(void) {
+    printf("Frame %d EndMode3D()\n", g_frame);
+}
+
+void DrawCube(Vector3 pos, float width, float height, float length, Color c) {
+    printf("Frame %d DrawCube(%.1f,%.1f,%.1f sz=%.1f,%.1f,%.1f rgba=%u,%u,%u,%u)\n",
+           g_frame, pos.x, pos.y, pos.z, width, height, length, c.r, c.g, c.b, c.a);
+}
+
+void DrawGrid(int slices, float spacing) {
+    printf("Frame %d DrawGrid(%d,%.1f)\n", g_frame, slices, spacing);
 }

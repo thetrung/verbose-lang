@@ -114,10 +114,10 @@ clean:
 	rm -rf dist cross-ir \
 		verbose verbose.exe verbose1 verbose1.exe verbose.new .verbose.boot .verbose.boot.exe verbose*.ll src/*.ll \
 		$(TARGET).ll $(TARGET).s $(TARGET) $(TARGET).exe \
-		tests/raylib/bouncing_ball.ll tests/raylib/raylib.ll tests/raylib/bouncing_ball
+		tests/raylib/bouncing_ball.ll tests/raylib/camera3d_demo.ll tests/raylib/raylib.ll tests/raylib/bouncing_ball tests/raylib/camera3d_demo
 	@for dir in tests/byref tests/syntax tests/arrays tests/static_heap tests/arena tests/type_analyzer tests/modules tests/c_interop; do \
 		if [ -d "$$dir" ]; then \
 			find "$$dir" -maxdepth 1 -type f ! -name '*.vb' ! -name '*.c' -delete; \
 		fi; \
 	done
-	@find tests -maxdepth 2 -type f \( -name '*.o' -o -name '*.ll' -o -name '*.s' \) ! -name 'camera3d_draft.ll' -delete 2>/dev/null || true
+	@find tests -maxdepth 2 -type f \( -name '*.o' -o -name '*.ll' -o -name '*.s' \) -delete 2>/dev/null || true

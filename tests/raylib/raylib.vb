@@ -9,37 +9,59 @@ Public Structure Color
 End Structure
 
 Public Structure Vector2
-  Dim x As Single
-  Dim y As Single
+  Dim x, y As Single
+End Structure
+
+Public Structure Vector3
+  Dim x, y, z As Single
 End Structure
 
 Public Structure Rectangle
-  Dim x As Single
-  Dim y As Single
-  Dim width As Single
-  Dim height As Single
+  Dim x, y, width, height As Single
 End Structure
 
+Public Structure Camera3D
+  Dim position, target, up As Vector3
+  Dim fovy As Single
+  Dim projection As Integer
+End Structure
+
+Public Enum CameraProjection
+  CAMERA_PERSPECTIVE = 0
+  CAMERA_ORTHOGRAPHIC = 1
+End Enum
+
 ' Core window & timing
-Declare Sub InitWindow(width As Integer, height As Integer, title As Pointer)
+Declare Sub InitWindow(width, height As Integer, title As Pointer)
 Declare Sub CloseWindow()
 Declare Sub SetTargetFPS(fps As Integer)
 Declare Function WindowShouldClose() As Boolean
 Declare Function GetFrameTime() As Single
 
-' Drawing
+' 2D Drawing
 Declare Sub BeginDrawing()
 Declare Sub EndDrawing()
 Declare Sub ClearBackground(color As Color)
 Declare Sub DrawCircleV(center As Vector2, radius As Single, color As Color)
 Declare Sub DrawRectangleRec(rec As Rectangle, color As Color)
-Declare Sub DrawText(text As Pointer, posX As Integer, posY As Integer, fontSize As Integer, color As Color)
+Declare Sub DrawText(text As Pointer, posX, posY, fontSize As Integer, color As Color)
+
+' 3D Camera & Drawing
+Declare Sub BeginMode3D(camera As Camera3D)
+Declare Sub EndMode3D()
+Declare Sub DrawCube(position As Vector3, width, height, length As Single, color As Color)
+Declare Sub DrawGrid(slices As Integer, spacing As Single)
 
 ' Input
 Declare Function GetMousePosition() As Vector2
 Declare Function IsKeyDown(key As Integer) As Boolean
 
-Public Function MakeColor(r As Byte, g As Byte, b As Byte, a As Byte) As Color
+Public Function MakeColor(r, g, b, a As Byte) As Color
   Dim c As Color With ( r = r, g = g, b = b, a = a )
   Return c
+End Function
+
+Public Function MakeVec3(x, y, z As Single) As Vector3
+  Dim v As Vector3 With ( x = x, y = y, z = z )
+  Return v
 End Function
