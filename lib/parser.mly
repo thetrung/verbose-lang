@@ -10,7 +10,7 @@ open Ast
 %token <string> ID
 
 (* Core structural tokens *)
-%token PUBLIC PRIVATE DECLARE WITH STATIC SIZEOF HEAP_ALLOC HEAP_REALLOC ARENA_TYPE ARENA_ALLOC STRUCTURE FUNCTION SUB BYVAL BYREF END AS DIM RETURN 
+%token INCLUDE PUBLIC PRIVATE DECLARE WITH STATIC SIZEOF HEAP_ALLOC HEAP_REALLOC ARENA_TYPE ARENA_ALLOC STRUCTURE FUNCTION SUB BYVAL BYREF END AS DIM RETURN 
 %token NOTHING POINTER_TYPE ENUM INT_TYPE BYTE_TYPE SHORT_TYPE LONG_TYPE SINGLE_TYPE DOUBLE_TYPE BOOLEAN_TYPE 
 %token EOF LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET COMMA NEWLINE DOT ELLIPSIS
 
@@ -43,11 +43,11 @@ definition_list:
   | d = definition dl = definition_list { d :: dl }
 ;
 
-(* A simple layout checking if the 'Public' keyword is present *)
+(* Visibility qualifier: Public, Private, or Default (omitted) *)
 visibility:
-  | PUBLIC    { true }
-  | PRIVATE   { false }
-  | /* empty */ { false }
+  | PUBLIC      { Ast.Public }
+  | PRIVATE     { Ast.Private }
+  | /* empty */ { Ast.Default }
 ;
 
 param:
@@ -75,6 +75,9 @@ extern_param_nonempty:
 ;
 
 definition:
+  | INCLUDE path=STRING_LIT mandatory_newlines
+    { Ast.Include(path) }
+
   | vis=visibility STRUCTURE name=ID mandatory_newlines fields=list(struct_field) END STRUCTURE mandatory_newlines
     { Ast.Structure(vis, name, fields) }
 

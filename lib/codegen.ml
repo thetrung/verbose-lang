@@ -40,6 +40,7 @@ let global_ast_types : (string, data_type) Hashtbl.t = Hashtbl.create 32
 let global_indirect_arrays : (string, bool) Hashtbl.t = Hashtbl.create 16
 let static_counter : int ref = ref 0
 let current_func_name : string ref = ref ""
+let current_ret_dt : data_type ref = ref Nothing
 let uses_arena : bool ref = ref false
 (* Enum Values  *)
 let enum_values = Hashtbl.create 50
@@ -815,6 +816,12 @@ let rec codegen_expr ctx = function
         if ret_type = "void" then begin
           emit ctx (Printf.sprintf "  call void%s @%s(%s)" var_sig_prefix name args_joined);
           ("", "void")
+        end else if String.length ret_type > 0 && (ret_type.[0] = '%' || ret_type.[0] = '[') then begin
+          emit ctx (Printf.sprintf "  %s = call %s%s @%s(%s)" res_reg ret_type var_sig_prefix name args_joined);
+          let tmp_slot = next_reg ctx in
+          emit ctx (Printf.sprintf "  %s = alloca %s, align 8" tmp_slot ret_type);
+          emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 8" ret_type res_reg tmp_slot);
+          (tmp_slot, "ptr")
         end else begin
           emit ctx (Printf.sprintf "  %s = call %s%s @%s(%s)" res_reg ret_type var_sig_prefix name args_joined);
           (res_reg, ret_type)
@@ -1035,7 +1042,44 @@ let rec codegen_stmt ctx = function
       
   | Return (Some exp) ->
       let v, t = codegen_expr ctx exp in
-      emit ctx (Printf.sprintf "  ret %s %s" t v)
+      if is_aggregate_dt !current_ret_dt then begin
+        let ret_llvm = string_of_dt !current_ret_dt in
+        let loaded = next_reg ctx in
+        emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align 8" loaded ret_llvm v);
+        emit ctx (Printf.sprintf "  ret %s %s" ret_llvm loaded)
+      end else begin
+        let expected_t = string_of_dt !current_ret_dt in
+        let is_reg = String.length v > 0 && (v.[0] = '%' || v.[0] = '@') in
+        if expected_t = t then
+          emit ctx (Printf.sprintf "  ret %s %s" t v)
+        else if expected_t = "i64" && (t = "i32" || t = "i16" || t = "i8") && is_reg then begin
+          let cast_reg = next_reg ctx in
+          emit ctx (Printf.sprintf "  %s = sext %s %s to i64" cast_reg t v);
+          emit ctx (Printf.sprintf "  ret i64 %s" cast_reg)
+        end else if expected_t = "i32" && (t = "i8" || t = "i16") && is_reg then begin
+          let cast_reg = next_reg ctx in
+          emit ctx (Printf.sprintf "  %s = sext %s %s to i32" cast_reg t v);
+          emit ctx (Printf.sprintf "  ret i32 %s" cast_reg)
+        end else if expected_t = "i8" && (t = "i32" || t = "i64" || t = "i16") && is_reg then begin
+          let cast_reg = next_reg ctx in
+          emit ctx (Printf.sprintf "  %s = trunc %s %s to i8" cast_reg t v);
+          emit ctx (Printf.sprintf "  ret i8 %s" cast_reg)
+        end else if expected_t = "float" && t = "double" && is_reg then begin
+          let cast_reg = next_reg ctx in
+          emit ctx (Printf.sprintf "  %s = fptrunc double %s to float" cast_reg v);
+          emit ctx (Printf.sprintf "  ret float %s" cast_reg)
+        end else if expected_t = "float" && t = "double" && not is_reg then begin
+          let f = float_of_string v in
+          let f32 = Int32.float_of_bits (Int32.bits_of_float f) in
+          let hex_bits = Printf.sprintf "0x%016LX" (Int64.bits_of_float f32) in
+          emit ctx (Printf.sprintf "  ret float %s" hex_bits)
+        end else if expected_t = "double" && t = "float" && is_reg then begin
+          let cast_reg = next_reg ctx in
+          emit ctx (Printf.sprintf "  %s = fpext float %s to double" cast_reg v);
+          emit ctx (Printf.sprintf "  ret double %s" cast_reg)
+        end else
+          emit ctx (Printf.sprintf "  ret %s %s" expected_t v)
+      end
 
   | If (cond_exp, then_stmts, else_stmts) ->
       let cond_val, _ = codegen_expr ctx cond_exp in
@@ -1174,9 +1218,10 @@ let rec codegen_stmt ctx = function
 
 let codegen_def ctx = function
 
-  | FuncDef (is_public, name, params, ret_type, body) ->
+  | FuncDef (vis, name, params, ret_type, body) ->
       (* Clear local registers and variable tables before processing each unique function body *)
       current_func_name := name;
+      current_ret_dt := ret_type;
       Hashtbl.clear ctx.variables;
       Hashtbl.clear local_types;
       Hashtbl.clear local_ast_types;
@@ -1194,7 +1239,7 @@ let codegen_def ctx = function
       (* Memorize ReturnType of Function -> ret_types *)
       Hashtbl.replace ret_types name ret_str;
     
-      let linkage = if is_public then "" else "internal" in
+      let linkage = if vis = Public then "" else "internal" in
       emit ctx (Printf.sprintf "define %s %s @%s(%s) {" linkage ret_str name params_joined);
       
       (* 2. Map function parameters to local stack variables based on ByRef / ByVal *)
@@ -1271,13 +1316,15 @@ let codegen_def ctx = function
       if ret_type = Nothing then emit ctx "  ret void";
       emit ctx "}\n"
 
-  | Structure (is_public, name, _)  -> Hashtbl.add visibility_table name is_public;
-  | EnumDef (is_public, name, _)    -> Hashtbl.add visibility_table name is_public
-  | GlobalVar (is_public, name, _, _) -> Hashtbl.replace visibility_table name is_public
+  | Include _                       -> ()
+  | Structure (vis, name, _)        -> Hashtbl.replace visibility_table name (vis = Public)
+  | EnumDef (vis, name, _)          -> Hashtbl.replace visibility_table name (vis = Public)
+  | GlobalVar (vis, name, _, _)     -> Hashtbl.replace visibility_table name (vis = Public)
   | ExternDecl _                    -> ()
 
 (* Global Pass Registrar to define metadata structures cleanly *)
 let register_definition ctx = function
+  | Include _ -> ()
   | Structure (_, name, fields) ->
       let indexed_fields = List.mapi (fun idx (fname, _) -> (fname, idx)) fields in
       Hashtbl.add struct_fields name indexed_fields;
@@ -1357,8 +1404,8 @@ let generate_program prog =
 
   (* Step 1.5: Emit module-level Static global variables *)
   List.iter (function
-    | GlobalVar (is_public, name, dt, opt_exp) ->
-        let linkage = if is_public then "" else "internal " in
+    | GlobalVar (vis, name, dt, opt_exp) ->
+        let linkage = if vis = Public then "" else "internal " in
         let llvm_dt = string_of_dt dt in
         let init_str = const_llvm_value ctx dt opt_exp in
         let g_decl = Printf.sprintf "@%s = %sglobal %s %s, align 8" name linkage llvm_dt init_str in

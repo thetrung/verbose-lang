@@ -87,27 +87,33 @@ let rec string_of_stmt indent = function
       default_str ^ 
       indent ^ "End Select\n"and string_of_block indent stmts = String.concat "" (List.map (string_of_stmt indent) stmts)
 
+let string_of_vis = function
+  | Public -> "Public "
+  | Private -> "Private "
+  | Default -> ""
+
 let string_of_def = function
-  | Structure (is_public, name, fields) ->
-      let prefix = if is_public then "Public " else "" in
+  | Include path -> Printf.sprintf "Include %S\n" path
+  | Structure (vis, name, fields) ->
+      let prefix = string_of_vis vis in
       let fl = String.concat "" (List.map (fun (n, t) -> "  Dim " ^ n ^ " As " ^ string_of_dt t ^ "\n") fields) in
       prefix ^ "Structure " ^ name ^ "\n" ^ fl ^ "End Structure\n"
-    | EnumDef (is_public, name, members) ->
-      let prefix = if is_public then "Public " else "" in
+  | EnumDef (vis, name, members) ->
+      let prefix = string_of_vis vis in
       let ml = String.concat "" (List.map (fun (n, v) -> "  " ^ n ^ " = " ^ string_of_int v ^ "\n") members) in
       prefix ^ "Enum " ^ name ^ "\n" ^ ml ^ "End Enum\n"
-    | GlobalVar (is_public, name, dt, opt_e) ->
-      let prefix = if is_public then "Public " else "" in
+  | GlobalVar (vis, name, dt, opt_e) ->
+      let prefix = string_of_vis vis in
       let init_expr = match opt_e with | Some e -> " = " ^ string_of_expr e | None -> "" in
       prefix ^ "Static " ^ name ^ " As " ^ string_of_dt dt ^ init_expr ^ "\n"
-    | FuncDef (is_public, name, params, rt, body) ->
-      let prefix = if is_public then "Public " else "" in
+  | FuncDef (vis, name, params, rt, body) ->
+      let prefix = string_of_vis vis in
       let keyword = if rt = Nothing then "Sub " else "Function " in
       let as_clause = if rt = Nothing then "" else " As " ^ string_of_dt rt in
       let pl = String.concat ", " (List.map (fun (m, n, t) -> string_of_pmode m ^ " " ^ n ^ " As " ^ string_of_dt t) params) in
       prefix ^ keyword ^ name ^ "(" ^ pl ^ ")" ^ as_clause ^ "\n" ^ string_of_block "  " body ^ "End " ^ keyword ^ "\n"
-    | ExternDecl (is_public, name, params, rt, is_variadic) ->
-      let prefix = if is_public then "Public " else "" in
+  | ExternDecl (vis, name, params, rt, is_variadic) ->
+      let prefix = string_of_vis vis in
       let keyword = if rt = Nothing then "Sub " else "Function " in
       let as_clause = if rt = Nothing then "" else " As " ^ string_of_dt rt in
       let param_strs = List.map (fun (m, n, t) -> string_of_pmode m ^ " " ^ n ^ " As " ^ string_of_dt t) params in

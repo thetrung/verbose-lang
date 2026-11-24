@@ -16,6 +16,7 @@ rule tokenize = parse
   | "'"        { comment lexbuf }
 
   (* System Block Keywords *)
+  | "Include"        { INCLUDE }
   | "Public"         { PUBLIC }
   | "Private"        { PRIVATE }
   | "Declare"        { DECLARE }

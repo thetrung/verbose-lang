@@ -25,6 +25,8 @@ type op =
 
 type param_mode = | ByVal | ByRef
 
+type visibility = | Public | Private | Default
+
 type expr =
   | Id of string
   | IntLit of int
@@ -64,11 +66,12 @@ type stmt =
   | For of string * expr * expr * stmt list (* For var = start To end *)
 
 type definition =
-  | Structure of bool * string * (string * data_type) list (* added bool flag *)
-  | EnumDef of bool * string * (string * int) list
-  | GlobalVar of bool * string * data_type * expr option   (* module-level Static global *)
-  | FuncDef of bool * string * (param_mode * string * data_type) list * data_type * stmt list
-  | ExternDecl of bool * string * (param_mode * string * data_type) list * data_type * bool (* vis, name, params, ret, is_variadic *)
+  | Include of string
+  | Structure of visibility * string * (string * data_type) list
+  | EnumDef of visibility * string * (string * int) list
+  | GlobalVar of visibility * string * data_type * expr option   (* module-level Static global *)
+  | FuncDef of visibility * string * (param_mode * string * data_type) list * data_type * stmt list
+  | ExternDecl of visibility * string * (param_mode * string * data_type) list * data_type * bool (* vis, name, params, ret, is_variadic *)
 
 type program = definition list
 

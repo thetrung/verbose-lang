@@ -28,7 +28,7 @@ demo: build
 clean:
 	rm -rf _build \
 		${TARGET}.ll ${TARGET}.s ${TARGET}
-	@for dir in test/byref test/syntax test/arrays test/static_heap test/arena; do \
+	@for dir in test/byref test/syntax test/arrays test/static_heap test/arena test/type_analyzer test/modules; do \
 		if [ -d "$$dir" ]; then \
 			find "$$dir" -maxdepth 1 -type f ! -name '*.vb' -delete; \
 		fi; \

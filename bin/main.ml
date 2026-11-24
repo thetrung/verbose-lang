@@ -9,6 +9,7 @@ type cli_config = {
   mutable emit_only: bool;
   mutable no_run: bool;
   mutable output_bin: string option;
+  mutable include_dirs: string list;
   mutable clang_flags: string list;
 }
 
@@ -20,6 +21,7 @@ let usage =
   "  --no-ta      Skip semantic type-analyzer pass\n" ^
   "  --emit-only  Emit .ll only (skip clang & execution)\n" ^
   "  --no-run     Compile binary with clang without executing it\n" ^
+  "  -I <dir>     Add module Include search directory\n" ^
   "  -o <path>    Specify output binary path\n" ^
   "  -l<lib>      Link external C library (e.g. -lm, -lraylib)\n" ^
   "  -L<dir>      Add library search path for clang\n"
@@ -34,6 +36,7 @@ let parse_args argv =
     emit_only = false;
     no_run = false;
     output_bin = None;
+    include_dirs = [];
     clang_flags = [];
   } in
   let n = Array.length argv in
@@ -50,6 +53,11 @@ let parse_args argv =
      | "-o" when !i + 1 < n ->
          incr i;
          cfg.output_bin <- Some argv.(!i)
+     | "-I" when !i + 1 < n ->
+         incr i;
+         cfg.include_dirs <- cfg.include_dirs @ [argv.(!i)]
+     | s when String.length s > 2 && String.sub s 0 2 = "-I" ->
+         cfg.include_dirs <- cfg.include_dirs @ [String.sub s 2 (String.length s - 2)]
      | s when String.length s >= 2 && (String.sub s 0 2 = "-l" || String.sub s 0 2 = "-L" || String.sub s 0 2 = "-W") ->
          cfg.clang_flags <- cfg.clang_flags @ [s]
      | s when String.length s > 0 && s.[0] = '-' ->
@@ -82,16 +90,13 @@ let () =
         print_endline usage;
         exit 1
   in
-  let in_channel = open_in filename in
-  let lexbuf = Lexing.from_channel in_channel in
   try
     Printf.printf "\n -------- Verbose-Lang Compiler -------\n";
     Printf.printf " build: %s\n" Version.build_time;
     Printf.printf " version: %s/%s\n\n" Version.branch Version.commit_id;
 
-    (* 1. Parse source code *)
-    let ast = Parser.program Lexer.tokenize lexbuf in
-    close_in in_channel;
+    (* 1. Load & recursively resolve Include modules *)
+    let ast, private_symbols = Loader.load_program ~include_dirs:cfg.include_dirs filename in
 
     if cfg.show_ast then begin
       print_endline "\n --------- Parsed Source Code ---------";
@@ -100,7 +105,7 @@ let () =
 
     (* 2. Run Type Analyzer BEFORE codegen *)
     if not cfg.skip_ta then begin
-      Type_analyzer.analyze_program ast;
+      Type_analyzer.analyze_program ~private_symbols ast;
       if cfg.show_ta then
         print_endline " [OK] Type Analyzer: semantic check passed."
     end;
@@ -152,25 +157,21 @@ let () =
       end
     end
   with
+  | Loader.LoadError msg ->
+      Printf.eprintf "Module Load Error: %s\n" msg;
+      exit 1
   | Lexer.SyntaxError msg ->
-      (try close_in in_channel with _ -> ());
       Printf.eprintf "Lexer Error: %s\n" msg;
       exit 1
   | Parser.Error ->
-      let pos = lexbuf.lex_curr_p in
-      (try close_in in_channel with _ -> ());
-      Printf.eprintf "Parser Error at line %d, character %d\n"
-        pos.pos_lnum (pos.pos_cnum - pos.pos_bol);
+      Printf.eprintf "Parser Error\n";
       exit 1
   | Type_analyzer.TypeError msg ->
-      (try close_in in_channel with _ -> ());
       Printf.eprintf "Semantic Type Error: %s\n" msg;
       exit 1
   | Codegen.Error msg ->
-      (try close_in in_channel with _ -> ());
       Printf.eprintf "Backend Codegen Error: %s\n" msg;
       exit 1
   | e ->
-      (try close_in in_channel with _ -> ());
       Printf.eprintf "Unexpected Error: %s\n" (Printexc.to_string e);
       exit 1

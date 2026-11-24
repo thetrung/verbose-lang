@@ -14,15 +14,17 @@ type env = {
   structs: (string, (string * data_type) list) Hashtbl.t;
   enums: (string, string list) Hashtbl.t;
   functions: (string, func_sig) Hashtbl.t;
+  private_symbols: (string, string) Hashtbl.t;
   ret_type: data_type;
 }
 
-let create_env () = {
+let create_env ?(private_symbols = Hashtbl.create 1) () = {
   locals = Hashtbl.create 50;
   globals = Hashtbl.create 32;
   structs = Hashtbl.create 16;
   enums = Hashtbl.create 16;
   functions = Hashtbl.create 32;
+  private_symbols;
   ret_type = Nothing;
 }
 
@@ -32,6 +34,7 @@ let copy_env ?ret_type env = {
   structs = env.structs;
   enums = env.enums;
   functions = env.functions;
+  private_symbols = env.private_symbols;
   ret_type = (match ret_type with Some rt -> rt | None -> env.ret_type);
 }
 
@@ -71,10 +74,16 @@ let lookup_var env name =
   | Some dt -> Some dt
   | None -> Hashtbl.find_opt env.globals name
 
+let check_not_private env kind name =
+  if Hashtbl.mem env.private_symbols name then
+    raise (TypeError (Printf.sprintf "Cannot access Private %s '%s' from included module" kind name))
+
 let rec validate_type env = function
   | Custom name ->
-      if not (Hashtbl.mem env.structs name || Hashtbl.mem env.enums name) then
+      if not (Hashtbl.mem env.structs name || Hashtbl.mem env.enums name) then begin
+        check_not_private env "type" name;
         raise (TypeError ("Unknown type '" ^ name ^ "'"))
+      end
   | Array (et, n) ->
       if n <> -1 && n <= 0 then
         raise (TypeError "Array size must be greater than 0");
@@ -146,7 +155,10 @@ and type_of_expr env = function
        | Some dt -> dt
        | None ->
            if Hashtbl.mem env.enums name then Custom name
-           else raise (TypeError ("Undefined variable or constant reference: " ^ name)))
+           else begin
+             check_not_private env "symbol" name;
+             raise (TypeError ("Undefined variable or constant reference: " ^ name))
+           end)
 
   | IntLit _ -> Int
   | FloatLit _ -> Double
@@ -467,6 +479,7 @@ and type_of_expr env = function
             ) args;
             Int
         | _ ->
+            check_not_private env "function" name;
             raise (TypeError ("Undefined function or constructor: " ^ name))
       end
 
@@ -607,10 +620,11 @@ let rec check_stmt env = function
        | Some body -> List.iter (check_stmt (copy_env env)) body
        | None -> ())
 
-let analyze_program prog =
-  let env = create_env () in
+let analyze_program ?private_symbols prog =
+  let env = create_env ?private_symbols () in
   (* Pass 1: register all structs, enums, globals, functions, and externs *)
   List.iter (function
+    | Include _ -> ()
     | Structure (_, name, fields) ->
         Hashtbl.replace env.structs name fields
     | EnumDef (_, name, members) ->
@@ -665,5 +679,5 @@ let analyze_program prog =
     | ExternDecl (_, _, params, ret_type, _) ->
         validate_type env ret_type;
         List.iter (fun (_, _, pdt) -> validate_type env pdt) params
-    | EnumDef _ -> ()
+    | EnumDef _ | Include _ -> ()
   ) prog
