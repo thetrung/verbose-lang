@@ -8,8 +8,9 @@ type data_type =
   | Boolean
   | Nothing
   | Pointer
+  | Arena
   | Custom of string
-  | Array of data_type * int (* element type, size; 0 = unsized slice/param *)
+  | Array of data_type * int (* element type, size; -1 = unsized slice/param *)
 
 type op = 
   (* Numeric *)
@@ -40,6 +41,7 @@ type expr =
   | SizeOf of data_type             (* SizeOf(Point) *)
   | HeapAlloc of data_type * expr   (* HeapAlloc(Integer, 10) *)
   | HeapRealloc of expr * data_type * expr (* HeapRealloc(arr, Integer, 20) *)
+  | ArenaAlloc of param_mode * expr * data_type * expr (* ArenaAlloc(ByRef arena, Point, 10) *)
   
 type stmt =
   | Dim of string * data_type * expr option

@@ -40,6 +40,7 @@ let global_ast_types : (string, data_type) Hashtbl.t = Hashtbl.create 32
 let global_indirect_arrays : (string, bool) Hashtbl.t = Hashtbl.create 16
 let static_counter : int ref = ref 0
 let current_func_name : string ref = ref ""
+let uses_arena : bool ref = ref false
 (* Enum Values  *)
 let enum_values = Hashtbl.create 50
 
@@ -67,6 +68,9 @@ let rec string_of_dt = function
   | Boolean -> "i1"
   | Nothing -> "void"
   | Pointer -> "ptr"
+  | Arena ->
+      uses_arena := true;
+      "%struct.__vb_arena"
   | Custom name ->
       (* If it's a registered Enum, lower it natively to a plain integer *)
       if Hashtbl.mem enum_values (name ^ "._is_enum") then "i32"
@@ -80,13 +84,14 @@ let is_struct_dt = function
   | _ -> false
 
 let is_aggregate_dt = function
+  | Arena -> true
   | Custom name -> Hashtbl.mem struct_fields name
   | Array (_, n) -> n > 0
   | _ -> false
 
 let llvm_param_type (mode, _, dt) =
   match dt with
-  | Array _ -> "ptr"
+  | Arena | Array _ -> "ptr"
   | Custom name when not (Hashtbl.mem enum_values (name ^ "._is_enum")) -> "ptr"
   | _ -> if mode = ByRef then "ptr" else string_of_dt dt
 
@@ -94,7 +99,7 @@ let rec get_type_align = function
   | Byte | Boolean -> 1
   | Short -> 2
   | Int | Single -> 4
-  | Long | Double | Pointer -> 8
+  | Long | Double | Pointer | Arena -> 8
   | Nothing -> 1
   | Custom name ->
       if Hashtbl.mem enum_values (name ^ "._is_enum") then 4
@@ -113,6 +118,7 @@ and get_type_size = function
   | Short -> 2
   | Int | Single -> 4
   | Long | Double | Pointer -> 8
+  | Arena -> 24
   | Nothing -> 0
   | Custom name ->
       if Hashtbl.mem enum_values (name ^ "._is_enum") then 4
@@ -203,7 +209,7 @@ let zero_llvm_value = function
   | Boolean -> "false"
   | Pointer | Array (_, -1) -> "null"
   | Custom name when Hashtbl.mem enum_values (name ^ "._is_enum") -> "0"
-  | Custom _ | Array _ -> "zeroinitializer"
+  | Arena | Custom _ | Array _ -> "zeroinitializer"
   | Nothing -> "0"
 
 let rec const_llvm_value ctx dt = function
@@ -497,6 +503,156 @@ let rec codegen_expr ctx = function
       let res_reg = next_reg ctx in
       emit ctx (Printf.sprintf "  %s = call ptr @realloc(ptr %s, i64 %s)" res_reg pv bytes_reg);
       (res_reg, "ptr")
+
+  | ArenaAlloc (mode, arena_expr, dt, count_expr) ->
+      uses_arena := true;
+      if mode <> ByRef then
+        raise (Error "ArenaAlloc expects ByRef arena as argument 1");
+      let arena_ptr, arena_dt = get_lvalue_ptr ctx arena_expr in
+      if arena_dt <> Arena then
+        raise (Error "ArenaAlloc argument 1 must be an Arena variable");
+      let elem_size = get_type_size dt in
+      if elem_size <= 0 then
+        raise (Error "ArenaAlloc requires a non-empty element type");
+      let count64 = widen_index_to_i64 ctx count_expr in
+      let bytes_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = mul i64 %s, %d" bytes_reg count64 elem_size);
+      let res_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = call ptr @__vb_arena_alloc(ptr %s, i64 %s)" res_reg arena_ptr bytes_reg);
+      (res_reg, "ptr")
+
+  | Call ("IsNull", [(ByVal, ptr_expr)]) ->
+      let pv, pt = codegen_expr ctx ptr_expr in
+      if pt <> "ptr" then
+        raise (Error ("IsNull expects a Pointer or slice argument, got " ^ pt));
+      let res_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = icmp eq ptr %s, null" res_reg pv);
+      (res_reg, "i1")
+
+  | Call ("IsNull", _) ->
+      raise (Error "IsNull() expects exactly one ByVal pointer/slice argument")
+
+  | Call ("ArenaCreate", [(ByVal, cap_expr)]) ->
+      uses_arena := true;
+      let cap64 = widen_index_to_i64 ctx cap_expr in
+      let tmp_arena = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = alloca %%struct.__vb_arena, align 8" tmp_arena);
+      emit ctx (Printf.sprintf "  call void @__vb_arena_init_heap(ptr %s, i64 %s)" tmp_arena cap64);
+      (tmp_arena, "ptr")
+
+  | Call ("ArenaCreate", _) ->
+      raise (Error "ArenaCreate() expects exactly one ByVal capacity argument")
+
+  | Call ("ArenaFromBuffer", [(buf_mode, buf_expr); (ByVal, cap_expr)]) ->
+      uses_arena := true;
+      if buf_mode <> ByRef then
+        raise (Error "ArenaFromBuffer expects ByRef buffer as argument 1");
+      let buf_ptr, _ = get_lvalue_ptr ctx buf_expr in
+      let cap64 = widen_index_to_i64 ctx cap_expr in
+      let tmp_arena = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = alloca %%struct.__vb_arena, align 8" tmp_arena);
+      emit ctx (Printf.sprintf "  call void @__vb_arena_init_buf(ptr %s, ptr %s, i64 %s)" tmp_arena buf_ptr cap64);
+      (tmp_arena, "ptr")
+
+  | Call ("ArenaFromBuffer", _) ->
+      raise (Error "ArenaFromBuffer() expects (ByRef buffer, capacity)")
+
+  | Call ("ArenaAllocBytes", [(a_mode, a_expr); (ByVal, bytes_expr)]) ->
+      uses_arena := true;
+      if a_mode <> ByRef then
+        raise (Error "ArenaAllocBytes expects ByRef arena as argument 1");
+      let arena_ptr, arena_dt = get_lvalue_ptr ctx a_expr in
+      if arena_dt <> Arena then
+        raise (Error "ArenaAllocBytes argument 1 must be an Arena variable");
+      let bytes64 = widen_index_to_i64 ctx bytes_expr in
+      let res_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = call ptr @__vb_arena_alloc(ptr %s, i64 %s)" res_reg arena_ptr bytes64);
+      (res_reg, "ptr")
+
+  | Call ("ArenaAllocBytes", _) ->
+      raise (Error "ArenaAllocBytes() expects (ByRef arena, byteCount)")
+
+  | Call ("ArenaReset", [(a_mode, a_expr)]) ->
+      uses_arena := true;
+      if a_mode <> ByRef then raise (Error "ArenaReset expects ByRef arena");
+      let arena_ptr, arena_dt = get_lvalue_ptr ctx a_expr in
+      if arena_dt <> Arena then raise (Error "ArenaReset argument must be an Arena variable");
+      emit ctx (Printf.sprintf "  call void @__vb_arena_reset(ptr %s)" arena_ptr);
+      ("", "void")
+
+  | Call ("ArenaReset", _) ->
+      raise (Error "ArenaReset() expects (ByRef arena)")
+
+  | Call ("ArenaMark", [(a_mode, a_expr)]) ->
+      uses_arena := true;
+      if a_mode <> ByRef then raise (Error "ArenaMark expects ByRef arena");
+      let arena_ptr, arena_dt = get_lvalue_ptr ctx a_expr in
+      if arena_dt <> Arena then raise (Error "ArenaMark argument must be an Arena variable");
+      let res_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = call i64 @__vb_arena_used(ptr %s)" res_reg arena_ptr);
+      (res_reg, "i64")
+
+  | Call ("ArenaMark", _) ->
+      raise (Error "ArenaMark() expects (ByRef arena)")
+
+  | Call ("ArenaRewind", [(a_mode, a_expr); (ByVal, mark_expr)]) ->
+      uses_arena := true;
+      if a_mode <> ByRef then raise (Error "ArenaRewind expects ByRef arena");
+      let arena_ptr, arena_dt = get_lvalue_ptr ctx a_expr in
+      if arena_dt <> Arena then raise (Error "ArenaRewind argument 1 must be an Arena variable");
+      let mark64 = widen_index_to_i64 ctx mark_expr in
+      emit ctx (Printf.sprintf "  call void @__vb_arena_rewind(ptr %s, i64 %s)" arena_ptr mark64);
+      ("", "void")
+
+  | Call ("ArenaRewind", _) ->
+      raise (Error "ArenaRewind() expects (ByRef arena, mark)")
+
+  | Call ("ArenaUsed", [(a_mode, a_expr)]) ->
+      uses_arena := true;
+      if a_mode <> ByRef then raise (Error "ArenaUsed expects ByRef arena");
+      let arena_ptr, arena_dt = get_lvalue_ptr ctx a_expr in
+      if arena_dt <> Arena then raise (Error "ArenaUsed argument must be an Arena variable");
+      let res_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = call i64 @__vb_arena_used(ptr %s)" res_reg arena_ptr);
+      (res_reg, "i64")
+
+  | Call ("ArenaUsed", _) ->
+      raise (Error "ArenaUsed() expects (ByRef arena)")
+
+  | Call ("ArenaRemaining", [(a_mode, a_expr)]) ->
+      uses_arena := true;
+      if a_mode <> ByRef then raise (Error "ArenaRemaining expects ByRef arena");
+      let arena_ptr, arena_dt = get_lvalue_ptr ctx a_expr in
+      if arena_dt <> Arena then raise (Error "ArenaRemaining argument must be an Arena variable");
+      let res_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = call i64 @__vb_arena_remaining(ptr %s)" res_reg arena_ptr);
+      (res_reg, "i64")
+
+  | Call ("ArenaRemaining", _) ->
+      raise (Error "ArenaRemaining() expects (ByRef arena)")
+
+  | Call ("ArenaCapacity", [(a_mode, a_expr)]) ->
+      uses_arena := true;
+      if a_mode <> ByRef then raise (Error "ArenaCapacity expects ByRef arena");
+      let arena_ptr, arena_dt = get_lvalue_ptr ctx a_expr in
+      if arena_dt <> Arena then raise (Error "ArenaCapacity argument must be an Arena variable");
+      let res_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = call i64 @__vb_arena_capacity(ptr %s)" res_reg arena_ptr);
+      (res_reg, "i64")
+
+  | Call ("ArenaCapacity", _) ->
+      raise (Error "ArenaCapacity() expects (ByRef arena)")
+
+  | Call ("ArenaDestroy", [(a_mode, a_expr)]) ->
+      uses_arena := true;
+      if a_mode <> ByRef then raise (Error "ArenaDestroy expects ByRef arena");
+      let arena_ptr, arena_dt = get_lvalue_ptr ctx a_expr in
+      if arena_dt <> Arena then raise (Error "ArenaDestroy argument must be an Arena variable");
+      emit ctx (Printf.sprintf "  call void @__vb_arena_destroy(ptr %s)" arena_ptr);
+      ("", "void")
+
+  | Call ("ArenaDestroy", _) ->
+      raise (Error "ArenaDestroy() expects (ByRef arena)")
 
   | Call ("HeapAllocBytes", [(ByVal, size_expr)]) ->
       let size64 = widen_index_to_i64 ctx size_expr in
@@ -1060,6 +1216,19 @@ let codegen_def ctx = function
               Hashtbl.add var_types n struct_name;
               Hashtbl.add local_types n struct_typ
             end
+        | Arena ->
+            let arena_typ = "%struct.__vb_arena" in
+            if mode = ByRef then begin
+              Hashtbl.add ctx.variables n ("%" ^ n);
+              Hashtbl.add local_types n arena_typ
+            end else begin
+              let alloca_reg = next_reg ctx in
+              emit ctx (Printf.sprintf "  %s = alloca %s, align 8" alloca_reg arena_typ);
+              emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %%%s, i64 24, i1 false)"
+                         alloca_reg n);
+              Hashtbl.add ctx.variables n alloca_reg;
+              Hashtbl.add local_types n arena_typ
+            end
         | Array (_, arr_len) ->
             let arr_typ = string_of_dt dt in
             if arr_len > 0 && mode = ByVal then begin
@@ -1168,6 +1337,7 @@ let generate_program prog =
   Hashtbl.clear global_indirect_arrays;
   static_counter := 0;
   current_func_name := "";
+  uses_arena := false;
   Hashtbl.clear enum_values;
   
   (* Step 0: Populate structural metadata indices first *)
@@ -1201,6 +1371,10 @@ let generate_program prog =
   let emit_header str = Buffer.add_string header_buf (str ^ "\n") in
   
   (* Add dynamic type definitions *)
+  if !uses_arena then begin
+    emit_header "%struct.__vb_arena = type { ptr, i64, i64 }";
+    emit_header ""
+  end;
   List.iter (fun g -> emit_header g) (List.rev ctx.globals);
   if ctx.globals <> [] then emit_header "";
   
@@ -1223,6 +1397,133 @@ let generate_program prog =
     emit_header (Hashtbl.find extern_decls fname)
   ) (List.rev !extern_order);
   emit_header "declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)";
+  if !uses_arena then begin
+    emit_header "declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)";
+    emit_header "";
+    emit_header {|define internal void @__vb_arena_init_heap(ptr %a, i64 %cap) {
+entry:
+  %valid = icmp sgt i64 %cap, 0
+  br i1 %valid, label %alloc_blk, label %zero_blk
+alloc_blk:
+  %mem = call ptr @calloc(i64 1, i64 %cap)
+  %ok = icmp ne ptr %mem, null
+  br i1 %ok, label %store_ok, label %zero_blk
+store_ok:
+  %p0 = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 0
+  store ptr %mem, ptr %p0, align 8
+  %p1 = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 1
+  store i64 %cap, ptr %p1, align 8
+  %p2 = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 2
+  store i64 0, ptr %p2, align 8
+  ret void
+zero_blk:
+  store %struct.__vb_arena zeroinitializer, ptr %a, align 8
+  ret void
+}
+
+define internal void @__vb_arena_init_buf(ptr %a, ptr %buf, i64 %cap) {
+entry:
+  %valid = icmp sgt i64 %cap, 0
+  br i1 %valid, label %store_ok, label %zero_blk
+store_ok:
+  %p0 = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 0
+  store ptr %buf, ptr %p0, align 8
+  %p1 = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 1
+  store i64 %cap, ptr %p1, align 8
+  %p2 = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 2
+  store i64 0, ptr %p2, align 8
+  ret void
+zero_blk:
+  store %struct.__vb_arena zeroinitializer, ptr %a, align 8
+  ret void
+}
+
+define internal ptr @__vb_arena_alloc(ptr %a, i64 %size) {
+entry:
+  %le0 = icmp sle i64 %size, 0
+  br i1 %le0, label %oom, label %align_blk
+align_blk:
+  %plus7 = add i64 %size, 7
+  %aligned = and i64 %plus7, -8
+  %cap_ptr = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 1
+  %cap = load i64, ptr %cap_ptr, align 8
+  %off_ptr = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 2
+  %off = load i64, ptr %off_ptr, align 8
+  %new_off = add i64 %off, %aligned
+  %wrap = icmp ult i64 %new_off, %off
+  %ovf = icmp ugt i64 %new_off, %cap
+  %fail = or i1 %wrap, %ovf
+  br i1 %fail, label %oom, label %ok
+ok:
+  %base_slot = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 0
+  %base = load ptr, ptr %base_slot, align 8
+  %isnull = icmp eq ptr %base, null
+  br i1 %isnull, label %oom, label %commit
+commit:
+  store i64 %new_off, ptr %off_ptr, align 8
+  %res = getelementptr inbounds i8, ptr %base, i64 %off
+  call void @llvm.memset.p0.i64(ptr align 8 %res, i8 0, i64 %aligned, i1 false)
+  ret ptr %res
+oom:
+  ret ptr null
+}
+
+define internal void @__vb_arena_reset(ptr %a) {
+  %off_ptr = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 2
+  store i64 0, ptr %off_ptr, align 8
+  ret void
+}
+
+define internal i64 @__vb_arena_used(ptr %a) {
+  %off_ptr = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 2
+  %off = load i64, ptr %off_ptr, align 8
+  ret i64 %off
+}
+
+define internal i64 @__vb_arena_capacity(ptr %a) {
+  %cap_ptr = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 1
+  %cap = load i64, ptr %cap_ptr, align 8
+  ret i64 %cap
+}
+
+define internal i64 @__vb_arena_remaining(ptr %a) {
+  %cap_ptr = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 1
+  %cap = load i64, ptr %cap_ptr, align 8
+  %off_ptr = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 2
+  %off = load i64, ptr %off_ptr, align 8
+  %rem = sub i64 %cap, %off
+  ret i64 %rem
+}
+
+define internal void @__vb_arena_rewind(ptr %a, i64 %mark) {
+entry:
+  %off_ptr = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 2
+  %off = load i64, ptr %off_ptr, align 8
+  %nonneg = icmp sge i64 %mark, 0
+  %le_off = icmp sle i64 %mark, %off
+  %ok = and i1 %nonneg, %le_off
+  br i1 %ok, label %do_rewind, label %done
+do_rewind:
+  store i64 %mark, ptr %off_ptr, align 8
+  br label %done
+done:
+  ret void
+}
+
+define internal void @__vb_arena_destroy(ptr %a) {
+entry:
+  %base_slot = getelementptr inbounds %struct.__vb_arena, ptr %a, i32 0, i32 0
+  %base = load ptr, ptr %base_slot, align 8
+  %nonnull = icmp ne ptr %base, null
+  br i1 %nonnull, label %do_free, label %clear
+do_free:
+  call void @free(ptr %base)
+  br label %clear
+clear:
+  store %struct.__vb_arena zeroinitializer, ptr %a, align 8
+  ret void
+}|}
+  end;
   emit_header "";
   
   Buffer.contents header_buf ^ Buffer.contents ctx.buf

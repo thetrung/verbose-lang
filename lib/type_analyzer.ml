@@ -171,6 +171,12 @@ let rec type_of_expr env = function
       ignore (type_of_expr env p);
       ignore (type_of_expr env count);
       Array (dt, -1)
+  | ArenaAlloc (mode, a, dt, count) ->
+      if mode <> ByRef then
+        raise (TypeError "ArenaAlloc expects ByRef arena as argument 1");
+      ignore (type_of_expr env a);
+      ignore (type_of_expr env count);
+      Array (dt, -1)
 
 
 let rec check_stmt env = function
