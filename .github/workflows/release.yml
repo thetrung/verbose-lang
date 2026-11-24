@@ -187,13 +187,15 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ inputs.tag || github.ref_name }}
         run: |
           ASSETS="release-assets/verbose release-assets/verbose-linux-x86_64 release-assets/verbose-linux-arm64 release-assets/verbose-macos-arm64 release-assets/verbose-windows-x86_64.exe release-assets/SHA256SUMS.txt"
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release upload "$TAG_NAME" $ASSETS --clobber
+          if gh release view "$TAG_NAME" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" $ASSETS --repo "$GH_REPO" --clobber
           else
             gh release create "$TAG_NAME" $ASSETS \
+              --repo "$GH_REPO" \
               --title "VerBose-Lang $TAG_NAME" \
               --generate-notes
           fi
