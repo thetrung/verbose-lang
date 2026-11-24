@@ -976,7 +976,10 @@ let rec codegen_stmt ctx = function
          | Some exp ->
              let v, t = codegen_expr ctx exp in
              emit_store_typed ctx effective_dt v t alloca_reg
-         | None -> ()))
+         | None ->
+             let align = max 1 (get_type_align effective_dt) in
+             emit ctx (Printf.sprintf "  store %s %s, ptr %s, align %d"
+                         typ_str (zero_llvm_value effective_dt) alloca_reg align)))
 
   | StaticDim (name, dt, opt_exp) ->
       (match dt with
