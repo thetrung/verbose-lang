@@ -64,7 +64,13 @@ Structure CgLocalSym
   Dim nameLen As Integer
   Dim slotReg As Integer      ' >0 => %r<slotReg>, <0 => param %p<-(slotReg+1)>
   Dim isIndirect As Integer   ' 1 for local/global unsized slice slot holding ptr
+  Dim staticPlusOne As Integer ' >0 => @__vb_static_<staticPlusOne - 1>
   Dim ty As TypeInfo
+End Structure
+
+Structure CgStaticLocal
+  Dim ty As TypeInfo
+  Dim initNode As Integer
 End Structure
 
 Structure CgStrConst
@@ -102,6 +108,9 @@ Private Static cg_localCount As Integer = 0
 
 Private Static cg_strs() As CgStrConst
 Private Static cg_strCount As Integer = 0
+
+Private Static cg_staticLocals() As CgStaticLocal
+Private Static cg_staticLocalCount As Integer = 0
 
 Private Function CgNextReg() As Integer
   Dim r As Integer = cg_reg
@@ -467,6 +476,15 @@ Private Sub CgCollectStrings(id As Integer)
     g_nodes(id).op = sid
     Return
   End If
+  If k = NodeKind.NdStaticDim Then
+    Dim sid As Integer = cg_staticLocalCount
+    g_nodes(id).op = sid
+    cg_staticLocals(sid) = CgStaticLocal With {
+      ty = CgResolveType(g_nodes(id).tyKind, g_nodes(id).tyArrLen, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen),
+      initNode = g_nodes(id).left
+    }
+    cg_staticLocalCount = cg_staticLocalCount + 1
+  End If
   If k = NodeKind.NdArenaAlloc Then
     cg_usesArena = 1
   End If
@@ -800,6 +818,11 @@ Private Function CgEmitLValuePtr(id As Integer, ByRef outTy As TypeInfo, ByRef o
     If lIdx >= 0 Then
       outTy = cg_locals(lIdx).ty
       outIsIndirect = cg_locals(lIdx).isIndirect
+      If cg_locals(lIdx).staticPlusOne > 0 Then
+        Dim r As Integer = CgNextReg()
+        fprintf(cg_out, "  %%r%d = getelementptr i8, ptr @__vb_static_%d, i64 0\n", r, cg_locals(lIdx).staticPlusOne - 1)
+        Return r
+      End If
       Dim sr As Integer = cg_locals(lIdx).slotReg
       If sr < 0 Then
         Dim pIdx As Integer = -(sr + 1)
@@ -1284,6 +1307,46 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     Return resReg
   End If
 
+  If k = NodeKind.NdHeapAlloc Then
+    Dim elemTy As TypeInfo = CgResolveType(g_nodes(id).tyKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    Dim elemSz As Integer = CgTypeSize(elemTy)
+    Dim cntTy As TypeInfo
+    Dim cntReg As Integer = CgEmitExpr(g_nodes(id).left, ByRef cntTy)
+    Dim cnt64 As Integer = CgWidenToI64(cntReg, cntTy)
+    Dim resReg As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = call ptr @calloc(i64 %%r%d, i64 %d)\n", resReg, cnt64, elemSz)
+    outTy = TypeInfo With {
+      kind = elemTy.kind,
+      typeIdx = elemTy.typeIdx,
+      arrLen = -1,
+      namePos = elemTy.namePos,
+      nameLen = elemTy.nameLen
+    }
+    Return resReg
+  End If
+
+  If k = NodeKind.NdHeapRealloc Then
+    Dim pTy As TypeInfo
+    Dim pReg As Integer = CgEmitExpr(g_nodes(id).left, ByRef pTy)
+    Dim elemTy As TypeInfo = CgResolveType(g_nodes(id).tyKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    Dim elemSz As Integer = CgTypeSize(elemTy)
+    Dim cntTy As TypeInfo
+    Dim cntReg As Integer = CgEmitExpr(g_nodes(id).right, ByRef cntTy)
+    Dim cnt64 As Integer = CgWidenToI64(cntReg, cntTy)
+    Dim bytesReg As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = mul i64 %%r%d, %d\n", bytesReg, cnt64, elemSz)
+    Dim resReg As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = call ptr @realloc(ptr %%r%d, i64 %%r%d)\n", resReg, pReg, bytesReg)
+    outTy = TypeInfo With {
+      kind = elemTy.kind,
+      typeIdx = elemTy.typeIdx,
+      arrLen = -1,
+      namePos = elemTy.namePos,
+      nameLen = elemTy.nameLen
+    }
+    Return resReg
+  End If
+
   If k = NodeKind.NdCall Then
     Return CgEmitCall(id, ByRef outTy)
   End If
@@ -1414,6 +1477,26 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim mReg As Integer = CgEmitExpr(g_nodes(g_kids(aStart + 1)).left, ByRef mTy)
     Dim m64 As Integer = CgWidenToI64(mReg, mTy)
     fprintf(cg_out, "  call void @__vb_arena_rewind(ptr %%r%d, i64 %%r%d)\n", aPtr, m64)
+    outTy = TypeInfo With { kind = TypeKind.TyNothing, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    Return 0
+  End If
+
+  ' Builtin: HeapAllocBytes(bytes)
+  If SliceEqualsStr(nPos, nLen, "HeapAllocBytes", 14) Then
+    Dim bTy As TypeInfo
+    Dim bReg As Integer = CgEmitExpr(g_nodes(g_kids(aStart)).left, ByRef bTy)
+    Dim b64 As Integer = CgWidenToI64(bReg, bTy)
+    Dim r As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = call ptr @calloc(i64 1, i64 %%r%d)\n", r, b64)
+    outTy = TypeInfo With { kind = TypeKind.TyPointer, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
+    Return r
+  End If
+
+  ' Builtin: HeapFree(p)
+  If SliceEqualsStr(nPos, nLen, "HeapFree", 8) Then
+    Dim pTy As TypeInfo
+    Dim pReg As Integer = CgEmitExpr(g_nodes(g_kids(aStart)).left, ByRef pTy)
+    fprintf(cg_out, "  call void @free(ptr %%r%d)\n", pReg)
     outTy = TypeInfo With { kind = TypeKind.TyNothing, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 }
     Return 0
   End If
@@ -1626,6 +1709,25 @@ End Function
 
 Private Sub CgEmitStmt(id As Integer)
   Dim k As Integer = g_nodes(id).kind
+
+  If k = NodeKind.NdStaticDim Then
+    Dim sid As Integer = g_nodes(id).op
+    Dim ty As TypeInfo = cg_staticLocals(sid).ty
+    Dim isInd As Integer = 0
+    If ty.arrLen < 0 Then
+      isInd = 1
+    End If
+    cg_locals(cg_localCount) = CgLocalSym With {
+      namePos = g_nodes(id).intVal,
+      nameLen = g_nodes(id).lenVal,
+      slotReg = 0,
+      isIndirect = isInd,
+      staticPlusOne = sid + 1,
+      ty = ty
+    }
+    cg_localCount = cg_localCount + 1
+    Return
+  End If
 
   If k = NodeKind.NdDim Then
     Dim ty As TypeInfo = CgResolveType(g_nodes(id).tyKind, g_nodes(id).tyArrLen, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
@@ -2204,6 +2306,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   cg_params = ArenaAlloc(ByRef arena, CgParamInfo, 1024)
   cg_locals = ArenaAlloc(ByRef arena, CgLocalSym, 256)
   cg_strs = ArenaAlloc(ByRef arena, CgStrConst, 512)
+  cg_staticLocals = ArenaAlloc(ByRef arena, CgStaticLocal, 256)
 
   cg_enumCount = 0
   cg_enumMemCount = 0
@@ -2214,6 +2317,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   cg_paramCount = 0
   cg_localCount = 0
   cg_strCount = 0
+  cg_staticLocalCount = 0
   cg_lbl = 1
   cg_usesArena = 0
 
@@ -2389,6 +2493,18 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
     CgEmitLlvmType(cg_globals(i).ty)
     fprintf(cg_out, " ")
     CgEmitConstInit(cg_globals(i).ty, cg_globals(i).initNode)
+    fprintf(cg_out, ", align 8\n")
+    i = i + 1
+  End While
+  fprintf(cg_out, "\n")
+
+  ' Emit function-local Static variables
+  i = 0
+  While i < cg_staticLocalCount Do
+    fprintf(cg_out, "@__vb_static_%d = internal global ", i)
+    CgEmitLlvmType(cg_staticLocals(i).ty)
+    fprintf(cg_out, " ")
+    CgEmitConstInit(cg_staticLocals(i).ty, cg_staticLocals(i).initNode)
     fprintf(cg_out, ", align 8\n")
     i = i + 1
   End While

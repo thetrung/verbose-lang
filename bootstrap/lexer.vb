@@ -190,6 +190,12 @@ Private Function LxClassifyKeyword(pos As Integer, slen As Integer) As Integer
   If SliceEqualsStr(pos, slen, "ArenaAlloc", 10) Then
     Return TokenKind.TkArenaAlloc
   End If
+  If SliceEqualsStr(pos, slen, "HeapAlloc", 9) Then
+    Return TokenKind.TkHeapAlloc
+  End If
+  If SliceEqualsStr(pos, slen, "HeapRealloc", 11) Then
+    Return TokenKind.TkHeapRealloc
+  End If
   If SliceEqualsStr(pos, slen, "If", 2) Then
     Return TokenKind.TkIf
   End If

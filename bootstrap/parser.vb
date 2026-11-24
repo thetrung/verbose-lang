@@ -265,6 +265,51 @@ Private Function PParsePrimary() As Integer
     Return id
   End If
 
+  If k = TokenKind.TkHeapAlloc Then
+    PAdvance()
+    PExpect(TokenKind.TkLParen)
+    Dim tk As Integer = 0
+    Dim tnPos As Integer = 0
+    Dim tnLen As Integer = 0
+    PParseBaseType(ByRef tk, ByRef tnPos, ByRef tnLen)
+    Dim cntExpr As Integer = -1
+    If PPeekKind() = TokenKind.TkComma Then
+      PAdvance()
+      cntExpr = ParseExpr()
+    Else
+      cntExpr = NewNode(NodeKind.NdIntLit)
+      g_nodes(cntExpr).intVal = 1
+    End If
+    PExpect(TokenKind.TkRParen)
+    Dim id As Integer = NewNode(NodeKind.NdHeapAlloc)
+    g_nodes(id).left = cntExpr
+    g_nodes(id).tyKind = tk
+    g_nodes(id).tyNamePos = tnPos
+    g_nodes(id).tyNameLen = tnLen
+    Return id
+  End If
+
+  If k = TokenKind.TkHeapRealloc Then
+    PAdvance()
+    PExpect(TokenKind.TkLParen)
+    Dim ptrExpr As Integer = ParseExpr()
+    PExpect(TokenKind.TkComma)
+    Dim tk As Integer = 0
+    Dim tnPos As Integer = 0
+    Dim tnLen As Integer = 0
+    PParseBaseType(ByRef tk, ByRef tnPos, ByRef tnLen)
+    PExpect(TokenKind.TkComma)
+    Dim cntExpr As Integer = ParseExpr()
+    PExpect(TokenKind.TkRParen)
+    Dim id As Integer = NewNode(NodeKind.NdHeapRealloc)
+    g_nodes(id).left = ptrExpr
+    g_nodes(id).right = cntExpr
+    g_nodes(id).tyKind = tk
+    g_nodes(id).tyNamePos = tnPos
+    g_nodes(id).tyNameLen = tnLen
+    Return id
+  End If
+
   If k = TokenKind.TkIdent Then
     Dim namePos As Integer = g_tokens(p_pos).pos
     Dim nameLen As Integer = g_tokens(p_pos).len
@@ -479,8 +524,9 @@ End Sub
 Public Function ParseStmt() As Integer
   Dim k As Integer = PPeekKind()
 
-  ' Dim name[(N | )] As Type [= expr | With { ... }]
-  If k = TokenKind.TkDim Then
+  ' Dim / Static name[(N | )] As Type [= expr | With { ... } | (args)]
+  If (k = TokenKind.TkDim) Or (k = TokenKind.TkStatic) Then
+    Dim isStat As Boolean = (k = TokenKind.TkStatic)
     PAdvance()
     Dim namePos As Integer = g_tokens(p_pos).pos
     Dim nameLen As Integer = g_tokens(p_pos).len
@@ -544,7 +590,11 @@ Public Function ParseStmt() As Integer
         End If
       End If
     End If
-    Dim id As Integer = NewNode(NodeKind.NdDim)
+    Dim ndKind As Integer = NodeKind.NdDim
+    If isStat Then
+      ndKind = NodeKind.NdStaticDim
+    End If
+    Dim id As Integer = NewNode(ndKind)
     g_nodes(id).intVal = namePos
     g_nodes(id).lenVal = nameLen
     g_nodes(id).left = initNode

@@ -43,6 +43,8 @@ Public Enum TokenKind
   TkFalse = 41
   TkSizeOf = 42
   TkArenaAlloc = 43
+  TkHeapAlloc = 44
+  TkHeapRealloc = 45
 
   ' Control flow
   TkIf = 50

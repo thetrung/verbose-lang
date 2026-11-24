@@ -42,6 +42,8 @@ Public Enum NodeKind
   NdFieldInit = 15
   NdArg = 16
   NdFloatLit = 17
+  NdHeapAlloc = 18
+  NdHeapRealloc = 19
 
   ' Statements
   NdDim = 20
@@ -55,6 +57,7 @@ Public Enum NodeKind
   NdFor = 28
   NdSelect = 29
   NdCaseBranch = 30
+  NdStaticDim = 31
 
   ' Definitions
   NdParam = 40
