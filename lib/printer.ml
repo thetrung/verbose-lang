@@ -16,6 +16,9 @@ let rec string_of_dt = function
   | Nothing -> "Nothing" 
   | Pointer -> "Pointer"
   | Custom s -> s
+  | Array (et, n) ->
+      if n > 0 then Printf.sprintf "%s[%d]" (string_of_dt et) n
+      else string_of_dt et ^ "[]"
 
 let string_of_op = function
   | Add -> "+" | Sub -> "-" | Mul -> "*" | Div -> "/" | Mod -> "Mod"
@@ -38,6 +41,8 @@ let rec string_of_expr = function
       in
       f ^ "(" ^ String.concat ", " (List.map fmt_arg args) ^ ")"
   | FieldAccess (e, field) -> string_of_expr e ^ "." ^ field
+  | IndexAccess (e, idx) -> string_of_expr e ^ "[" ^ string_of_expr idx ^ "]"
+  | ArrayLit elems -> "[" ^ String.concat ", " (List.map string_of_expr elems) ^ "]"
   | StructInit (name, inits) ->
       let fmt_init (f, e) = f ^ " = " ^ string_of_expr e in
       name ^ " With { " ^ String.concat ", " (List.map fmt_init inits) ^ " }"
@@ -48,6 +53,7 @@ let rec string_of_stmt indent = function
       indent ^ "Dim " ^ v ^ " As " ^ string_of_dt dt ^ init_expr ^ "\n"
   | Assign (v, e) -> indent ^ v ^ " = " ^ string_of_expr e ^ "\n"
   | FieldAssign (obj, field, e) -> indent ^ string_of_expr obj ^ "." ^ field ^ " = " ^ string_of_expr e ^ "\n"
+  | IndexAssign (base, idx, e) -> indent ^ string_of_expr base ^ "[" ^ string_of_expr idx ^ "] = " ^ string_of_expr e ^ "\n"
   | AssignExpr (lhs, rhs) -> indent ^ string_of_expr lhs ^ " = " ^ string_of_expr rhs ^ "\n"
   | ExprStatement e -> indent ^ string_of_expr e ^ "\n"
   | Return None -> indent ^ "Return\n"
