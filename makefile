@@ -25,7 +25,7 @@ build:
 
 # Rebuild the Stage 0 OCaml compiler into stage0/verbose
 build-stage0:
-	cd stage0 && dune build
+	cd stage0 && dune build --profile release
 	mv -f stage0/_build/default/bin/main.exe stage0/verbose
 
 # Compile and directly execute $(TARGET).vb using self-hosted ./verbose

@@ -16,7 +16,7 @@ jobs:
       - name: Install toolchain (clang, OCaml/dune/menhir, python3)
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang ocaml dune menhir python3
+          sudo apt-get install -y clang ocaml ocaml-dune menhir python3
 
       - name: Build Stage 0 bootstrap compiler
         run: make build-stage0

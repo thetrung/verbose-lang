@@ -23,7 +23,7 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang ocaml dune menhir python3
+          sudo apt-get install -y clang ocaml ocaml-dune menhir python3
 
       - name: Build Stage 0 and Self-Hosted Compiler + Full Test Suite
         run: |
