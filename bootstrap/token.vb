@@ -62,6 +62,9 @@ Public Enum TokenKind
   TkOr = 61
   TkNot = 62
   TkMod = 63
+  TkXor = 64
+  TkShl = 65
+  TkShr = 66
 
   ' Punctuation & symbols
   TkLParen = 70

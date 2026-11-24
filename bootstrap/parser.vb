@@ -435,12 +435,32 @@ Private Function PParseAddSub() As Integer
   Return lhs
 End Function
 
-Private Function PParseCmp() As Integer
+Private Function PParseShift() As Integer
   Dim lhs As Integer = PParseAddSub()
+  Dim going As Boolean = True
+  While going Do
+    Dim k As Integer = PPeekKind()
+    If (k = TokenKind.TkShl) Or (k = TokenKind.TkShr) Then
+      PAdvance()
+      Dim rhs As Integer = PParseAddSub()
+      Dim bin As Integer = NewNode(NodeKind.NdBinOp)
+      g_nodes(bin).op = k
+      g_nodes(bin).left = lhs
+      g_nodes(bin).right = rhs
+      lhs = bin
+    Else
+      going = False
+    End If
+  End While
+  Return lhs
+End Function
+
+Private Function PParseCmp() As Integer
+  Dim lhs As Integer = PParseShift()
   Dim k As Integer = PPeekKind()
   If (k = TokenKind.TkEq) Or (k = TokenKind.TkNeq) Or (k = TokenKind.TkLt) Or (k = TokenKind.TkGt) Or (k = TokenKind.TkLe) Or (k = TokenKind.TkGe) Then
     PAdvance()
-    Dim rhs As Integer = PParseAddSub()
+    Dim rhs As Integer = PParseShift()
     Dim bin As Integer = NewNode(NodeKind.NdBinOp)
     g_nodes(bin).op = k
     g_nodes(bin).left = lhs
@@ -477,14 +497,20 @@ End Function
 
 Public Function ParseExpr() As Integer
   Dim lhs As Integer = PParseAnd()
-  While PPeekKind() = TokenKind.TkOr Do
-    PAdvance()
-    Dim rhs As Integer = PParseAnd()
-    Dim bin As Integer = NewNode(NodeKind.NdBinOp)
-    g_nodes(bin).op = TokenKind.TkOr
-    g_nodes(bin).left = lhs
-    g_nodes(bin).right = rhs
-    lhs = bin
+  Dim going As Boolean = True
+  While going Do
+    Dim k As Integer = PPeekKind()
+    If (k = TokenKind.TkOr) Or (k = TokenKind.TkXor) Then
+      PAdvance()
+      Dim rhs As Integer = PParseAnd()
+      Dim bin As Integer = NewNode(NodeKind.NdBinOp)
+      g_nodes(bin).op = k
+      g_nodes(bin).left = lhs
+      g_nodes(bin).right = rhs
+      lhs = bin
+    Else
+      going = False
+    End If
   End While
   Return lhs
 End Function

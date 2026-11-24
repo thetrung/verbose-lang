@@ -1416,6 +1416,18 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
         fprintf(cg_out, "  %%r%d = or ", r)
         CgEmitLlvmType(unified)
         fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
+      Case TokenKind.TkXor
+        fprintf(cg_out, "  %%r%d = xor ", r)
+        CgEmitLlvmType(unified)
+        fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
+      Case TokenKind.TkShl
+        fprintf(cg_out, "  %%r%d = shl ", r)
+        CgEmitLlvmType(unified)
+        fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
+      Case TokenKind.TkShr
+        fprintf(cg_out, "  %%r%d = lshr ", r)
+        CgEmitLlvmType(unified)
+        fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
       Case TokenKind.TkEq
         fprintf(cg_out, "  %%r%d = icmp eq ", r)
         CgEmitLlvmType(unified)

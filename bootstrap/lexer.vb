@@ -236,6 +236,15 @@ Private Function LxClassifyKeyword(pos As Integer, slen As Integer) As Integer
   If SliceEqualsStr(pos, slen, "Mod", 3) Then
     Return TokenKind.TkMod
   End If
+  If SliceEqualsStr(pos, slen, "Xor", 3) Then
+    Return TokenKind.TkXor
+  End If
+  If SliceEqualsStr(pos, slen, "Shl", 3) Then
+    Return TokenKind.TkShl
+  End If
+  If SliceEqualsStr(pos, slen, "Shr", 3) Then
+    Return TokenKind.TkShr
+  End If
   Return TokenKind.TkIdent
 End Function
 
