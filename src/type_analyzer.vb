@@ -45,7 +45,8 @@ Private Static ta_structs() As TaStructInfo, ta_fields() As TaFieldInfo
 Private Static ta_globals() As TaGlobalInfo, ta_funcs() As TaFuncInfo
 Private Static ta_params() As TaParamInfo, ta_locals() As TaLocalSym
 Private Static ta_labels(128) As TaLabelInfo
-Private Static ta_enumCount, ta_enumMemCount, ta_structCount, ta_fieldCount, ta_globalCount, ta_funcCount, ta_paramCount, ta_localCount, ta_labelCount, ta_curModId, ta_errCount As Integer = 0
+Private Static ta_withTys(16) As TypeInfo
+Private Static ta_enumCount, ta_enumMemCount, ta_structCount, ta_fieldCount, ta_globalCount, ta_funcCount, ta_paramCount, ta_localCount, ta_labelCount, ta_withDepth, ta_curModId, ta_errCount As Integer = 0
 Private Static ta_curRetTy As TypeInfo
 
 Private Sub TaPrintSlice(pos, slen As Integer)
@@ -145,6 +146,22 @@ Private Function TaHasEnumMem(eIdx, pos, slen As Integer) As Boolean
     i = i + 1
   End While
   Return False
+End Function
+
+' Returns 0 if not found, 1 if uniquely found (sets outEnumIdx), >=2 if ambiguous
+Private Function TaFindUnqualEnumMem(pos, slen As Integer, ByRef outEnumIdx As Integer) As Integer
+  Dim matches As Integer = 0
+  Dim i As Integer = 0
+  While i < ta_enumCount Do
+    If (ta_enums(i).isPrivate = 0) Or (ta_enums(i).modId = ta_curModId) Then
+      If TaHasEnumMem(i, pos, slen) Then
+        outEnumIdx = i
+        matches = matches + 1
+      End If
+    End If
+    i = i + 1
+  End While
+  Return matches
 End Function
 
 Private Function TaFindStruct(pos, slen As Integer) As Integer
@@ -487,7 +504,18 @@ Private Function TaIsLValue(id As Integer) As Boolean
     Return False
   End If
   Dim k As Integer = g_nodes(id).kind
-  If (k = NodeKind.NdVar) Or (k = NodeKind.NdFieldAccess) Or (k = NodeKind.NdIndexAccess) Then
+  If k = NodeKind.NdVar Then
+    Dim tmpTy As TypeInfo
+    If TaLookupVar(g_nodes(id).intVal, g_nodes(id).lenVal, ByRef tmpTy) Then
+      Return True
+    End If
+    Dim dummyE As Integer = -1
+    If (TaFindEnum(g_nodes(id).intVal, g_nodes(id).lenVal) >= 0) Or (TaFindUnqualEnumMem(g_nodes(id).intVal, g_nodes(id).lenVal, ByRef dummyE) > 0) Then
+      Return False
+    End If
+    Return True
+  End If
+  If (k = NodeKind.NdFieldAccess) Or (k = NodeKind.NdIndexAccess) Or (k = NodeKind.NdWithTarget) Then
     Return True
   End If
   If k = NodeKind.NdCall Then
@@ -531,6 +559,15 @@ Private Function TaIsConstExpr(ty As TypeInfo, exprId As Integer) As Boolean
       If (baseId >= 0) And (g_nodes(baseId).kind = NodeKind.NdVar) Then
         Dim eIdx As Integer = TaFindEnum(g_nodes(baseId).intVal, g_nodes(baseId).lenVal)
         If (eIdx >= 0) And TaHasEnumMem(eIdx, g_nodes(exprId).intVal, g_nodes(exprId).lenVal) Then
+          Return True
+        End If
+      End If
+    End If
+    If k = NodeKind.NdVar Then
+      Dim dummyTy As TypeInfo
+      If Not TaLookupVar(g_nodes(exprId).intVal, g_nodes(exprId).lenVal, ByRef dummyTy) Then
+        Dim ueIdx As Integer = -1
+        If TaFindUnqualEnumMem(g_nodes(exprId).intVal, g_nodes(exprId).lenVal, ByRef ueIdx) = 1 Then
           Return True
         End If
       End If
@@ -1088,6 +1125,15 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
     Return TaMakePrim(TypeKind.TyPointer)
   End If
 
+  If k = NodeKind.NdWithTarget Then
+    If ta_withDepth > 0 Then
+      Return ta_withTys(ta_withDepth - 1)
+    End If
+    Printf("Semantic Type Error: Leading '.' member access used outside With block\n")
+    ta_errCount = ta_errCount + 1
+    Return TaMakePrim(TypeKind.TyInt)
+  End If
+
   If k = NodeKind.NdVar Then
     Dim nPos As Integer = g_nodes(id).intVal
     Dim nLen As Integer = g_nodes(id).lenVal
@@ -1099,6 +1145,19 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
     If eIdx >= 0 Then
       Dim et As TypeInfo With ( kind = TypeKind.TyEnum, typeIdx = eIdx, arrLen = 0, namePos = nPos, nameLen = nLen )
       Return et
+    End If
+    Dim uEnumIdx As Integer = -1
+    Dim uCnt As Integer = TaFindUnqualEnumMem(nPos, nLen, ByRef uEnumIdx)
+    If uCnt = 1 Then
+      Dim et As TypeInfo With ( kind = TypeKind.TyEnum, typeIdx = uEnumIdx, arrLen = 0, namePos = ta_enums(uEnumIdx).namePos, nameLen = ta_enums(uEnumIdx).nameLen )
+      Return et
+    End If
+    If uCnt > 1 Then
+      Printf("Semantic Type Error: Ambiguous enum member '")
+      TaPrintSlice(nPos, nLen)
+      Printf("' (qualify with EnumName.Member)\n")
+      ta_errCount = ta_errCount + 1
+      Return TaMakePrim(TypeKind.TyInt)
     End If
     If TaHasPrivateGlobalOther(nPos, nLen) Or TaHasPrivateFuncOther(nPos, nLen) Then
       Printf("Semantic Type Error: Cannot access Private symbol '")
@@ -1410,7 +1469,8 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
         If TaLookupVar(vp, vl, ByRef dummyTy) Or (TaFindFunc(vp, vl) >= 0) Then
           Return TaMakePrim(TypeKind.TyPointer)
         End If
-        If TaFindEnum(vp, vl) >= 0 Then
+        Dim dummyEnumIdx As Integer = -1
+        If (TaFindEnum(vp, vl) >= 0) Or (TaFindUnqualEnumMem(vp, vl, ByRef dummyEnumIdx) > 0) Then
           Printf(MSG_TA_ADDRESSOF_TARGET)
           ta_errCount = ta_errCount + 1
           Return TaMakePrim(TypeKind.TyPointer)
@@ -1570,19 +1630,8 @@ Private Sub TaCollectLabels(startIdx, cnt As Integer)
       TaCollectLabels(g_nodes(sid).firstChild, g_nodes(sid).childCount)
       TaCollectLabels(g_nodes(sid).extraStart, g_nodes(sid).extraCount)
     End If
-    If (sk = NodeKind.NdWhile) Or (sk = NodeKind.NdFor) Then
+    If (sk = NodeKind.NdWhile) Or (sk = NodeKind.NdFor) Or (sk = NodeKind.NdWith) Then
       TaCollectLabels(g_nodes(sid).firstChild, g_nodes(sid).childCount)
-    End If
-    If sk = NodeKind.NdSelect Then
-      Dim bi As Integer = 0
-      While bi < g_nodes(sid).childCount Do
-        Dim br As Integer = g_kids(g_nodes(sid).firstChild + bi)
-        TaCollectLabels(g_nodes(br).firstChild, g_nodes(br).childCount)
-        bi = bi + 1
-      End While
-      If g_nodes(sid).op = 1 Then
-        TaCollectLabels(g_nodes(sid).extraStart, g_nodes(sid).extraCount)
-      End If
     End If
     If sk = NodeKind.NdMatch Then
       Dim bi As Integer = 0
@@ -1887,32 +1936,32 @@ Private Sub TaCheckStmt(id As Integer)
     Return
   End If
 
-  If k = NodeKind.NdSelect Then
-    Dim targetTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
-    Dim bi As Integer = 0
-    While bi < g_nodes(id).childCount Do
-      Dim br As Integer = g_kids(g_nodes(id).firstChild + bi)
-      If g_nodes(br).op = 0 Then
-        Dim vi As Integer = 0
-        While vi < g_nodes(br).extraCount Do
-          Dim ce As Integer = g_kids(g_nodes(br).extraStart + vi)
-          Dim cTy As TypeInfo = TaTypeOfExpr(ce)
-          If Not TaIsAssignable(targetTy, cTy, ce) Then
-            Printf("Semantic Type Error: Select Case value type mismatch\n")
-            ta_errCount = ta_errCount + 1
-          End If
-          vi = vi + 1
-        End While
+  If k = NodeKind.NdWith Then
+    Dim tgt As Integer = g_nodes(id).left
+    Dim tgtTy As TypeInfo = TaTypeOfExpr(tgt)
+    If Not TaIsLValue(tgt) Then
+      Printf("Semantic Type Error: With target must be a variable, struct field, or array element\n")
+      ta_errCount = ta_errCount + 1
+    Else
+      If (tgtTy.arrLen <> 0) Or (tgtTy.kind <> TypeKind.TyStruct) Then
+        Printf("Semantic Type Error: With target must be a Structure, got ")
+        TaPrintType(tgtTy)
+        Printf("\n")
+        ta_errCount = ta_errCount + 1
       End If
+    End If
+    If ta_withDepth < 16 Then
+      ta_withTys(ta_withDepth) = tgtTy
+      ta_withDepth = ta_withDepth + 1
       Dim savedLocals As Integer = ta_localCount
-      Dim si As Integer = 0
-      While si < g_nodes(br).childCount Do
-        TaCheckStmt(g_kids(g_nodes(br).firstChild + si))
-        si = si + 1
+      Dim wi As Integer = 0
+      While wi < g_nodes(id).childCount Do
+        TaCheckStmt(g_kids(g_nodes(id).firstChild + wi))
+        wi = wi + 1
       End While
       ta_localCount = savedLocals
-      bi = bi + 1
-    End While
+      ta_withDepth = ta_withDepth - 1
+    End If
     Return
   End If
 
@@ -1972,6 +2021,7 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
   ta_funcCount = 0
   ta_paramCount = 0
   ta_localCount = 0
+  ta_withDepth = 0
   ta_errCount = 0
 
   Dim defStart As Integer = g_nodes(progRoot).firstChild

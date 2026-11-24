@@ -3,7 +3,7 @@ Structure Accum
   Dim value As Long
 End Structure
 
-Function AddDelta(ByRef acc As Accum, ByVal delta As Long) As Long
+Function AddDelta(ByRef acc As Accum, delta As Long) As Long
   acc.value = acc.value + delta
   delta = 9999
   Return acc.value

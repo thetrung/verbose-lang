@@ -21,7 +21,6 @@ Public Enum TokenKind
   TkEnd = 19
   TkDim = 20
   TkAs = 21
-  TkByVal = 22
   TkByRef = 23
   TkWith = 24
   TkReturn = 25

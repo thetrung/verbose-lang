@@ -52,8 +52,6 @@ Public Enum NodeKind
   NdIf = 26
   NdWhile = 27
   NdFor = 28
-  NdSelect = 29
-  NdCaseBranch = 30
   NdStaticDim = 31
   NdAssert = 32
 
@@ -80,6 +78,8 @@ Public Enum NodeKind
   NdStrInterp = 59
   NdMatch = 60
   NdMatchArm = 61
+  NdWith = 62
+  NdWithTarget = 63
 End Enum
 
 Public Structure AstNode

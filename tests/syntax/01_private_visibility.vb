@@ -8,7 +8,7 @@ Private Enum Color
   Blue = 20
 End Enum
 
-Private Function AddXY(ByVal p As Point) As Integer
+Private Function AddXY(p As Point) As Integer
   Return p.x + p.y
 End Function
 

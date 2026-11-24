@@ -1,4 +1,4 @@
-Private Sub MutateByVal(ByVal a(3) As Integer)
+Private Sub MutateByVal(a(3) As Integer)
   a(0) = 999
 End Sub
 

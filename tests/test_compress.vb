@@ -28,7 +28,7 @@ Private Sub SwapAndAdd(ByRef a, b As Integer, delta As Integer)
   b = tmp + delta
 End Sub
 
-Private Function MixedByRef(ByRef a, ByVal b As Integer) As Integer
+Private Function MixedByRef(ByRef a As Integer, b As Integer) As Integer
   a = a + b
   b = 999
   Return a

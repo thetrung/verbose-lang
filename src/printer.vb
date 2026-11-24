@@ -123,6 +123,9 @@ Private Sub PrExpr(id As Integer)
     PrSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
     Return
   End If
+  If k = NodeKind.NdWithTarget Then
+    Return
+  End If
   If k = NodeKind.NdNeg Then
     Printf("(-")
     PrExpr(g_nodes(id).left)
@@ -430,7 +433,7 @@ Private Sub PrStmt(id, depth As Integer)
     PrExpr(g_nodes(id).left)
     Printf(" To ")
     PrExpr(g_nodes(id).right)
-    Printf("\n")
+    Printf(" Do\n")
     Dim i As Integer = 0
     While i < g_nodes(id).childCount Do
       PrStmt(g_kids(g_nodes(id).firstChild + i), depth + 1)
@@ -440,37 +443,17 @@ Private Sub PrStmt(id, depth As Integer)
     Printf("End For\n")
     Return
   End If
-  If k = NodeKind.NdSelect Then
-    Printf("Select Case ")
+  If k = NodeKind.NdWith Then
+    Printf("With ")
     PrExpr(g_nodes(id).left)
     Printf("\n")
-    Dim bi As Integer = 0
-    While bi < g_nodes(id).childCount Do
-      Dim br As Integer = g_kids(g_nodes(id).firstChild + bi)
-      PrIndent(depth + 1)
-      If g_nodes(br).op = 1 Then
-        Printf("Case Else\n")
-      Else
-        Printf("Case ")
-        Dim vi As Integer = 0
-        While vi < g_nodes(br).extraCount Do
-          If vi > 0 Then
-            Printf(", ")
-          End If
-          PrExpr(g_kids(g_nodes(br).extraStart + vi))
-          vi = vi + 1
-        End While
-        Printf("\n")
-      End If
-      Dim si As Integer = 0
-      While si < g_nodes(br).childCount Do
-        PrStmt(g_kids(g_nodes(br).firstChild + si), depth + 2)
-        si = si + 1
-      End While
-      bi = bi + 1
+    Dim wi As Integer = 0
+    While wi < g_nodes(id).childCount Do
+      PrStmt(g_kids(g_nodes(id).firstChild + wi), depth + 1)
+      wi = wi + 1
     End While
     PrIndent(depth)
-    Printf("End Select\n")
+    Printf("End With\n")
     Return
   End If
   If k = NodeKind.NdMatch Then

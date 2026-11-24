@@ -107,7 +107,6 @@ Private Function LxClassifyKeyword(pos, slen As Integer) As Integer
     Case SliceEqualsStr(pos, slen, "End", 3) Then Return TokenKind.TkEnd
     Case SliceEqualsStr(pos, slen, "Dim", 3) Then Return TokenKind.TkDim
     Case SliceEqualsStr(pos, slen, "As", 2) Then Return TokenKind.TkAs
-    Case SliceEqualsStr(pos, slen, "ByVal", 5) Then Return TokenKind.TkByVal
     Case SliceEqualsStr(pos, slen, "ByRef", 5) Then Return TokenKind.TkByRef
     Case SliceEqualsStr(pos, slen, "With", 4) Then Return TokenKind.TkWith
     Case SliceEqualsStr(pos, slen, "Return", 6) Then Return TokenKind.TkReturn

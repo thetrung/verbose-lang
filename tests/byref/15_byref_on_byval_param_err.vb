@@ -1,5 +1,5 @@
 ' Test 15 (expected error): Passing ByRef at call site to a ByVal parameter
-Sub ReadOnly(ByVal x As Integer)
+Sub ReadOnly(x As Integer)
   Printf("%d\n", x)
 End Sub
 

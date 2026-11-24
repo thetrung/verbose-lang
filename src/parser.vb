@@ -4,7 +4,7 @@ Include "constants.vb"
 Include "lexer.vb"
 Include "ast.vb"
 
-Private Static p_pos = 0, p_errors = 0 As Integer
+Private Static p_pos = 0, p_errors = 0, p_withDepth = 0 As Integer
 
 Private Function PPeekKind() As Integer
   If p_pos >= g_tokCount Then
@@ -89,10 +89,6 @@ Private Function PParseCallArg() As Integer
   If PPeekKind() = TokenKind.TkByRef Then
     isByRef = 1
     PAdvance()
-  Else
-    If PPeekKind() = TokenKind.TkByVal Then
-      PAdvance()
-    End If
   End If
   Dim eId As Integer = ParseExpr()
   Dim argId As Integer = NewNode(NodeKind.NdArg)
@@ -477,6 +473,10 @@ Private Function PParsePrimary() As Integer
     g_nodes(id).left = ptrExpr
     g_nodes(id).right = offExpr
     Return id
+  End If
+
+  If (k = TokenKind.TkDot) And (p_withDepth > 0) Then
+    Return NewNode(NodeKind.NdWithTarget)
   End If
 
   If k = TokenKind.TkIdent Then
@@ -1049,7 +1049,25 @@ Public Function ParseStmt() As Integer
     Return id
   End If
 
-  ' For var = start To finish ... End For
+  ' With target ... End With
+  If k = TokenKind.TkWith Then
+    PAdvance()
+    Dim tgtExpr As Integer = ParseExpr()
+    p_withDepth = p_withDepth + 1
+    Dim bodyStart As Integer = 0
+    Dim bodyCount As Integer = 0
+    PParseBlock(0, ByRef bodyStart, ByRef bodyCount)
+    p_withDepth = p_withDepth - 1
+    PExpect(TokenKind.TkEnd)
+    PExpect(TokenKind.TkWith)
+    Dim id As Integer = NewNode(NodeKind.NdWith)
+    g_nodes(id).left = tgtExpr
+    g_nodes(id).firstChild = bodyStart
+    g_nodes(id).childCount = bodyCount
+    Return id
+  End If
+
+  ' For var = start To finish [Do] ... End For
   If k = TokenKind.TkFor Then
     PAdvance()
     Dim varPos As Integer = g_tokens(p_pos).pos
@@ -1059,6 +1077,9 @@ Public Function ParseStmt() As Integer
     Dim startE As Integer = ParseExpr()
     PExpect(TokenKind.TkTo)
     Dim finishE As Integer = ParseExpr()
+    If PPeekKind() = TokenKind.TkDo Then
+      PAdvance()
+    End If
     Dim bodyStart As Integer = 0
     Dim bodyCount As Integer = 0
     PParseBlock(0, ByRef bodyStart, ByRef bodyCount)
@@ -1074,26 +1095,26 @@ Public Function ParseStmt() As Integer
     Return id
   End If
 
-  ' Select Case target ... Case e1, e2 ... [Case Else ...] End Select
+  ' Select Case target ... Case e1, e2 ... [Case Else ...] End Select (desugared to NdMatch)
   If k = TokenKind.TkSelect Then
     PAdvance()
     PExpect(TokenKind.TkCase)
     Dim targetE As Integer = ParseExpr()
     PSkipNewlines()
-    Dim brBuf(64) As Integer
-    Dim brCount As Integer = 0
-    Dim defStart As Integer = 0
-    Dim defCount As Integer = 0
-    Dim hasDef As Integer = 0
+    Dim armBuf(64) As Integer
+    Dim armCount As Integer = 0
     While PPeekKind() = TokenKind.TkCase Do
       PAdvance()
+      Dim isWild As Integer = 0
+      Dim valBuf(32) As Integer
+      Dim valCount As Integer = 0
+      Dim bStart As Integer = 0
+      Dim bCount As Integer = 0
       If PPeekKind() = TokenKind.TkElse Then
         PAdvance()
-        hasDef = 1
-        PParseBlock(0, ByRef defStart, ByRef defCount)
+        isWild = 1
+        PParseBlock(0, ByRef bStart, ByRef bCount)
       Else
-        Dim valBuf(32) As Integer
-        Dim valCount As Integer = 0
         Dim reading As Boolean = True
         While reading Do
           valBuf(valCount) = ParseExpr()
@@ -1104,39 +1125,38 @@ Public Function ParseStmt() As Integer
             reading = False
           End If
         End While
-        Dim bStart As Integer = 0
-        Dim bCount As Integer = 0
         PParseBlock(2, ByRef bStart, ByRef bCount)
-        Dim brId As Integer = NewNode(NodeKind.NdCaseBranch)
-        g_nodes(brId).firstChild = bStart
-        g_nodes(brId).childCount = bCount
-        g_nodes(brId).extraStart = g_kidCount
-        g_nodes(brId).extraCount = valCount
-        Dim vi As Integer = 0
-        While vi < valCount Do
-          PushKid(valBuf(vi))
-          vi = vi + 1
-        End While
-        brBuf(brCount) = brId
-        brCount = brCount + 1
       End If
+      Dim armId As Integer = NewNode(NodeKind.NdMatchArm)
+      g_nodes(armId).op = isWild
+      g_nodes(armId).flags = 0
+      g_nodes(armId).left = -1
+      g_nodes(armId).firstChild = bStart
+      g_nodes(armId).childCount = bCount
+      g_nodes(armId).extraStart = g_kidCount
+      g_nodes(armId).extraCount = valCount
+      Dim vi As Integer = 0
+      While vi < valCount Do
+        PushKid(valBuf(vi))
+        vi = vi + 1
+      End While
+      armBuf(armCount) = armId
+      armCount = armCount + 1
       PSkipNewlines()
     End While
     PExpect(TokenKind.TkEnd)
     PExpect(TokenKind.TkSelect)
-    Dim selId As Integer = NewNode(NodeKind.NdSelect)
-    g_nodes(selId).op = hasDef
-    g_nodes(selId).left = targetE
-    g_nodes(selId).firstChild = g_kidCount
-    g_nodes(selId).childCount = brCount
-    g_nodes(selId).extraStart = defStart
-    g_nodes(selId).extraCount = defCount
+    Dim matchId As Integer = NewNode(NodeKind.NdMatch)
+    g_nodes(matchId).op = 0
+    g_nodes(matchId).left = targetE
+    g_nodes(matchId).firstChild = g_kidCount
+    g_nodes(matchId).childCount = armCount
     Dim bi As Integer = 0
-    While bi < brCount Do
-      PushKid(brBuf(bi))
+    While bi < armCount Do
+      PushKid(armBuf(bi))
       bi = bi + 1
     End While
-    Return selId
+    Return matchId
   End If
 
   ' Match [expr] With
@@ -1327,12 +1347,6 @@ Private Sub PParseParamList(allowEllipsis As Integer, paramBuf() As Integer, ByR
         isByRef = 1
         grpByRef = 1
         PAdvance()
-      Else
-        If PPeekKind() = TokenKind.TkByVal Then
-          isByRef = 0
-          grpByRef = 0
-          PAdvance()
-        End If
       End If
       Dim pPos As Integer = g_tokens(p_pos).pos
       Dim pLen As Integer = g_tokens(p_pos).len
@@ -1695,6 +1709,7 @@ End Sub
 Public Function ParseProgram() As Integer
   p_pos = 0
   p_errors = 0
+  p_withDepth = 0
   Dim defBuf(1024) As Integer
   Dim defCount As Integer = 0
   PSkipNewlines()

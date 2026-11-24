@@ -10,7 +10,7 @@ Declare Function strtod(s As Pointer, endp As Pointer) As Double
 Declare Function memcpy(ByRef dst As Long, ByRef src As Double, n As Long) As Pointer
 
 Structure CgEnumInfo
-  Dim namePos, nameLen, memStart, memCount As Integer
+  Dim namePos, nameLen, memStart, memCount, isPrivate, modId As Integer
 End Structure
 
 Structure CgEnumMem
@@ -81,7 +81,8 @@ Private Static cg_structs() As CgStructInfo, cg_fields() As CgFieldInfo
 Private Static cg_globals() As CgGlobalInfo, cg_funcs() As CgFuncInfo
 Private Static cg_params() As CgParamInfo, cg_locals() As CgLocalSym
 Private Static cg_strs() As CgStrConst, cg_staticLocals() As CgStaticLocal
-Private Static cg_enumCount, cg_enumMemCount, cg_structCount, cg_fieldCount, cg_globalCount, cg_funcCount, cg_paramCount, cg_localCount, cg_strCount, cg_staticLocalCount As Integer = 0
+Private Static cg_withPtrs(16), cg_withVols(16) As Integer, cg_withTys(16) As TypeInfo
+Private Static cg_enumCount, cg_enumMemCount, cg_structCount, cg_fieldCount, cg_globalCount, cg_funcCount, cg_paramCount, cg_localCount, cg_strCount, cg_staticLocalCount, cg_withDepth As Integer = 0
 
 Private Function CgNextReg() As Integer
   Dim r As Integer = cg_reg
@@ -139,6 +140,28 @@ Private Function CgFindEnumVal(enumIdx, memPos, memLen As Integer, ByRef outVal 
     If SlicesEqual(cg_enumMems(st + i).namePos, cg_enumMems(st + i).nameLen, memPos, memLen) Then
       outVal = cg_enumMems(st + i).value
       Return True
+    End If
+    i = i + 1
+  End While
+  Return False
+End Function
+
+Private Function CgFindUnqualEnumVal(memPos, memLen As Integer, ByRef outVal As Integer) As Boolean
+  Dim i As Integer = 0
+  While i < cg_enumCount Do
+    If (cg_enums(i).isPrivate = 1) And (cg_enums(i).modId = cg_curModId) Then
+      If CgFindEnumVal(i, memPos, memLen, ByRef outVal) Then
+        Return True
+      End If
+    End If
+    i = i + 1
+  End While
+  i = 0
+  While i < cg_enumCount Do
+    If cg_enums(i).isPrivate = 0 Then
+      If CgFindEnumVal(i, memPos, memLen, ByRef outVal) Then
+        Return True
+      End If
     End If
     i = i + 1
   End While
@@ -1063,6 +1086,13 @@ Private Sub CgEmitConstInit(ty As TypeInfo, exprId As Integer)
       End If
     End If
   End If
+  If k = NodeKind.NdVar Then
+    Dim ev As Integer = 0
+    If CgFindUnqualEnumVal(g_nodes(exprId).intVal, g_nodes(exprId).lenVal, ByRef ev) Then
+      fprintf(cg_out, "%d", ev)
+      Return
+    End If
+  End If
   If (k = NodeKind.NdArrayLit) And (ty.arrLen > 0) Then
     Dim elemTy As TypeInfo = CgElemType(ty)
     Dim cnt As Integer = g_nodes(exprId).childCount
@@ -1268,6 +1298,13 @@ Private Function CgEmitLValuePtr(id As Integer, ByRef outTy As TypeInfo, ByRef o
   outIsIndirect = 0
   outIsVolatile = 0
   Dim k As Integer = g_nodes(id).kind
+
+  If k = NodeKind.NdWithTarget Then
+    outTy = cg_withTys(cg_withDepth - 1)
+    outIsIndirect = 0
+    outIsVolatile = cg_withVols(cg_withDepth - 1)
+    Return cg_withPtrs(cg_withDepth - 1)
+  End If
 
   If k = NodeKind.NdVar Then
     Dim pos As Integer = g_nodes(id).intVal
@@ -1590,7 +1627,23 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     Return bufReg
   End If
 
+  If k = NodeKind.NdWithTarget Then
+    outTy = cg_withTys(cg_withDepth - 1)
+    Return cg_withPtrs(cg_withDepth - 1)
+  End If
+
   If k = NodeKind.NdVar Then
+    Dim vPos As Integer = g_nodes(id).intVal
+    Dim vLen As Integer = g_nodes(id).lenVal
+    If (CgFindLocal(vPos, vLen) < 0) And (CgFindGlobal(vPos, vLen) < 0) Then
+      Dim ev As Integer = 0
+      If CgFindUnqualEnumVal(vPos, vLen, ByRef ev) Then
+        Dim r As Integer = CgNextReg()
+        fprintf(cg_out, "  %%r%d = add i32 0, %d\n", r, ev)
+        outTy = TypeInfo With ( kind = TypeKind.TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+        Return r
+      End If
+    End If
     Dim vTy As TypeInfo
     Dim isInd = 0, isVol = 0 As Integer
     Dim ptrReg As Integer = CgEmitLValuePtr(id, ByRef vTy, ByRef isInd, ByRef isVol)
@@ -3084,88 +3137,22 @@ Private Sub CgEmitStmt(id As Integer)
     Return
   End If
 
-  If k = NodeKind.NdSelect Then
+  If k = NodeKind.NdWith Then
     Dim tTy As TypeInfo
-    Dim tReg As Integer = CgEmitExpr(g_nodes(id).left, ByRef tTy)
-    Dim lExit As Integer = CgNextLbl()
-    Dim hasDef As Integer = g_nodes(id).op
-    Dim lDef As Integer = lExit
-    Dim anyFalls As Boolean = False
-    If hasDef = 1 Then
-      lDef = CgNextLbl()
-    Else
-      anyFalls = True
-    End If
-
-    Dim brStart As Integer = g_nodes(id).firstChild
-    Dim brCount As Integer = g_nodes(id).childCount
-    Dim bi As Integer = 0
-    While bi < brCount Do
-      Dim br As Integer = g_kids(brStart + bi)
-      Dim lMatch As Integer = CgNextLbl()
-      Dim lNext As Integer = CgNextLbl()
-      Dim vStart As Integer = g_nodes(br).extraStart
-      Dim vCount As Integer = g_nodes(br).extraCount
-      Dim accCond As Integer = -1
-      Dim vi As Integer = 0
-      While vi < vCount Do
-        Dim cTy As TypeInfo
-        Dim cReg As Integer = CgEmitExpr(g_kids(vStart + vi), ByRef cTy)
-        Dim coerced As Integer = CgCoerceScalar(cReg, cTy, tTy)
-        Dim eqR As Integer = CgNextReg()
-        fprintf(cg_out, "  %%r%d = icmp eq ", eqR)
-        CgEmitLlvmType(tTy)
-        fprintf(cg_out, " %%r%d, %%r%d\n", tReg, coerced)
-        If accCond < 0 Then
-          accCond = eqR
-        Else
-          Dim orR As Integer = CgNextReg()
-          fprintf(cg_out, "  %%r%d = or i1 %%r%d, %%r%d\n", orR, accCond, eqR)
-          accCond = orR
-        End If
-        vi = vi + 1
-      End While
-      fprintf(cg_out, "  br i1 %%r%d, label %%L%d, label %%L%d\n", accCond, lMatch, lNext)
-      fprintf(cg_out, "L%d:\n", lMatch)
-      cg_blockEnded = 0
-      Dim savedB As Integer = cg_localCount
-      Dim si As Integer = 0
-      While si < g_nodes(br).childCount Do
-        CgEmitStmt(g_kids(g_nodes(br).firstChild + si))
-        si = si + 1
-      End While
-      cg_localCount = savedB
-      If cg_blockEnded = 0 Then
-        anyFalls = True
-        fprintf(cg_out, "  br label %%L%d\n", lExit)
-      End If
-      fprintf(cg_out, "L%d:\n", lNext)
-      cg_blockEnded = 0
-      bi = bi + 1
+    Dim tInd = 0, tVol = 0 As Integer
+    Dim tPtr As Integer = CgEmitLValuePtr(g_nodes(id).left, ByRef tTy, ByRef tInd, ByRef tVol)
+    cg_withPtrs(cg_withDepth) = tPtr
+    cg_withTys(cg_withDepth) = tTy
+    cg_withVols(cg_withDepth) = tVol
+    cg_withDepth = cg_withDepth + 1
+    Dim savedW As Integer = cg_localCount
+    Dim wi As Integer = 0
+    While wi < g_nodes(id).childCount Do
+      CgEmitStmt(g_kids(g_nodes(id).firstChild + wi))
+      wi = wi + 1
     End While
-
-    fprintf(cg_out, "  br label %%L%d\n", lDef)
-    If hasDef = 1 Then
-      fprintf(cg_out, "L%d:\n", lDef)
-      cg_blockEnded = 0
-      Dim savedD As Integer = cg_localCount
-      Dim di As Integer = 0
-      While di < g_nodes(id).extraCount Do
-        CgEmitStmt(g_kids(g_nodes(id).extraStart + di))
-        di = di + 1
-      End While
-      cg_localCount = savedD
-      If cg_blockEnded = 0 Then
-        anyFalls = True
-        fprintf(cg_out, "  br label %%L%d\n", lExit)
-      End If
-    End If
-    If anyFalls Then
-      fprintf(cg_out, "L%d:\n", lExit)
-      cg_blockEnded = 0
-    Else
-      cg_blockEnded = 1
-    End If
+    cg_localCount = savedW
+    cg_withDepth = cg_withDepth - 1
     Return
   End If
 
@@ -3749,6 +3736,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   cg_localCount = 0
   cg_strCount = 0
   cg_staticLocalCount = 0
+  cg_withDepth = 0
   cg_lbl = 1
   cg_usesArena = 0
   cg_usesAssert = 0
@@ -3790,11 +3778,17 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
         cg_enumMemCount = cg_enumMemCount + 1
         j = j + 1
       End While
+      Dim isPriv As Integer = 0
+      If g_nodes(d).op = 2 Then
+        isPriv = 1
+      End If
       cg_enums(cg_enumCount) = CgEnumInfo With (
         namePos = g_nodes(d).intVal,
         nameLen = g_nodes(d).lenVal,
         memStart = ms,
-        memCount = mc
+        memCount = mc,
+        isPrivate = isPriv,
+        modId = g_nodes(d).modId
       )
       cg_enumCount = cg_enumCount + 1
     End If

@@ -4,7 +4,7 @@ Structure Pair
   Dim b As Long
 End Structure
 
-Sub TouchByVal(ByVal p As Pair)
+Sub TouchByVal(p As Pair)
   p.a = 111
   p.b = 222
 End Sub
