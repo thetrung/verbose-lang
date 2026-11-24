@@ -44,48 +44,27 @@ Private Sub PParseBaseType(ByRef outKind, outNamePos, outNameLen As Integer)
   outNamePos = 0
   outNameLen = 0
   Dim k As Integer = PPeekKind()
-  Select Case k
-    Case TokenKind.TkInteger
-      outKind = TypeKind.TyInt
-      PAdvance()
-    Case TokenKind.TkByte
-      outKind = TypeKind.TyByte
-      PAdvance()
-    Case TokenKind.TkShort
-      outKind = TypeKind.TyShort
-      PAdvance()
-    Case TokenKind.TkLong
-      outKind = TypeKind.TyLong
-      PAdvance()
-    Case TokenKind.TkBoolean
-      outKind = TypeKind.TyBoolean
-      PAdvance()
-    Case TokenKind.TkPointer, TokenKind.TkString
-      outKind = TypeKind.TyPointer
-      PAdvance()
-    Case TokenKind.TkArena
-      outKind = TypeKind.TyArena
-      PAdvance()
-    Case TokenKind.TkNothing
-      outKind = TypeKind.TyNothing
-      PAdvance()
-    Case TokenKind.TkSingle
-      outKind = TypeKind.TySingle
-      PAdvance()
-    Case TokenKind.TkDouble
-      outKind = TypeKind.TyDouble
-      PAdvance()
-    Case TokenKind.TkIdent
+  Match k With
+    Case TokenKind.TkInteger Then outKind = TypeKind.TyInt
+    Case TokenKind.TkByte Then outKind = TypeKind.TyByte
+    Case TokenKind.TkShort Then outKind = TypeKind.TyShort
+    Case TokenKind.TkLong Then outKind = TypeKind.TyLong
+    Case TokenKind.TkBoolean Then outKind = TypeKind.TyBoolean
+    Case TokenKind.TkPointer, TokenKind.TkString Then outKind = TypeKind.TyPointer
+    Case TokenKind.TkArena Then outKind = TypeKind.TyArena
+    Case TokenKind.TkNothing Then outKind = TypeKind.TyNothing
+    Case TokenKind.TkSingle Then outKind = TypeKind.TySingle
+    Case TokenKind.TkDouble Then outKind = TypeKind.TyDouble
+    Case TokenKind.TkIdent Then
       outKind = TypeKind.TyStruct
       outNamePos = g_tokens(p_pos).pos
       outNameLen = g_tokens(p_pos).len
-      PAdvance()
-    Case Else
+    Case _ Then
       Printf(MSG_PARSE_EXPECT_TYPE, k, g_tokens(p_pos).line)
       p_errors = p_errors + 1
       outKind = TypeKind.TyInt
-      PAdvance()
-  End Select
+  End Match
+  PAdvance()
 End Sub
 
 Private Sub PParseTypeSpec(ByRef outKind, outInnerKind, outNamePos, outNameLen As Integer)
@@ -925,19 +904,12 @@ Private Sub PParseBlock(stopMode As Integer, ByRef outStart, outCount As Integer
   While running Do
     PSkipNewlines()
     Dim k As Integer = PPeekKind()
-    If (k = TokenKind.TkEnd) Or (k = TokenKind.TkEof) Then
-      running = False
-    Else
-      If (stopMode = 1) And (k = TokenKind.TkElse) Then
-        running = False
-      Else
-        If (stopMode = 2) And (k = TokenKind.TkCase) Then
-          running = False
-        Else
-          PParseStmtInto(buf, ByRef cnt)
-        End If
-      End If
-    End If
+    Match With
+      Case (k = TokenKind.TkEnd) Or (k = TokenKind.TkEof) Then running = False
+      Case (stopMode = 1) And (k = TokenKind.TkElse) Then running = False
+      Case (stopMode = 2) And (k = TokenKind.TkCase) Then running = False
+      Case _ Then PParseStmtInto(buf, ByRef cnt)
+    End Match
   End While
   outStart = g_kidCount
   outCount = cnt

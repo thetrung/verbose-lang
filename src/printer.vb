@@ -20,28 +20,18 @@ Private Sub PrSlice(pos, slen As Integer)
 End Sub
 
 Private Sub PrTypeEx(tk, innerKind, arrLen, nPos, nLen As Integer)
-  Select Case tk
-    Case TypeKind.TyNothing
-      Printf("Nothing")
-    Case TypeKind.TyInt
-      Printf("Integer")
-    Case TypeKind.TyByte
-      Printf("Byte")
-    Case TypeKind.TyShort
-      Printf("Short")
-    Case TypeKind.TyLong
-      Printf("Long")
-    Case TypeKind.TySingle
-      Printf("Single")
-    Case TypeKind.TyDouble
-      Printf("Double")
-    Case TypeKind.TyBoolean
-      Printf("Boolean")
-    Case TypeKind.TyPointer
-      Printf("Pointer")
-    Case TypeKind.TyArena
-      Printf("Arena")
-    Case TypeKind.TyTask
+  Match tk With
+    Case TypeKind.TyNothing Then Printf("Nothing")
+    Case TypeKind.TyInt Then Printf("Integer")
+    Case TypeKind.TyByte Then Printf("Byte")
+    Case TypeKind.TyShort Then Printf("Short")
+    Case TypeKind.TyLong Then Printf("Long")
+    Case TypeKind.TySingle Then Printf("Single")
+    Case TypeKind.TyDouble Then Printf("Double")
+    Case TypeKind.TyBoolean Then Printf("Boolean")
+    Case TypeKind.TyPointer Then Printf("Pointer")
+    Case TypeKind.TyArena Then Printf("Arena")
+    Case TypeKind.TyTask Then
       If innerKind = TypeKind.TyNothing Then
         Printf("Task")
       Else
@@ -49,18 +39,13 @@ Private Sub PrTypeEx(tk, innerKind, arrLen, nPos, nLen As Integer)
         PrTypeEx(innerKind, TypeKind.TyNothing, 0, nPos, nLen)
         Printf(")")
       End If
-    Case TypeKind.TyStruct, TypeKind.TyEnum
-      PrSlice(nPos, nLen)
-    Case Else
-      Printf("Unknown")
-  End Select
-  If arrLen > 0 Then
-    Printf("(%d)", arrLen)
-  Else
-    If arrLen = -1 Then
-      Printf("()")
-    End If
-  End If
+    Case TypeKind.TyStruct, TypeKind.TyEnum Then PrSlice(nPos, nLen)
+    Case _ Then Printf("Unknown")
+  End Match
+  Match With
+    Case arrLen > 0 Then Printf("(%d)", arrLen)
+    Case arrLen = -1 Then Printf("()")
+  End Match
 End Sub
 
 Private Sub PrType(tk, arrLen, nPos, nLen As Integer)
@@ -68,44 +53,26 @@ Private Sub PrType(tk, arrLen, nPos, nLen As Integer)
 End Sub
 
 Private Sub PrOp(op As Integer)
-  Select Case op
-    Case TokenKind.TkPlus
-      Printf("+")
-    Case TokenKind.TkMinus
-      Printf("-")
-    Case TokenKind.TkStar
-      Printf("*")
-    Case TokenKind.TkSlash
-      Printf("/")
-    Case TokenKind.TkAmp
-      Printf("&")
-    Case TokenKind.TkMod
-      Printf("Mod")
-    Case TokenKind.TkAnd
-      Printf("And")
-    Case TokenKind.TkOr
-      Printf("Or")
-    Case TokenKind.TkXor
-      Printf("Xor")
-    Case TokenKind.TkShl
-      Printf("Shl")
-    Case TokenKind.TkShr
-      Printf("Shr")
-    Case TokenKind.TkEq
-      Printf("=")
-    Case TokenKind.TkNeq
-      Printf("<>")
-    Case TokenKind.TkLt
-      Printf("<")
-    Case TokenKind.TkGt
-      Printf(">")
-    Case TokenKind.TkLe
-      Printf("<=")
-    Case TokenKind.TkGe
-      Printf(">=")
-    Case Else
-      Printf("op(%d)", op)
-  End Select
+  Match op With
+    Case TokenKind.TkPlus Then Printf("+")
+    Case TokenKind.TkMinus Then Printf("-")
+    Case TokenKind.TkStar Then Printf("*")
+    Case TokenKind.TkSlash Then Printf("/")
+    Case TokenKind.TkAmp Then Printf("&")
+    Case TokenKind.TkMod Then Printf("Mod")
+    Case TokenKind.TkAnd Then Printf("And")
+    Case TokenKind.TkOr Then Printf("Or")
+    Case TokenKind.TkXor Then Printf("Xor")
+    Case TokenKind.TkShl Then Printf("Shl")
+    Case TokenKind.TkShr Then Printf("Shr")
+    Case TokenKind.TkEq Then Printf("=")
+    Case TokenKind.TkNeq Then Printf("<>")
+    Case TokenKind.TkLt Then Printf("<")
+    Case TokenKind.TkGt Then Printf(">")
+    Case TokenKind.TkLe Then Printf("<=")
+    Case TokenKind.TkGe Then Printf(">=")
+    Case _ Then Printf("op(%d)", op)
+  End Match
 End Sub
 
 Private Sub PrExpr(id As Integer)

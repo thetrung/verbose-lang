@@ -27,37 +27,24 @@ Private Sub PrintUsage()
 End Sub
 
 Private Function CliResolveTarget(name As Pointer) As Integer
-  If (strcmp(name, "linux-x86_64") = 0) Or (strcmp(name, "linux-x64") = 0) Or (strcmp(name, "x86_64-pc-linux-gnu") = 0) Or (strcmp(name, "x86_64-linux-gnu") = 0) Then
-    Return TargetKind.TgtLinuxX64
-  End If
-  If (strcmp(name, "linux-arm64") = 0) Or (strcmp(name, "linux-aarch64") = 0) Or (strcmp(name, "aarch64-unknown-linux-gnu") = 0) Or (strcmp(name, "aarch64-linux-gnu") = 0) Then
-    Return TargetKind.TgtLinuxArm64
-  End If
-  If (strcmp(name, "macos-arm64") = 0) Or (strcmp(name, "darwin-arm64") = 0) Or (strcmp(name, "arm64-apple-darwin") = 0) Or (strcmp(name, "arm64-apple-macosx") = 0) Or (strcmp(name, "arm64-apple-macosx11.0.0") = 0) Then
-    Return TargetKind.TgtMacosArm64
-  End If
-  If (strcmp(name, "windows-x86_64") = 0) Or (strcmp(name, "windows-x64") = 0) Or (strcmp(name, "win64") = 0) Or (strcmp(name, "x86_64-w64-windows-gnu") = 0) Or (strcmp(name, "x86_64-pc-windows-msvc") = 0) Then
-    Return TargetKind.TgtWindowsX64
-  End If
-  If (strcmp(name, "arm-m") = 0) Or (strcmp(name, "cortex-m") = 0) Or (strcmp(name, "cortex-m4") = 0) Or (strcmp(name, "thumbv7em-none-eabi") = 0) Or (strcmp(name, "thumbv7em-unknown-none-eabi") = 0) Then
-    Return TargetKind.TgtArmM
-  End If
-  Return -1
+  Match name With
+    Case "linux-x86_64", "linux-x64", "x86_64-pc-linux-gnu", "x86_64-linux-gnu" Then Return TargetKind.TgtLinuxX64
+    Case "linux-arm64", "linux-aarch64", "aarch64-unknown-linux-gnu", "aarch64-linux-gnu" Then Return TargetKind.TgtLinuxArm64
+    Case "macos-arm64", "darwin-arm64", "arm64-apple-darwin", "arm64-apple-macosx", "arm64-apple-macosx11.0.0" Then Return TargetKind.TgtMacosArm64
+    Case "windows-x86_64", "windows-x64", "win64", "x86_64-w64-windows-gnu", "x86_64-pc-windows-msvc" Then Return TargetKind.TgtWindowsX64
+    Case "arm-m", "cortex-m", "cortex-m4", "thumbv7em-none-eabi", "thumbv7em-unknown-none-eabi" Then Return TargetKind.TgtArmM
+    Case _ Then Return -1
+  End Match
 End Function
 
 Private Function CliTargetTriple(targetId As Integer) As Pointer
-  Select Case targetId
-    Case TargetKind.TgtLinuxArm64
-      Return CLANG_TRIPLE_LINUX_ARM64
-    Case TargetKind.TgtMacosArm64
-      Return CLANG_TRIPLE_MACOS_ARM64
-    Case TargetKind.TgtWindowsX64
-      Return CLANG_TRIPLE_WINDOWS_X64
-    Case TargetKind.TgtArmM
-      Return CLANG_TRIPLE_ARM_M
-    Case Else
-      Return CLANG_TRIPLE_LINUX_X64
-  End Select
+  Match targetId With
+    Case TargetKind.TgtLinuxArm64 Then Return CLANG_TRIPLE_LINUX_ARM64
+    Case TargetKind.TgtMacosArm64 Then Return CLANG_TRIPLE_MACOS_ARM64
+    Case TargetKind.TgtWindowsX64 Then Return CLANG_TRIPLE_WINDOWS_X64
+    Case TargetKind.TgtArmM Then Return CLANG_TRIPLE_ARM_M
+    Case _ Then Return CLANG_TRIPLE_LINUX_X64
+  End Match
 End Function
 
 Private Function CliDetectHostTarget() As Integer
@@ -573,163 +560,113 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
 
   While i < argc Do
     Dim arg As Pointer = argv(i)
-    Dim handled As Integer = 0
-
-    If (strcmp(arg, "-h") = 0) Or (strcmp(arg, "--help") = 0) Then
-      PrintUsage()
-      Return 0
-    End If
-    If strcmp(arg, "--version") = 0 Then
-      Printf(MSG_CLI_VERSION)
-      Return 0
-    End If
-    If strcmp(arg, "--test") = 0 Then
-      testMode = 1
-      handled = 1
-    End If
-    If (handled = 0) And (strcmp(arg, "--ast") = 0) Then
-      showAst = 1
-      handled = 1
-    End If
-    If (handled = 0) And (strcmp(arg, "--ir") = 0) Then
-      showIr = 1
-      handled = 1
-    End If
-    If (handled = 0) And (strcmp(arg, "--ta") = 0) Then
-      showTa = 1
-      handled = 1
-    End If
-    If (handled = 0) And (strcmp(arg, "--no-ta") = 0) Then
-      skipTa = 1
-      handled = 1
-    End If
-    If (handled = 0) And (strcmp(arg, "--emit-only") = 0) Then
-      emitOnly = 1
-      handled = 1
-    End If
-    If (handled = 0) And ((strcmp(arg, "-c") = 0) Or (strcmp(arg, "--emit-obj") = 0)) Then
-      emitObj = 1
-      handled = 1
-    End If
-    If (handled = 0) And (strcmp(arg, "--target") = 0) Then
-      If (i + 1) >= argc Then
-        Printf(MSG_CLI_ERR_TARGET_ARG)
+    Match arg With
+      Case "-h", "--help" Then
         PrintUsage()
-        Return 1
-      End If
-      i = i + 1
-      Dim resolvedTgt As Integer = CliResolveTarget(argv(i))
-      If resolvedTgt < 0 Then
-        Printf(MSG_CLI_ERR_UNKNOWN_TARGET, argv(i))
-        Return 1
-      End If
-      targetId = resolvedTgt
-      handled = 1
-    End If
-    If (handled = 0) And (strncmp(arg, "--target=", 9) = 0) Then
-      Dim tNameBuf(128) As Byte
-      Dim alen As Integer = strlen(arg)
-      Dim tk As Integer = 9
-      Dim tp As Integer = 0
-      While (tk < alen) And (tp < 127) Do
-        tNameBuf(tp) = arg(tk)
-        tp = tp + 1
-        tk = tk + 1
-      End While
-      tNameBuf(tp) = 0
-      Dim resolvedTgt As Integer = CliResolveTarget(tNameBuf)
-      If resolvedTgt < 0 Then
-        Printf(MSG_CLI_ERR_UNKNOWN_TARGET, tNameBuf)
-        Return 1
-      End If
-      targetId = resolvedTgt
-      handled = 1
-    End If
-    If (handled = 0) And (strcmp(arg, "--no-run") = 0) Then
-      noRun = 1
-      handled = 1
-    End If
-    If (handled = 0) And (strcmp(arg, "-o") = 0) Then
-      If (i + 1) >= argc Then
-        Printf(MSG_CLI_ERR_O_ARG)
-        PrintUsage()
-        Return 1
-      End If
-      i = i + 1
-      outPath = argv(i)
-      handled = 1
-    End If
-    If (handled = 0) And (strcmp(arg, "-I") = 0) Then
-      If (i + 1) >= argc Then
-        Printf(MSG_CLI_ERR_I_ARG)
-        PrintUsage()
-        Return 1
-      End If
-      i = i + 1
-      LexerAddIncludeDir(argv(i))
-      handled = 1
-    End If
-    If (handled = 0) And (strncmp(arg, "-I", 2) = 0) And (strlen(arg) > 2) Then
-      Static incInlineBuf(4096) As Byte
-      Static incInlineOff As Integer = 0
-      Dim startOff As Integer = incInlineOff
-      Dim alen As Integer = strlen(arg)
-      Dim k As Integer = 2
-      While (k < alen) And (incInlineOff < 4094) Do
-        incInlineBuf(incInlineOff) = arg(k)
+        Return 0
+      Case "--version" Then
+        Printf(MSG_CLI_VERSION)
+        Return 0
+      Case "--test" Then testMode = 1
+      Case "--ast" Then showAst = 1
+      Case "--ir" Then showIr = 1
+      Case "--ta" Then showTa = 1
+      Case "--no-ta" Then skipTa = 1
+      Case "--emit-only" Then emitOnly = 1
+      Case "-c", "--emit-obj" Then emitObj = 1
+      Case "--no-run" Then noRun = 1
+      Case "--target" Then
+        If (i + 1) >= argc Then
+          Printf(MSG_CLI_ERR_TARGET_ARG)
+          PrintUsage()
+          Return 1
+        End If
+        i = i + 1
+        Dim resolvedTgt As Integer = CliResolveTarget(argv(i))
+        If resolvedTgt < 0 Then
+          Printf(MSG_CLI_ERR_UNKNOWN_TARGET, argv(i))
+          Return 1
+        End If
+        targetId = resolvedTgt
+      Case _ When strncmp(arg, "--target=", 9) = 0 Then
+        Dim tNameBuf(128) As Byte
+        Dim alen As Integer = strlen(arg)
+        Dim tk = 9, tp = 0 As Integer
+        While (tk < alen) And (tp < 127) Do
+          tNameBuf(tp) = arg(tk)
+          tp = tp + 1
+          tk = tk + 1
+        End While
+        tNameBuf(tp) = 0
+        Dim resolvedTgt As Integer = CliResolveTarget(tNameBuf)
+        If resolvedTgt < 0 Then
+          Printf(MSG_CLI_ERR_UNKNOWN_TARGET, tNameBuf)
+          Return 1
+        End If
+        targetId = resolvedTgt
+      Case "-o" Then
+        If (i + 1) >= argc Then
+          Printf(MSG_CLI_ERR_O_ARG)
+          PrintUsage()
+          Return 1
+        End If
+        i = i + 1
+        outPath = argv(i)
+      Case "-I" Then
+        If (i + 1) >= argc Then
+          Printf(MSG_CLI_ERR_I_ARG)
+          PrintUsage()
+          Return 1
+        End If
+        i = i + 1
+        LexerAddIncludeDir(argv(i))
+      Case _ When (strncmp(arg, "-I", 2) = 0) And (strlen(arg) > 2) Then
+        Static incInlineBuf(4096) As Byte
+        Static incInlineOff As Integer = 0
+        Dim startOff As Integer = incInlineOff
+        Dim alen As Integer = strlen(arg)
+        Dim k As Integer = 2
+        While (k < alen) And (incInlineOff < 4094) Do
+          incInlineBuf(incInlineOff) = arg(k)
+          incInlineOff = incInlineOff + 1
+          k = k + 1
+        End While
+        incInlineBuf(incInlineOff) = 0
         incInlineOff = incInlineOff + 1
-        k = k + 1
-      End While
-      incInlineBuf(incInlineOff) = 0
-      incInlineOff = incInlineOff + 1
-      Dim dirPtr As Pointer = Malloc(alen)
-      Dim m As Integer = 0
-      While (startOff + m) < incInlineOff Do
-        dirPtr(m) = incInlineBuf(startOff + m)
-        m = m + 1
-      End While
-      LexerAddIncludeDir(dirPtr)
-      handled = 1
-    End If
-    If (handled = 0) And ((strncmp(arg, "-l", 2) = 0) Or (strncmp(arg, "-L", 2) = 0) Or (strncmp(arg, "-W", 2) = 0)) Then
-      If clangFlagCount < 32 Then
-        clangFlags(clangFlagCount) = arg
-        clangFlagCount = clangFlagCount + 1
-      End If
-      handled = 1
-    End If
-    If (handled = 0) And (arg(0) = 45) Then
-      Printf(MSG_CLI_ERR_UNKNOWN_OPT, arg)
-      PrintUsage()
-      Return 1
-    End If
-    If handled = 0 Then
-      If CliHasSuffix(arg, ".c") Or CliHasSuffix(arg, ".o") Or CliHasSuffix(arg, ".a") Then
+        Dim dirPtr As Pointer = Malloc(alen)
+        Dim m As Integer = 0
+        While (startOff + m) < incInlineOff Do
+          dirPtr(m) = incInlineBuf(startOff + m)
+          m = m + 1
+        End While
+        LexerAddIncludeDir(dirPtr)
+      Case _ When (strncmp(arg, "-l", 2) = 0) Or (strncmp(arg, "-L", 2) = 0) Or (strncmp(arg, "-W", 2) = 0) Then
+        If clangFlagCount < 32 Then
+          clangFlags(clangFlagCount) = arg
+          clangFlagCount = clangFlagCount + 1
+        End If
+      Case _ When arg(0) = 45 Then
+        Printf(MSG_CLI_ERR_UNKNOWN_OPT, arg)
+        PrintUsage()
+        Return 1
+      Case _ When CliHasSuffix(arg, ".c") Or CliHasSuffix(arg, ".o") Or CliHasSuffix(arg, ".a") Then
         If extraInputCount < 32 Then
           extraInputs(extraInputCount) = arg
           extraInputCount = extraInputCount + 1
         End If
-        handled = 1
-      Else
-        If (targetCount > 0) And (testMode = 0) And CliHasSuffix(arg, ".ll") And IsNull(outPath) Then
-          emitOnly = 1
-          outPath = arg
-          handled = 1
-        Else
-          If (targetCount = 0) Or (testMode = 1) Then
-            If targetCount < 64 Then
-              targets(targetCount) = arg
-              targetCount = targetCount + 1
-            End If
-            handled = 1
-          Else
-            Printf(MSG_CLI_ERR_UNEXPECTED_ARG, arg)
-            PrintUsage()
-            Return 1
-          End If
+      Case _ When (targetCount > 0) And (testMode = 0) And CliHasSuffix(arg, ".ll") And IsNull(outPath) Then
+        emitOnly = 1
+        outPath = arg
+      Case _ When (targetCount = 0) Or (testMode = 1) Then
+        If targetCount < 64 Then
+          targets(targetCount) = arg
+          targetCount = targetCount + 1
         End If
-      End If
-    End If
+      Case _ Then
+        Printf(MSG_CLI_ERR_UNEXPECTED_ARG, arg)
+        PrintUsage()
+        Return 1
+    End Match
     i = i + 1
   End While
 

@@ -901,23 +901,13 @@ Private Sub CgEmitStringGlobalsRange(startIdx, endIdx As Integer)
       If (ch = 92) And ((j + 1) < sl) Then
         Dim ncRaw As Integer = g_srcPool(sp + j + 1)
         Dim nc As Integer = ncRaw And 255
-        If nc = 110 Then
-          fprintf(cg_out, "\\0A")
-        Else
-          If nc = 114 Then
-            fprintf(cg_out, "\\0D")
-          Else
-            If nc = 116 Then
-              fprintf(cg_out, "\\09")
-            Else
-              If nc = 48 Then
-                fprintf(cg_out, "\\00")
-              Else
-                fprintf(cg_out, "\\%02X", nc)
-              End If
-            End If
-          End If
-        End If
+        Match nc With
+          Case 110 Then fprintf(cg_out, "\\0A")
+          Case 114 Then fprintf(cg_out, "\\0D")
+          Case 116 Then fprintf(cg_out, "\\09")
+          Case 48 Then fprintf(cg_out, "\\00")
+          Case _ Then fprintf(cg_out, "\\%02X", nc)
+        End Match
         j = j + 2
       Else
         If (ch >= 32) And (ch <= 126) And (ch <> 34) And (ch <> 92) Then
@@ -1128,18 +1118,13 @@ Private Sub CgEmitConstInit(ty As TypeInfo, exprId As Integer)
 End Sub
 
 Private Function CgIntBits(kind As Integer) As Integer
-  Select Case kind
-    Case TypeKind.TyByte
-      Return 8
-    Case TypeKind.TyShort
-      Return 16
-    Case TypeKind.TyInt, TypeKind.TyEnum
-      Return 32
-    Case TypeKind.TyLong
-      Return 64
-    Case Else
-      Return 0
-  End Select
+  Match kind With
+    Case TypeKind.TyByte Then Return 8
+    Case TypeKind.TyShort Then Return 16
+    Case TypeKind.TyInt, TypeKind.TyEnum Then Return 32
+    Case TypeKind.TyLong Then Return 64
+    Case _ Then Return 0
+  End Match
 End Function
 
 Private Function CgIsFloat(kind As Integer) As Boolean
@@ -2578,28 +2563,19 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     retTy = cg_funcs(fnIdx).retTy
     isVar = cg_funcs(fnIdx).isVariadic
   Else
-    If SliceEqualsStr(nPos, nLen, "Fopen", 5) Then
-      retTy.kind = TypeKind.TyPointer
-      cBuiltin = 1
-    Else
-      If SliceEqualsStr(nPos, nLen, "Malloc", 6) Then
+    Match With
+      Case SliceEqualsStr(nPos, nLen, "Fopen", 5) Then
+        retTy.kind = TypeKind.TyPointer
+        cBuiltin = 1
+      Case SliceEqualsStr(nPos, nLen, "Malloc", 6) Then
         retTy.kind = TypeKind.TyPointer
         cBuiltin = 2
-      Else
-        If SliceEqualsStr(nPos, nLen, "Free", 4) Then
-          retTy.kind = TypeKind.TyNothing
-          cBuiltin = 3
-        Else
-          If SliceEqualsStr(nPos, nLen, "Getc", 4) Then
-            cBuiltin = 4
-          Else
-            If SliceEqualsStr(nPos, nLen, "Putc", 4) Then
-              cBuiltin = 5
-            End If
-          End If
-        End If
-      End If
-    End If
+      Case SliceEqualsStr(nPos, nLen, "Free", 4) Then
+        retTy.kind = TypeKind.TyNothing
+        cBuiltin = 3
+      Case SliceEqualsStr(nPos, nLen, "Getc", 4) Then cBuiltin = 4
+      Case SliceEqualsStr(nPos, nLen, "Putc", 4) Then cBuiltin = 5
+    End Match
   End If
 
   Dim resReg As Integer = 0
