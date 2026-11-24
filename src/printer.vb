@@ -506,6 +506,47 @@ Private Sub PrStmt(id, depth As Integer)
     Printf("End Select\n")
     Return
   End If
+  If k = NodeKind.NdMatch Then
+    If g_nodes(id).op = 1 Then
+      Printf("Match With\n")
+    Else
+      Printf("Match ")
+      PrExpr(g_nodes(id).left)
+      Printf(" With\n")
+    End If
+    Dim bi As Integer = 0
+    While bi < g_nodes(id).childCount Do
+      Dim arm As Integer = g_kids(g_nodes(id).firstChild + bi)
+      PrIndent(depth + 1)
+      If g_nodes(arm).op = 1 Then
+        Printf("Case _")
+      Else
+        Printf("Case ")
+        Dim vi As Integer = 0
+        While vi < g_nodes(arm).extraCount Do
+          If vi > 0 Then
+            Printf(", ")
+          End If
+          PrExpr(g_kids(g_nodes(arm).extraStart + vi))
+          vi = vi + 1
+        End While
+      End If
+      If g_nodes(arm).left >= 0 Then
+        Printf(" When ")
+        PrExpr(g_nodes(arm).left)
+      End If
+      Printf(" Then\n")
+      Dim si As Integer = 0
+      While si < g_nodes(arm).childCount Do
+        PrStmt(g_kids(g_nodes(arm).firstChild + si), depth + 2)
+        si = si + 1
+      End While
+      bi = bi + 1
+    End While
+    PrIndent(depth)
+    Printf("End Match\n")
+    Return
+  End If
 End Sub
 
 Public Sub PrintProgramAst(progRoot As Integer)

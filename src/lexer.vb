@@ -272,6 +272,12 @@ Private Function LxClassifyKeyword(pos, slen As Integer) As Integer
   If SliceEqualsStr(pos, slen, "Case", 4) Then
     Return TokenKind.TkCase
   End If
+  If SliceEqualsStr(pos, slen, "Match", 5) Then
+    Return TokenKind.TkMatch
+  End If
+  If SliceEqualsStr(pos, slen, "When", 4) Then
+    Return TokenKind.TkWhen
+  End If
   If SliceEqualsStr(pos, slen, "And", 3) Then
     Return TokenKind.TkAnd
   End If

@@ -78,6 +78,8 @@ Public Enum NodeKind
   NdGoTo = 57
   NdAwait = 58
   NdStrInterp = 59
+  NdMatch = 60
+  NdMatchArm = 61
 End Enum
 
 Public Structure AstNode

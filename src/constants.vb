@@ -84,7 +84,9 @@ Public Static MSG_TA_ARRAY_SIZE_POS = "Semantic Type Error: Array size must be g
   MSG_TA_UNDEF_LABEL = "Semantic Type Error: Undefined GoTo label '",
   MSG_TA_AWAIT_NON_TASK = "Semantic Type Error: Await requires a Task expression\n",
   MSG_TA_ASYNC_MAIN = "Semantic Type Error: Entry point 'main' cannot be Async\n",
-  MSG_TA_INTERP_TYPE = "Semantic Type Error: Unsupported type in string interpolation\n" As Pointer
+  MSG_TA_INTERP_TYPE = "Semantic Type Error: Unsupported type in string interpolation\n",
+  MSG_TA_MATCH_TYPE = "Semantic Type Error: Match Case pattern type mismatch\n",
+  MSG_TA_MATCH_GUARD = "Semantic Type Error: Match When guard must be Boolean\n" As Pointer
 
 ' --- Codegen Diagnostics ---
 Public Static MSG_CG_OPEN_FAIL = "verbose codegen error: cannot open output file\n",
@@ -304,6 +306,25 @@ Public Static IR_TEST_MAIN_EPILOGUE As Pointer = "  %tot_p = load i32, ptr %pass
 Public Static IR_INTERP_STR_CONSTS As Pointer = "@__vb_true_str = private unnamed_addr constant [5 x i8] c\"True\\00\", align 1\n" &
   "@__vb_false_str = private unnamed_addr constant [6 x i8] c\"False\\00\", align 1\n" &
   "@__vb_empty_str = private unnamed_addr constant [1 x i8] c\"\\00\", align 1\n\n"
+
+Public Static IR_STR_EQ_RT As Pointer = "define internal i1 @__vb_str_eq(ptr %a, ptr %b) {\n" &
+  "entry:\n" &
+  "  %same = icmp eq ptr %a, %b\n" &
+  "  br i1 %same, label %ret_true, label %check_null\n" &
+  "check_null:\n" &
+  "  %an = icmp eq ptr %a, null\n" &
+  "  %bn = icmp eq ptr %b, null\n" &
+  "  %either = or i1 %an, %bn\n" &
+  "  br i1 %either, label %ret_false, label %do_cmp\n" &
+  "do_cmp:\n" &
+  "  %c = call i32 @strcmp(ptr %a, ptr %b)\n" &
+  "  %eq = icmp eq i32 %c, 0\n" &
+  "  ret i1 %eq\n" &
+  "ret_true:\n" &
+  "  ret i1 true\n" &
+  "ret_false:\n" &
+  "  ret i1 false\n" &
+  "}\n\n"
 
 Public Static IR_STR_CONCAT_RT As Pointer = "define internal ptr @__vb_str_concat(ptr %a, ptr %b) {\n" &
   "entry:\n" &

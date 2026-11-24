@@ -62,6 +62,8 @@ Public Enum TokenKind
   TkTo = 56
   TkSelect = 57
   TkCase = 58
+  TkMatch = 59
+  TkWhen = 49
 
   ' Word operators
   TkAnd = 60

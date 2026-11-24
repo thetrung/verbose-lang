@@ -504,7 +504,7 @@ Private Function PParsePrimary() As Integer
     Dim namePos As Integer = g_tokens(p_pos).pos
     Dim nameLen As Integer = g_tokens(p_pos).len
     PAdvance()
-    If PPeekKind() = TokenKind.TkWith Then
+    If (PPeekKind() = TokenKind.TkWith) And (PPeekNextKind() = TokenKind.TkLParen) Then
       Return PParseWithInit(namePos, nameLen)
     End If
     If PPeekKind() = TokenKind.TkLParen Then
@@ -1165,6 +1165,119 @@ Public Function ParseStmt() As Integer
       bi = bi + 1
     End While
     Return selId
+  End If
+
+  ' Match [expr] With
+  '   Case pat1 [, pat2 ...] [When guard] Then <stmt> | <block>
+  '   Case _ [When guard] Then <stmt> | <block>
+  '   Case Else [When guard] [Then] <stmt> | <block>
+  ' End Match
+  If k = TokenKind.TkMatch Then
+    PAdvance()
+    Dim isCondMatch As Integer = 0
+    Dim scrutinee As Integer = -1
+    If PPeekKind() = TokenKind.TkWith Then
+      isCondMatch = 1
+      scrutinee = NewNode(NodeKind.NdBoolLit)
+      g_nodes(scrutinee).intVal = 1
+    Else
+      scrutinee = ParseExpr()
+    End If
+    PExpect(TokenKind.TkWith)
+    PSkipNewlines()
+    Dim armBuf(128) As Integer
+    Dim armCount As Integer = 0
+    While PPeekKind() = TokenKind.TkCase Do
+      PAdvance()
+      Dim isWild As Integer = 0
+      Dim valBuf(32) As Integer
+      Dim valCount As Integer = 0
+      If PPeekKind() = TokenKind.TkElse Then
+        isWild = 1
+        PAdvance()
+      Else
+        If (PPeekKind() = TokenKind.TkIdent) And (g_tokens(p_pos).len = 1) And (g_srcPool(g_tokens(p_pos).pos) = 95) Then
+          isWild = 1
+          PAdvance()
+        Else
+          Dim reading As Boolean = True
+          While reading Do
+            valBuf(valCount) = ParseExpr()
+            valCount = valCount + 1
+            If PPeekKind() = TokenKind.TkComma Then
+              PAdvance()
+              PSkipNewlines()
+            Else
+              reading = False
+            End If
+          End While
+        End If
+      End If
+
+      Dim guardExpr As Integer = -1
+      If PPeekKind() = TokenKind.TkWhen Then
+        PAdvance()
+        guardExpr = ParseExpr()
+      End If
+
+      If PPeekKind() = TokenKind.TkThen Then
+        PAdvance()
+      Else
+        If isWild = 0 Then
+          PExpect(TokenKind.TkThen)
+        End If
+      End If
+
+      Dim isInline As Integer = 0
+      Dim bStart = 0, bCount = 0 As Integer
+      If (PPeekKind() <> TokenKind.TkNewline) And (PPeekKind() <> TokenKind.TkEof) Then
+        isInline = 1
+        Dim sBuf(32) As Integer
+        Dim sCnt As Integer = 0
+        PParseStmtInto(sBuf, ByRef sCnt)
+        bStart = g_kidCount
+        bCount = sCnt
+        Dim si As Integer = 0
+        While si < sCnt Do
+          PushKid(sBuf(si))
+          si = si + 1
+        End While
+      Else
+        PParseBlock(2, ByRef bStart, ByRef bCount)
+      End If
+
+      Dim armId As Integer = NewNode(NodeKind.NdMatchArm)
+      g_nodes(armId).op = isWild
+      g_nodes(armId).flags = isInline
+      g_nodes(armId).left = guardExpr
+      g_nodes(armId).firstChild = bStart
+      g_nodes(armId).childCount = bCount
+      g_nodes(armId).extraStart = g_kidCount
+      g_nodes(armId).extraCount = valCount
+      Dim vi As Integer = 0
+      While vi < valCount Do
+        PushKid(valBuf(vi))
+        vi = vi + 1
+      End While
+      If armCount < 128 Then
+        armBuf(armCount) = armId
+        armCount = armCount + 1
+      End If
+      PSkipNewlines()
+    End While
+    PExpect(TokenKind.TkEnd)
+    PExpect(TokenKind.TkMatch)
+    Dim matchId As Integer = NewNode(NodeKind.NdMatch)
+    g_nodes(matchId).op = isCondMatch
+    g_nodes(matchId).left = scrutinee
+    g_nodes(matchId).firstChild = g_kidCount
+    g_nodes(matchId).childCount = armCount
+    Dim ai As Integer = 0
+    While ai < armCount Do
+      PushKid(armBuf(ai))
+      ai = ai + 1
+    End While
+    Return matchId
   End If
 
   ' Postfix expression or Assignment (id = e, a.b = e, arr(i) = e, r.data(i) = e)

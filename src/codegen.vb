@@ -51,7 +51,7 @@ Structure CgStrConst
 End Structure
 
 Private Static cg_out As Pointer, cg_curRetTy As TypeInfo
-Private Static cg_reg = 1, cg_lbl = 1, cg_usesArena = 0, cg_usesAssert = 0, cg_usesStrConcat = 0, cg_usesStrInterp = 0, cg_usesAsync = 0, cg_blockEnded = 0, cg_testMode = 0, cg_inTestFn = 0, cg_testCount = 0, cg_curModId = 0 As Integer
+Private Static cg_reg = 1, cg_lbl = 1, cg_usesArena = 0, cg_usesAssert = 0, cg_usesStrConcat = 0, cg_usesStrInterp = 0, cg_usesStrEq = 0, cg_usesAsync = 0, cg_blockEnded = 0, cg_testMode = 0, cg_inTestFn = 0, cg_testCount = 0, cg_curModId = 0 As Integer
 Private Static cg_target = 0, cg_ptrSize = 8, cg_ptrAlign = 8, cg_isFreestanding = 0 As Integer
 Private Static cg_usesPrintf = 0, cg_usesMalloc = 0, cg_usesCalloc = 0, cg_usesRealloc = 0, cg_usesFree = 0, cg_usesFopen = 0, cg_usesGetc = 0, cg_usesPutc = 0 As Integer
 
@@ -3192,6 +3192,145 @@ Private Sub CgEmitStmt(id As Integer)
     End If
     Return
   End If
+
+  If k = NodeKind.NdMatch Then
+    Dim isCondMatch As Boolean = (g_nodes(id).op = 1)
+    Dim tTy As TypeInfo
+    Dim tReg As Integer = 0
+    If Not isCondMatch Then
+      tReg = CgEmitExpr(g_nodes(id).left, ByRef tTy)
+    End If
+    Dim tIsStr As Boolean = (Not isCondMatch) And (((tTy.arrLen = 0) And (tTy.kind = TypeKind.TyPointer)) Or ((tTy.arrLen <> 0) And (tTy.kind = TypeKind.TyByte)))
+    Dim lExit As Integer = CgNextLbl()
+    Dim anyFalls As Boolean = False
+    Dim hasUncondWild As Boolean = False
+
+    Dim brStart As Integer = g_nodes(id).firstChild
+    Dim brCount As Integer = g_nodes(id).childCount
+    Dim bi As Integer = 0
+    While (bi < brCount) And (Not hasUncondWild) Do
+      Dim arm As Integer = g_kids(brStart + bi)
+      Dim isWild As Boolean = (g_nodes(arm).op = 1)
+      Dim guardNode As Integer = g_nodes(arm).left
+      Dim lBody As Integer = CgNextLbl()
+      Dim lNext As Integer = CgNextLbl()
+
+      If isWild And (guardNode < 0) Then
+        hasUncondWild = True
+        fprintf(cg_out, "  br label %%L%d\n", lBody)
+      Else
+        If isWild Then
+          Dim gTy As TypeInfo
+          Dim gReg As Integer = CgEmitExpr(guardNode, ByRef gTy)
+          Dim gBit As Integer = gReg
+          If gTy.kind <> TypeKind.TyBoolean Then
+            gBit = CgNextReg()
+            fprintf(cg_out, "  %%r%d = icmp ne ", gBit)
+            CgEmitLlvmType(gTy)
+            fprintf(cg_out, " %%r%d, 0\n", gReg)
+          End If
+          fprintf(cg_out, "  br i1 %%r%d, label %%L%d, label %%L%d\n", gBit, lBody, lNext)
+        Else
+          Dim lGuard As Integer = lBody
+          If guardNode >= 0 Then
+            lGuard = CgNextLbl()
+          End If
+          Dim vStart As Integer = g_nodes(arm).extraStart
+          Dim vCount As Integer = g_nodes(arm).extraCount
+          Dim vi As Integer = 0
+          While vi < vCount Do
+            Dim lTryNext As Integer = lNext
+            If (vi + 1) < vCount Then
+              lTryNext = CgNextLbl()
+            End If
+            Dim pe As Integer = g_kids(vStart + vi)
+            Dim cTy As TypeInfo
+            Dim cReg As Integer = CgEmitExpr(pe, ByRef cTy)
+            Dim eqR As Integer = 0
+            If isCondMatch Then
+              eqR = cReg
+              If cTy.kind <> TypeKind.TyBoolean Then
+                eqR = CgNextReg()
+                fprintf(cg_out, "  %%r%d = icmp ne ", eqR)
+                CgEmitLlvmType(cTy)
+                fprintf(cg_out, " %%r%d, 0\n", cReg)
+              End If
+            Else
+              If tIsStr Then
+                If (g_nodes(pe).kind = NodeKind.NdIntLit) And (g_nodes(pe).intVal = 0) Then
+                  eqR = CgNextReg()
+                  fprintf(cg_out, "  %%r%d = icmp eq ptr %%r%d, null\n", eqR, tReg)
+                Else
+                  cg_usesStrEq = 1
+                  eqR = CgNextReg()
+                  fprintf(cg_out, "  %%r%d = call i1 @__vb_str_eq(ptr %%r%d, ptr %%r%d)\n", eqR, tReg, cReg)
+                End If
+              Else
+                Dim coerced As Integer = CgCoerceScalar(cReg, cTy, tTy)
+                eqR = CgNextReg()
+                If CgIsFloat(tTy.kind) Then
+                  fprintf(cg_out, "  %%r%d = fcmp oeq ", eqR)
+                Else
+                  fprintf(cg_out, "  %%r%d = icmp eq ", eqR)
+                End If
+                CgEmitLlvmType(tTy)
+                fprintf(cg_out, " %%r%d, %%r%d\n", tReg, coerced)
+              End If
+            End If
+            fprintf(cg_out, "  br i1 %%r%d, label %%L%d, label %%L%d\n", eqR, lGuard, lTryNext)
+            If (vi + 1) < vCount Then
+              fprintf(cg_out, "L%d:\n", lTryNext)
+            End If
+            vi = vi + 1
+          End While
+          If guardNode >= 0 Then
+            fprintf(cg_out, "L%d:\n", lGuard)
+            Dim gTy As TypeInfo
+            Dim gReg As Integer = CgEmitExpr(guardNode, ByRef gTy)
+            Dim gBit As Integer = gReg
+            If gTy.kind <> TypeKind.TyBoolean Then
+              gBit = CgNextReg()
+              fprintf(cg_out, "  %%r%d = icmp ne ", gBit)
+              CgEmitLlvmType(gTy)
+              fprintf(cg_out, " %%r%d, 0\n", gReg)
+            End If
+            fprintf(cg_out, "  br i1 %%r%d, label %%L%d, label %%L%d\n", gBit, lBody, lNext)
+          End If
+        End If
+      End If
+
+      fprintf(cg_out, "L%d:\n", lBody)
+      cg_blockEnded = 0
+      Dim savedB As Integer = cg_localCount
+      Dim si As Integer = 0
+      While si < g_nodes(arm).childCount Do
+        CgEmitStmt(g_kids(g_nodes(arm).firstChild + si))
+        si = si + 1
+      End While
+      cg_localCount = savedB
+      If cg_blockEnded = 0 Then
+        anyFalls = True
+        fprintf(cg_out, "  br label %%L%d\n", lExit)
+      End If
+      If Not hasUncondWild Then
+        fprintf(cg_out, "L%d:\n", lNext)
+        cg_blockEnded = 0
+      End If
+      bi = bi + 1
+    End While
+
+    If Not hasUncondWild Then
+      anyFalls = True
+      fprintf(cg_out, "  br label %%L%d\n", lExit)
+    End If
+    If anyFalls Then
+      fprintf(cg_out, "L%d:\n", lExit)
+      cg_blockEnded = 0
+    Else
+      cg_blockEnded = 1
+    End If
+    Return
+  End If
 End Sub
 
 Private Sub CgEmitAsyncFunc(fnNodeId As Integer, fnIdx As Integer)
@@ -3269,8 +3408,16 @@ Private Sub CgEmitAsyncFunc(fnNodeId As Integer, fnIdx As Integer)
     CgEmitStmt(g_kids(bStart + k))
     k = k + 1
   End While
-  If (fi.bodyRetTy.kind = TypeKind.TyNothing) And (cg_blockEnded = 0) Then
-    fprintf(cg_out, "  ret void\n")
+  If cg_blockEnded = 0 Then
+    If fi.bodyRetTy.kind = TypeKind.TyNothing Then
+      fprintf(cg_out, "  ret void\n")
+    Else
+      fprintf(cg_out, "  ret ")
+      CgEmitLlvmType(fi.bodyRetTy)
+      fprintf(cg_out, " ")
+      CgEmitZeroVal(fi.bodyRetTy)
+      fprintf(cg_out, "\n")
+    End If
   End If
   fprintf(cg_out, "}\n\n")
 
@@ -3487,9 +3634,15 @@ Private Sub CgEmitFunc(fnNodeId As Integer, fnIdx As Integer)
     k = k + 1
   End While
 
-  If fi.retTy.kind = TypeKind.TyNothing Then
-    If cg_blockEnded = 0 Then
+  If cg_blockEnded = 0 Then
+    If fi.retTy.kind = TypeKind.TyNothing Then
       fprintf(cg_out, "  ret void\n")
+    Else
+      fprintf(cg_out, "  ret ")
+      CgEmitLlvmType(fi.retTy)
+      fprintf(cg_out, " ")
+      CgEmitZeroVal(fi.retTy)
+      fprintf(cg_out, "\n")
     End If
   End If
   fprintf(cg_out, "}\n\n")
@@ -3580,6 +3733,13 @@ Private Sub CgEmitStrConcatRuntime()
   fputs(IR_STR_CONCAT_RT, cg_out)
 End Sub
 
+Private Sub CgEmitStrEqRuntime()
+  If Not CgHasExtern("strcmp", 6) Then
+    fputs("declare i32 @strcmp(ptr, ptr)\n", cg_out)
+  End If
+  fputs(IR_STR_EQ_RT, cg_out)
+End Sub
+
 Private Function CgHasExtern(name As Pointer, nLen As Integer) As Boolean
   Dim i As Integer = 0
   While i < cg_funcCount Do
@@ -3618,6 +3778,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   cg_usesAssert = 0
   cg_usesStrConcat = 0
   cg_usesStrInterp = 0
+  cg_usesStrEq = 0
   cg_usesAsync = 0
   cg_blockEnded = 0
   cg_usesPrintf = 0
@@ -4035,6 +4196,10 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
 
   If cg_usesStrConcat = 1 Then
     CgEmitStrConcatRuntime()
+  End If
+
+  If cg_usesStrEq = 1 Then
+    CgEmitStrEqRuntime()
   End If
 
   fclose(cg_out)

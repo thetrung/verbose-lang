@@ -1584,6 +1584,14 @@ Private Sub TaCollectLabels(startIdx, cnt As Integer)
         TaCollectLabels(g_nodes(sid).extraStart, g_nodes(sid).extraCount)
       End If
     End If
+    If sk = NodeKind.NdMatch Then
+      Dim bi As Integer = 0
+      While bi < g_nodes(sid).childCount Do
+        Dim arm As Integer = g_kids(g_nodes(sid).firstChild + bi)
+        TaCollectLabels(g_nodes(arm).firstChild, g_nodes(arm).childCount)
+        bi = bi + 1
+      End While
+    End If
     i = i + 1
   End While
 End Sub
@@ -1900,6 +1908,43 @@ Private Sub TaCheckStmt(id As Integer)
       Dim si As Integer = 0
       While si < g_nodes(br).childCount Do
         TaCheckStmt(g_kids(g_nodes(br).firstChild + si))
+        si = si + 1
+      End While
+      ta_localCount = savedLocals
+      bi = bi + 1
+    End While
+    Return
+  End If
+
+  If k = NodeKind.NdMatch Then
+    Dim targetTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
+    Dim bi As Integer = 0
+    While bi < g_nodes(id).childCount Do
+      Dim arm As Integer = g_kids(g_nodes(id).firstChild + bi)
+      If g_nodes(arm).op = 0 Then
+        Dim vi As Integer = 0
+        While vi < g_nodes(arm).extraCount Do
+          Dim pe As Integer = g_kids(g_nodes(arm).extraStart + vi)
+          Dim pTy As TypeInfo = TaTypeOfExpr(pe)
+          Dim okPat As Boolean = TaIsAssignable(targetTy, pTy, pe) Or (TaIsStrLike(targetTy) And TaIsStrLike(pTy))
+          If Not okPat Then
+            Printf(MSG_TA_MATCH_TYPE)
+            ta_errCount = ta_errCount + 1
+          End If
+          vi = vi + 1
+        End While
+      End If
+      If g_nodes(arm).left >= 0 Then
+        Dim gTy As TypeInfo = TaTypeOfExpr(g_nodes(arm).left)
+        If Not (((gTy.arrLen = 0) And (gTy.kind = TypeKind.TyBoolean)) Or TaIsIntType(gTy)) Then
+          Printf(MSG_TA_MATCH_GUARD)
+          ta_errCount = ta_errCount + 1
+        End If
+      End If
+      Dim savedLocals As Integer = ta_localCount
+      Dim si As Integer = 0
+      While si < g_nodes(arm).childCount Do
+        TaCheckStmt(g_kids(g_nodes(arm).firstChild + si))
         si = si + 1
       End While
       ta_localCount = savedLocals
