@@ -124,7 +124,7 @@ verbose-lang/
 ├── examples/                   # Standalone language examples + Raylib 5.x demo
 ├── raylib/                     # Raylib header/binding playground
 ├── test/                       # Automated test suites for ./verbose & stage0/verbose
-├── prototype.vb / prototype.c  # Scratch prototype
+├── prototype.vb                # Scratch prototype
 ├── makefile                    # Build, demo, and test targets
 ├── STATE.md                    # Detailed technical state & verification metrics
 └── README.md
