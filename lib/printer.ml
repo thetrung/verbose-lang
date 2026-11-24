@@ -15,6 +15,7 @@ let rec string_of_dt = function
   | Boolean -> "Boolean"
   | Nothing -> "Nothing" 
   | Pointer -> "Pointer"
+  | Arena -> "Arena"
   | Custom s -> s
   | Array (et, n) ->
       if n > 0 then Printf.sprintf "%s[%d]" (string_of_dt et) n
@@ -49,6 +50,9 @@ let rec string_of_expr = function
   | SizeOf dt -> "SizeOf(" ^ string_of_dt dt ^ ")"
   | HeapAlloc (dt, count) -> "HeapAlloc(" ^ string_of_dt dt ^ ", " ^ string_of_expr count ^ ")"
   | HeapRealloc (p, dt, count) -> "HeapRealloc(" ^ string_of_expr p ^ ", " ^ string_of_dt dt ^ ", " ^ string_of_expr count ^ ")"
+  | ArenaAlloc (mode, a, dt, count) ->
+      let ap = match mode with ByRef -> "ByRef " ^ string_of_expr a | ByVal -> string_of_expr a in
+      "ArenaAlloc(" ^ ap ^ ", " ^ string_of_dt dt ^ ", " ^ string_of_expr count ^ ")"
 
 let rec string_of_stmt indent = function
   | Dim (v, dt, opt_e) -> 

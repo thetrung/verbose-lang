@@ -24,6 +24,8 @@ rule tokenize = parse
   | "SizeOf"         { SIZEOF }
   | "HeapAlloc"      { HEAP_ALLOC }
   | "HeapRealloc"    { HEAP_REALLOC }
+  | "Arena"          { ARENA_TYPE }
+  | "ArenaAlloc"     { ARENA_ALLOC }
   | "Structure"      { STRUCTURE }
   | "Enum"           { ENUM }
   | "Function"       { FUNCTION }

@@ -10,7 +10,7 @@ open Ast
 %token <string> ID
 
 (* Core structural tokens *)
-%token PUBLIC PRIVATE DECLARE WITH STATIC SIZEOF HEAP_ALLOC HEAP_REALLOC STRUCTURE FUNCTION SUB BYVAL BYREF END AS DIM RETURN 
+%token PUBLIC PRIVATE DECLARE WITH STATIC SIZEOF HEAP_ALLOC HEAP_REALLOC ARENA_TYPE ARENA_ALLOC STRUCTURE FUNCTION SUB BYVAL BYREF END AS DIM RETURN 
 %token NOTHING POINTER_TYPE ENUM INT_TYPE BYTE_TYPE SHORT_TYPE LONG_TYPE SINGLE_TYPE DOUBLE_TYPE BOOLEAN_TYPE 
 %token EOF LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET COMMA NEWLINE DOT ELLIPSIS
 
@@ -128,6 +128,7 @@ data_type:
   | BYTE_TYPE    { Ast.Byte }
   | NOTHING      { Ast.Nothing }
   | POINTER_TYPE { Ast.Pointer }  
+  | ARENA_TYPE   { Ast.Arena }
   | SHORT_TYPE   { Ast.Short }  
   | LONG_TYPE    { Ast.Long }   
   | SINGLE_TYPE  { Ast.Single } 
@@ -258,6 +259,8 @@ expr:
   | HEAP_ALLOC LPAREN t=data_type RPAREN { Ast.HeapAlloc(t, Ast.IntLit(1)) }
   | HEAP_ALLOC LPAREN t=data_type COMMA count=expr RPAREN { Ast.HeapAlloc(t, count) }
   | HEAP_REALLOC LPAREN p=expr COMMA t=data_type COMMA count=expr RPAREN { Ast.HeapRealloc(p, t, count) }
+  | ARENA_ALLOC LPAREN a=call_arg COMMA t=data_type RPAREN { Ast.ArenaAlloc(fst a, snd a, t, Ast.IntLit(1)) }
+  | ARENA_ALLOC LPAREN a=call_arg COMMA t=data_type COMMA count=expr RPAREN { Ast.ArenaAlloc(fst a, snd a, t, count) }
   | LBRACKET optional_newlines elems=separated_list(COMMA, expr) optional_newlines RBRACKET { Ast.ArrayLit(elems) }
   
   /* FieldAccess & IndexAccess */
