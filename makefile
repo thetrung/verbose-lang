@@ -1,5 +1,5 @@
 TARGET=prototype
-.PHONY: default build run demo test bootstrap boostrap clean
+.PHONY: default build run demo test bootstrap clean
 
 default: clean build run
 
@@ -52,8 +52,6 @@ bootstrap:
 	@echo "=== Running Bootstrap Feature Suite ==="
 	python3 test/run_bootstrap_tests.py
 	@echo "[READY] Self-hosted compiler binary built at ./bootstrap/vbc"
-
-boostrap: bootstrap
 
 clean:
 	rm -rf _build \
