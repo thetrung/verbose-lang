@@ -1,9 +1,11 @@
 ' VerBose Self-Hosting Compiler (verbose) - Complete Typed LLVM IR Code Generator
 
+Include "constants.vb"
 Include "parser.vb"
 
 Declare Function fprintf(fp As Pointer, fmt As Pointer, ...) As Integer
 Declare Function fputc(c As Integer, fp As Pointer) As Integer
+Declare Function fputs(s As Pointer, fp As Pointer) As Integer
 Declare Function strtod(s As Pointer, endp As Pointer) As Double
 Declare Function memcpy(ByRef dst As Long, ByRef src As Double, n As Long) As Pointer
 
@@ -87,7 +89,8 @@ Private Static cg_out As Pointer
 Private Static cg_reg As Integer = 1
 Private Static cg_lbl As Integer = 1
 Private Static cg_usesArena As Integer = 0
-Private Static cg_usesAssure As Integer = 0
+Private Static cg_usesAssert As Integer = 0
+Private Static cg_usesStrConcat As Integer = 0
 Private Static cg_testMode As Integer = 0
 Private Static cg_inTestFn As Integer = 0
 Private Static cg_testCount As Integer = 0
@@ -703,8 +706,8 @@ Private Sub CgCollectStrings(id As Integer)
     g_nodes(id).op = CgRegisterString(g_nodes(id).intVal, g_nodes(id).lenVal)
     cg_testCount = cg_testCount + 1
   End If
-  If k = NodeKind.NdAssure Then
-    cg_usesAssure = 1
+  If k = NodeKind.NdAssert Then
+    cg_usesAssert = 1
   End If
   If k = NodeKind.NdStrLit Then
     Dim sid As Integer = CgRegisterString(g_nodes(id).intVal, g_nodes(id).lenVal)
@@ -1081,7 +1084,7 @@ Private Function CgEmitLValuePtr(id As Integer, ByRef outTy As TypeInfo, ByRef o
       fprintf(cg_out, ", i64 0\n")
       Return r
     End If
-    Printf("verbose codegen error: undefined variable\n")
+    Printf(MSG_CG_UNDEF_VAR)
     Return 0
   End If
 
@@ -1156,7 +1159,7 @@ Private Function CgEmitLValuePtr(id As Integer, ByRef outTy As TypeInfo, ByRef o
     End If
   End If
 
-  Printf("verbose codegen error: invalid lvalue\n")
+  Printf(MSG_CG_INVALID_LVAL)
   Return 0
 End Function
 
@@ -1310,6 +1313,16 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim t2 As TypeInfo
     Dim v1 As Integer = CgEmitExpr(g_nodes(id).left, ByRef t1)
     Dim v2 As Integer = CgEmitExpr(g_nodes(id).right, ByRef t2)
+    Dim op As Integer = g_nodes(id).op
+    Dim s1 As Boolean = ((t1.arrLen = 0) And (t1.kind = TypeKind.TyPointer)) Or ((t1.arrLen <> 0) And (t1.kind = TypeKind.TyByte))
+    Dim s2 As Boolean = ((t2.arrLen = 0) And (t2.kind = TypeKind.TyPointer)) Or ((t2.arrLen <> 0) And (t2.kind = TypeKind.TyByte))
+    If (op = TokenKind.TkAmp) Or ((op = TokenKind.TkPlus) And s1 And s2) Then
+      cg_usesStrConcat = 1
+      Dim sr As Integer = CgNextReg()
+      fprintf(cg_out, "  %%r%d = call ptr @__vb_str_concat(ptr %%r%d, ptr %%r%d)\n", sr, v1, v2)
+      outTy = TypeInfo With ( kind = TypeKind.TyPointer, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+      Return sr
+    End If
     Dim unified As TypeInfo = t1
     If CgIsFloat(t1.kind) Or CgIsFloat(t2.kind) Then
       If (t1.kind = TypeKind.TySingle) And (t2.kind = TypeKind.TyDouble) And (g_nodes(g_nodes(id).right).kind = NodeKind.NdFloatLit) Then
@@ -1357,7 +1370,6 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     End If
 
     Dim r As Integer = CgNextReg()
-    Dim op As Integer = g_nodes(id).op
     outTy = unified
     If CgIsFloat(unified.kind) Then
       Select Case op
@@ -2271,7 +2283,7 @@ Private Sub CgEmitStmt(id As Integer)
     Return
   End If
 
-  If k = NodeKind.NdAssure Then
+  If k = NodeKind.NdAssert Then
     Dim cTy As TypeInfo
     Dim cReg As Integer = CgEmitExpr(g_nodes(id).left, ByRef cTy)
     Dim cBit As Integer = cReg
@@ -2289,9 +2301,9 @@ Private Sub CgEmitStmt(id As Integer)
     If msgNode >= 0 Then
       Dim mTy As TypeInfo
       Dim mReg As Integer = CgEmitExpr(msgNode, ByRef mTy)
-      fprintf(cg_out, "  call void @__vb_assure_fail(i32 %d, ptr %%r%d)\n", g_nodes(id).intVal, mReg)
+      fprintf(cg_out, "  call void @__vb_assert_fail(i32 %d, ptr %%r%d)\n", g_nodes(id).intVal, mReg)
     Else
-      fprintf(cg_out, "  call void @__vb_assure_fail(i32 %d, ptr null)\n", g_nodes(id).intVal)
+      fprintf(cg_out, "  call void @__vb_assert_fail(i32 %d, ptr null)\n", g_nodes(id).intVal)
     End If
     If cg_inTestFn = 1 Then
       fprintf(cg_out, "  ret void\n")
@@ -2631,32 +2643,32 @@ Private Sub CgEmitTestFn(tdNodeId As Integer, testIdx As Integer)
   cg_inTestFn = 0
 End Sub
 
-Private Sub CgEmitAssureRuntime()
+Private Sub CgEmitAssertRuntime()
   If (cg_testMode = 1) And (cg_testCount > 0) Then
     If Not CgHasExtern("fflush", 6) Then
-      fprintf(cg_out, "declare i32 @fflush(ptr)\n")
+      fputs("declare i32 @fflush(ptr)\n", cg_out)
     End If
-    fprintf(cg_out, "@__vb_test_cur_fail = internal global i32 0, align 4\n@__vb_assure_fmt = private unnamed_addr constant [27 x i8] c\"  [ASSURE FAILED] line %%d\\0A\\00\", align 1\n@__vb_assure_msg_fmt = private unnamed_addr constant [31 x i8] c\"  [ASSURE FAILED] line %%d: %%s\\0A\\00\", align 1\n@__vb_test_pass_fmt = private unnamed_addr constant [11 x i8] c\"[PASS] %%s\\0A\\00\", align 1\n@__vb_test_fail_fmt = private unnamed_addr constant [11 x i8] c\"[FAIL] %%s\\0A\\00\", align 1\n@__vb_test_sum_fmt = private unnamed_addr constant [42 x i8] c\"\\0ASummary: %%d/%%d tests passed, %%d failed.\\0A\\00\", align 1\n\n")
-    fprintf(cg_out, "define internal void @__vb_assure_fail(i32 %%line, ptr %%msg) {\nentry:\n  store i32 1, ptr @__vb_test_cur_fail, align 4\n  %%isnull = icmp eq ptr %%msg, null\n  br i1 %%isnull, label %%no_msg, label %%has_msg\nno_msg:\n  call i32 (ptr, ...) @printf(ptr @__vb_assure_fmt, i32 %%line)\n  br label %%done\nhas_msg:\n  call i32 (ptr, ...) @printf(ptr @__vb_assure_msg_fmt, i32 %%line, ptr %%msg)\n  br label %%done\ndone:\n  call i32 @fflush(ptr null)\n  ret void\n}\n\n")
+    fputs(IR_ASSERT_TEST_DECLS, cg_out)
+    fputs(IR_ASSERT_TEST_FN, cg_out)
     Return
   End If
 
-  If cg_usesAssure = 1 Then
+  If cg_usesAssert = 1 Then
     If Not CgHasExtern("exit", 4) Then
-      fprintf(cg_out, "declare void @exit(i32)\n")
+      fputs("declare void @exit(i32)\n", cg_out)
     End If
     If Not CgHasExtern("fflush", 6) Then
-      fprintf(cg_out, "declare i32 @fflush(ptr)\n")
+      fputs("declare i32 @fflush(ptr)\n", cg_out)
     End If
-    fprintf(cg_out, "@__vb_assure_fmt = private unnamed_addr constant [25 x i8] c\"[ASSURE FAILED] line %%d\\0A\\00\", align 1\n@__vb_assure_msg_fmt = private unnamed_addr constant [29 x i8] c\"[ASSURE FAILED] line %%d: %%s\\0A\\00\", align 1\n\n")
-    fprintf(cg_out, "define internal void @__vb_assure_fail(i32 %%line, ptr %%msg) {\nentry:\n  %%isnull = icmp eq ptr %%msg, null\n  br i1 %%isnull, label %%no_msg, label %%has_msg\nno_msg:\n  call i32 (ptr, ...) @printf(ptr @__vb_assure_fmt, i32 %%line)\n  br label %%done\nhas_msg:\n  call i32 (ptr, ...) @printf(ptr @__vb_assure_msg_fmt, i32 %%line, ptr %%msg)\n  br label %%done\ndone:\n  call i32 @fflush(ptr null)\n  call void @exit(i32 1)\n  ret void\n}\n\n")
+    fputs(IR_ASSERT_NORM_DECLS, cg_out)
+    fputs(IR_ASSERT_NORM_FN, cg_out)
   End If
 End Sub
 
 Private Sub CgEmitTestMain(progRoot As Integer)
   Dim defStart As Integer = g_nodes(progRoot).firstChild
   Dim defCount As Integer = g_nodes(progRoot).childCount
-  fprintf(cg_out, "define i32 @main() {\nentry:\n  %%passed = alloca i32, align 4\n  %%failed = alloca i32, align 4\n  store i32 0, ptr %%passed, align 4\n  store i32 0, ptr %%failed, align 4\n")
+  fputs(IR_TEST_MAIN_PROLOGUE, cg_out)
 
   Dim tIdx As Integer = 0
   Dim i As Integer = 0
@@ -2672,15 +2684,22 @@ Private Sub CgEmitTestMain(progRoot As Integer)
     i = i + 1
   End While
 
-  fprintf(cg_out, "  %%tot_p = load i32, ptr %%passed, align 4\n  %%tot_f = load i32, ptr %%failed, align 4\n  %%tot = add i32 %%tot_p, %%tot_f\n  call i32 (ptr, ...) @printf(ptr @__vb_test_sum_fmt, i32 %%tot_p, i32 %%tot, i32 %%tot_f)\n  call i32 @fflush(ptr null)\n  %%any_fail = icmp ne i32 %%tot_f, 0\n  %%rc = zext i1 %%any_fail to i32\n  ret i32 %%rc\n}\n\n")
+  fputs(IR_TEST_MAIN_EPILOGUE, cg_out)
 End Sub
 
 Private Sub CgEmitArenaRuntime()
-  fprintf(cg_out, "declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)\n\ndefine internal void @__vb_arena_init_heap(ptr %%a, i64 %%cap) {\nentry:\n  %%valid = icmp sgt i64 %%cap, 0\n  br i1 %%valid, label %%alloc_blk, label %%zero_blk\nalloc_blk:\n  %%mem = call ptr @calloc(i64 1, i64 %%cap)\n  %%ok = icmp ne ptr %%mem, null\n  br i1 %%ok, label %%store_ok, label %%zero_blk\nstore_ok:\n  %%p0 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 0\n  store ptr %%mem, ptr %%p0, align 8\n  %%p1 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 1\n  store i64 %%cap, ptr %%p1, align 8\n  %%p2 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n  store i64 0, ptr %%p2, align 8\n  ret void\nzero_blk:\n  store %%struct.__vb_arena zeroinitializer, ptr %%a, align 8\n  ret void\n}\n\n")
-  fprintf(cg_out, "define internal void @__vb_arena_init_buf(ptr %%a, ptr %%buf, i64 %%cap) {\nentry:\n  %%valid = icmp sgt i64 %%cap, 0\n  br i1 %%valid, label %%store_ok, label %%zero_blk\nstore_ok:\n  %%p0 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 0\n  store ptr %%buf, ptr %%p0, align 8\n  %%p1 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 1\n  store i64 %%cap, ptr %%p1, align 8\n  %%p2 = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n  store i64 0, ptr %%p2, align 8\n  ret void\nzero_blk:\n  store %%struct.__vb_arena zeroinitializer, ptr %%a, align 8\n  ret void\n}\n\n")
-  fprintf(cg_out, "define internal ptr @__vb_arena_alloc(ptr %%a, i64 %%size) {\nentry:\n  %%le0 = icmp sle i64 %%size, 0\n  br i1 %%le0, label %%oom, label %%align_blk\nalign_blk:\n  %%plus7 = add i64 %%size, 7\n  %%aligned = and i64 %%plus7, -8\n  %%cap_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 1\n  %%cap = load i64, ptr %%cap_ptr, align 8\n  %%off_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n  %%off = load i64, ptr %%off_ptr, align 8\n  %%new_off = add i64 %%off, %%aligned\n  %%wrap = icmp ult i64 %%new_off, %%off\n  %%ovf = icmp ugt i64 %%new_off, %%cap\n  %%fail = or i1 %%wrap, %%ovf\n  br i1 %%fail, label %%oom, label %%ok\nok:\n  %%base_slot = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 0\n  %%base = load ptr, ptr %%base_slot, align 8\n  %%isnull = icmp eq ptr %%base, null\n  br i1 %%isnull, label %%oom, label %%commit\ncommit:\n  store i64 %%new_off, ptr %%off_ptr, align 8\n  %%res = getelementptr inbounds i8, ptr %%base, i64 %%off\n  call void @llvm.memset.p0.i64(ptr align 8 %%res, i8 0, i64 %%aligned, i1 false)\n  ret ptr %%res\noom:\n  ret ptr null\n}\n\n")
-  fprintf(cg_out, "define internal void @__vb_arena_reset(ptr %%a) {\n  %%off_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n  store i64 0, ptr %%off_ptr, align 8\n  ret void\n}\n\ndefine internal i64 @__vb_arena_used(ptr %%a) {\n  %%off_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n  %%off = load i64, ptr %%off_ptr, align 8\n  ret i64 %%off\n}\n\ndefine internal i64 @__vb_arena_capacity(ptr %%a) {\n  %%cap_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 1\n  %%cap = load i64, ptr %%cap_ptr, align 8\n  ret i64 %%cap\n}\n\ndefine internal i64 @__vb_arena_remaining(ptr %%a) {\n  %%cap_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 1\n  %%cap = load i64, ptr %%cap_ptr, align 8\n  %%off_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n  %%off = load i64, ptr %%off_ptr, align 8\n  %%rem = sub i64 %%cap, %%off\n  ret i64 %%rem\n}\n\n")
-  fprintf(cg_out, "define internal void @__vb_arena_rewind(ptr %%a, i64 %%mark) {\nentry:\n  %%off_ptr = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 2\n  %%off = load i64, ptr %%off_ptr, align 8\n  %%nonneg = icmp sge i64 %%mark, 0\n  %%le_off = icmp sle i64 %%mark, %%off\n  %%ok = and i1 %%nonneg, %%le_off\n  br i1 %%ok, label %%do_rewind, label %%done\ndo_rewind:\n  store i64 %%mark, ptr %%off_ptr, align 8\n  br label %%done\ndone:\n  ret void\n}\n\ndefine internal void @__vb_arena_destroy(ptr %%a) {\nentry:\n  %%base_slot = getelementptr inbounds %%struct.__vb_arena, ptr %%a, i32 0, i32 0\n  %%base = load ptr, ptr %%base_slot, align 8\n  %%nonnull = icmp ne ptr %%base, null\n  br i1 %%nonnull, label %%do_free, label %%clear\ndo_free:\n  call void @free(ptr %%base)\n  br label %%clear\nclear:\n  store %%struct.__vb_arena zeroinitializer, ptr %%a, align 8\n  ret void\n}\n\n")
+  fputs(IR_ARENA_RT_INIT_HEAP, cg_out)
+  fputs(IR_ARENA_RT_INIT_BUF, cg_out)
+  fputs(IR_ARENA_RT_ALLOC, cg_out)
+  fputs(IR_ARENA_RT_OPS, cg_out)
+  fputs(IR_ARENA_RT_REWIND_DESTROY, cg_out)
+End Sub
+
+Private Sub CgEmitStrConcatRuntime()
+  If Not CgHasExtern("strlen", 6) Then
+    fputs("declare i64 @strlen(ptr)\n", cg_out)
+  End If
+  fputs(IR_STR_CONCAT_RT, cg_out)
 End Sub
 
 Private Function CgHasExtern(name As Pointer, nLen As Integer) As Boolean
@@ -2718,7 +2737,8 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   cg_staticLocalCount = 0
   cg_lbl = 1
   cg_usesArena = 0
-  cg_usesAssure = 0
+  cg_usesAssert = 0
+  cg_usesStrConcat = 0
   cg_inTestFn = 0
   cg_testCount = 0
 
@@ -2874,14 +2894,14 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
 
   cg_out = Fopen(outPath, "w")
   If IsNull(cg_out) Then
-    Printf("verbose codegen error: cannot open output file\n")
+    Printf(MSG_CG_OPEN_FAIL)
     Return -1
   End If
 
-  fprintf(cg_out, "; Generated by verbose (VerBose Self-Hosting Compiler)\n\n")
+  fputs(IR_MODULE_HEADER, cg_out)
 
   If cg_usesArena = 1 Then
-    fprintf(cg_out, "%%struct.__vb_arena = type { ptr, i64, i64 }\n\n")
+    fputs(IR_ARENA_STRUCT_DEF, cg_out)
   End If
 
   ' Emit struct layouts
@@ -2992,11 +3012,11 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
     i = i + 1
   End While
 
-  fprintf(cg_out, "declare void @llvm.memcpy.p0.p0.i64(ptr nocapture writeonly, ptr nocapture readonly, i64, i1 immarg)\n\n")
+  fputs(IR_MEMCPY_DECL, cg_out)
   If cg_usesArena = 1 Then
     CgEmitArenaRuntime()
   End If
-  CgEmitAssureRuntime()
+  CgEmitAssertRuntime()
 
   ' Emit all function bodies
   i = 0
@@ -3020,6 +3040,10 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
       i = i + 1
     End While
     CgEmitTestMain(progRoot)
+  End If
+
+  If cg_usesStrConcat = 1 Then
+    CgEmitStrConcatRuntime()
   End If
 
   fclose(cg_out)

@@ -51,40 +51,40 @@ Test "(STAGE-1 -> STAGE-2 -> STAGE-3 FIXPOINT) self-hosted compiler byte-for-byt
   Dim cmd(2048) As Byte
   ' Stage 1
   snprintf(cmd, 2048, "'%s' src/verbose.vb --no-run -o '%s'", comp, v1)
-  Assure RunShell(cmd) = 0, "Stage 1 failed to compile src/verbose.vb"
+  Assert RunShell(cmd) = 0, "Stage 1 failed to compile src/verbose.vb"
   unlink("src/verbose.ll")
 
   ' Stage 2
   snprintf(cmd, 2048, "'%s' src/verbose.vb '%s' && clang -O2 '%s' -o '%s'", v1, v2ll, v2ll, b_v2)
-  Assure RunShell(cmd) = 0, "Stage 2 failed to compile src/verbose.vb"
+  Assert RunShell(cmd) = 0, "Stage 2 failed to compile src/verbose.vb"
 
   ' Stage 3 fixpoint
   snprintf(cmd, 2048, "'%s' src/verbose.vb '%s' && diff -q '%s' '%s'", b_v2, v3ll, v2ll, v3ll)
-  Assure RunShell(cmd) = 0, "Stage 3 fixpoint diff failed (verbose2.ll != verbose3.ll)"
+  Assert RunShell(cmd) = 0, "Stage 3 fixpoint diff failed (verbose2.ll != verbose3.ll)"
 End Test
 
 Test "(STAGE-2) 01_arith_and_vars — Arithmetic, precedence, unary negation, local variables, Printf"
   EnsureBootstrapDir()
-  Assure RunStage2Prog("p01", "Public Function main() As Integer\n  Dim a As Integer = 10\n  Dim b As Integer = 4\n  Dim c As Integer = a + b * 3 - (a / 2)\n  Dim neg As Integer = -c\n  Printf(\"c=%d neg=%d\\n\", c, neg)\n  Return 0\nEnd Function\n") = 0
-  Assure OutHas("c=17 neg=-17")
+  Assert RunStage2Prog("p01", "Public Function main() As Integer\n  Dim a As Integer = 10\n  Dim b As Integer = 4\n  Dim c As Integer = a + b * 3 - (a / 2)\n  Dim neg As Integer = -c\n  Printf(\"c=%d neg=%d\\n\", c, neg)\n  Return 0\nEnd Function\n") = 0
+  Assert OutHas("c=17 neg=-17")
 End Test
 
 Test "(STAGE-2) 02_if_else_while_for — If/Then/Else, While, For loops & Boolean And/Or/Not"
   EnsureBootstrapDir()
-  Assure RunStage2Prog("p02", "Public Function main() As Integer\n  Dim i As Integer = 1\n  Dim sum As Integer = 0\n  While i <= 10 Do\n    If (i > 5) And (Not (i = 11)) Then\n      sum = sum + i * 2\n    Else\n      sum = sum + i\n    End If\n    i = i + 1\n  End While\n  Dim fsum As Integer = 0\n  For k = 1 To 5\n    fsum = fsum + k\n  End For\n  Printf(\"sum=%d fsum=%d\\n\", sum, fsum)\n  Return 0\nEnd Function\n") = 0
-  Assure OutHas("sum=95 fsum=15")
+  Assert RunStage2Prog("p02", "Public Function main() As Integer\n  Dim i As Integer = 1\n  Dim sum As Integer = 0\n  While i <= 10 Do\n    If (i > 5) And (Not (i = 11)) Then\n      sum = sum + i * 2\n    Else\n      sum = sum + i\n    End If\n    i = i + 1\n  End While\n  Dim fsum As Integer = 0\n  For k = 1 To 5\n    fsum = fsum + k\n  End For\n  Printf(\"sum=%d fsum=%d\\n\", sum, fsum)\n  Return 0\nEnd Function\n") = 0
+  Assert OutHas("sum=95 fsum=15")
 End Test
 
 Test "(STAGE-2) 03_recursive_fib_and_sub — Recursive Fibonacci function + helper Sub"
   EnsureBootstrapDir()
-  Assure RunStage2Prog("p03", "Function Fib(n As Integer) As Integer\n  If n <= 1 Then\n    Return n\n  End If\n  Return Fib(n - 1) + Fib(n - 2)\nEnd Function\nSub Report(k As Integer, val As Integer)\n  Printf(\"fib(%d)=%d\\n\", k, val)\nEnd Sub\nPublic Function main() As Integer\n  Dim f10 As Integer = Fib(10)\n  Report(10, f10)\n  Return 0\nEnd Function\n") = 0
-  Assure OutHas("fib(10)=55")
+  Assert RunStage2Prog("p03", "Function Fib(n As Integer) As Integer\n  If n <= 1 Then\n    Return n\n  End If\n  Return Fib(n - 1) + Fib(n - 2)\nEnd Function\nSub Report(k As Integer, val As Integer)\n  Printf(\"fib(%d)=%d\\n\", k, val)\nEnd Sub\nPublic Function main() As Integer\n  Dim f10 As Integer = Fib(10)\n  Report(10, f10)\n  Return 0\nEnd Function\n") = 0
+  Assert OutHas("fib(10)=55")
 End Test
 
 Test "(STAGE-2) 04_structs_enums_byref_arrays — Structure, Enum, With, ByRef, () arrays, Len(), Select Case"
   EnsureBootstrapDir()
-  Assure RunStage2Prog("p04", "Enum Mode\n  Add = 1\n  Mul = 2\nEnd Enum\nStructure Pair\n  Dim a As Integer\n  Dim b As Integer\nEnd Structure\nSub Apply(ByRef p As Pair, m As Integer, k As Integer)\n  Select Case m\n    Case Mode.Add\n      p.a = p.a + k\n      p.b = p.b + k\n    Case Mode.Mul\n      p.a = p.a * k\n      p.b = p.b * k\n  End Select\nEnd Sub\nPublic Function main() As Integer\n  Dim arr(4) As Integer = (10, 20, 30, 40)\n  arr(2) = arr(2) + 5\n  Dim p As Pair With ( a = arr(0), b = arr(2) )\n  Apply(ByRef p, Mode.Add, 2)\n  Apply(ByRef p, Mode.Mul, 3)\n  Printf(\"len=%d p=%d,%d\\n\", Len(arr), p.a, p.b)\n  Return 0\nEnd Function\n") = 0
-  Assure OutHas("len=4 p=36,111")
+  Assert RunStage2Prog("p04", "Enum Mode\n  Add = 1\n  Mul = 2\nEnd Enum\nStructure Pair\n  Dim a As Integer\n  Dim b As Integer\nEnd Structure\nSub Apply(ByRef p As Pair, m As Integer, k As Integer)\n  Select Case m\n    Case Mode.Add\n      p.a = p.a + k\n      p.b = p.b + k\n    Case Mode.Mul\n      p.a = p.a * k\n      p.b = p.b * k\n  End Select\nEnd Sub\nPublic Function main() As Integer\n  Dim arr(4) As Integer = (10, 20, 30, 40)\n  arr(2) = arr(2) + 5\n  Dim p As Pair With ( a = arr(0), b = arr(2) )\n  Apply(ByRef p, Mode.Add, 2)\n  Apply(ByRef p, Mode.Mul, 3)\n  Printf(\"len=%d p=%d,%d\\n\", Len(arr), p.a, p.b)\n  Return 0\nEnd Function\n") = 0
+  Assert OutHas("len=4 p=36,111")
 End Test
 
 Test "(STAGE-2) 05_arena_and_include — Include module, Static globals, Arena lifecycle & IsNull"
@@ -93,6 +93,6 @@ Test "(STAGE-2) 05_arena_and_include — Include module, Static globals, Arena l
   Dim rmCmd(512) As Byte
   snprintf(rmCmd, 512, "rm -rf '%s'", b_tmpDir)
   system(rmCmd)
-  Assure rc = 0
-  Assure OutHas("xs=14,114 used=16,0 null=1")
+  Assert rc = 0
+  Assert OutHas("xs=14,114 used=16,0 null=1")
 End Test

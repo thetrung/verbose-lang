@@ -128,6 +128,7 @@ verbose-lang/
 ├── makefile                    # Build, run, test, install, and dist targets
 ├── FEATURES.md                 # Full list of implemented language & compiler features
 ├── STATE.md                    # Detailed technical state & verification metrics
+├── TODO.md                     # Active roadmap & completed milestones
 └── README.md
 ```
 
@@ -201,11 +202,4 @@ All implemented language, memory, FFI, compiler, and tooling features are docume
 
 ## Roadmap / TODO
 
-- [x] **Self-Hosted Type Analyzer & CLI**: Ported semantic Type Analyzer (`--ta`/`--no-ta`), AST printer (`--ast`), IR printer (`--ir`), and full driver flags (`-o`, `-I`, `-l`, `-L`, `--emit-only`, `--no-run`, direct compile & execute) into `src/`
-- [x] **Tooling & CI**: `make install`/`uninstall`/`dist` packaging, GitHub Actions CI (`ci.yml`), and automated Linux x86-64 binary releases (`release.yml`)
-- [x] **Brace-Free Syntax & Stage 0 Retirement**: Unified array literals to `(..)` across Stage 0 & self-hosted compilers, archived `stage0/` to the `stage0` branch, and extracted `FEATURES.md`
-- [x] **Built-in `Test` / `Assure` & Zero-Python Test Suite**: Added first-class `Test "name" ... End Test` blocks, `Assure cond [, "msg"]` assertions, and `./verbose test [file.vb | dir]` runner; consolidated `examples/` into `tests/`, removed all Python test runners & `python3` CI dependencies
-- [ ] **Syntax Compression & Compiler Ergonomics**: Grouped same-type `Dim`/`Static` declarations, shared constants module for compiler diagnostics, and native string concatenation
-- [ ] **Target Triples & Cross-Compilation**: Emit explicit LLVM target triples and data layouts for Linux x86-64, macOS arm64, and bare-metal ARM-M (`Volatile`, fixed/deterministic memory regions)
-- [ ] **Standard Library (`std/`)**: Core modules (`strings`, `math`, `collections`, `io`) built with `Include` + `Arena`
-- [ ] **Language Extensions**: `Async`/`Await` and low-level label/address/raw memory primitives
+See **[TODO.md](TODO.md)** for the active roadmap and completed milestones.

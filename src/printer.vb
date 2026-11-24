@@ -65,6 +65,8 @@ Private Sub PrOp(op As Integer)
       Printf("*")
     Case TokenKind.TkSlash
       Printf("/")
+    Case TokenKind.TkAmp
+      Printf("&")
     Case TokenKind.TkMod
       Printf("Mod")
     Case TokenKind.TkAnd
@@ -305,8 +307,8 @@ Private Sub PrStmt(id As Integer, depth As Integer)
     Printf("\n")
     Return
   End If
-  If k = NodeKind.NdAssure Then
-    Printf("Assure ")
+  If k = NodeKind.NdAssert Then
+    Printf("Assert ")
     PrExpr(g_nodes(id).left)
     If g_nodes(id).right >= 0 Then
       Printf(", ")

@@ -11,7 +11,7 @@
 | **Self-Hosted Compiler (`verbose`)** | `src/` (`verbose.vb`, `token.vb`, `lexer.vb`, `ast.vb`, `printer.vb`, `parser.vb`, `type_analyzer.vb`, `codegen.vb`) | 8-module compiler written in VerBose-Lang using a single 32 MiB deterministic `Arena`. Features full semantic Type Analyzer (`--ta`/`--no-ta`), AST/IR inspection (`--ast`/`--ir`), built-in `Test`/`Assure` & `./verbose test` runner, direct compile-and-run CLI (`./verbose file.vb`), brace-free `(..)` array & `With (..)` syntax, Stage 1 → Stage 2 → Stage 3 byte-for-byte fixpoint (`make build`), and **11/11** pure-VerBose test suites (**99** `Test` blocks, zero Python). |
 | **Stage 0 Bootstrap Archive** | `stage0` git branch (`stage0/bin/`, `stage0/lib/`, `stage0/verbose`) | Original OCaml/ocamllex/Menhir compiler updated with `(..)` array literals and archived off `main` into the `stage0` branch. `main` bootstraps directly from an existing `./verbose` binary or the latest GitHub Release (`clang` + `curl` only — no OCaml or Python). |
 | **Tooling & CI** | `makefile`, `.github/workflows/` (`ci.yml`, `release.yml`) | `make install`/`uninstall`/`dist` packaging and pure self-hosted GitHub Actions CI + automated Linux x86-64 binary releases (`clang` + `curl` only). |
-| **Tests, Demos & Docs** | `tests/`, `tests/raylib/`, `prototype.vb`, `README.md`, `FEATURES.md`, `STATE.md` | Unified pure-VerBose `Test`/`Assure` suites (`tests/harness.vb`, `tests/test_*.vb`, `tests/bootstrap_suite.vb`) plus the Raylib 5.x demo & headless test shim (`tests/raylib/`), run natively via `./verbose test`. |
+| **Tests, Demos & Docs** | `tests/`, `tests/raylib/`, `prototype.vb`, `README.md`, `FEATURES.md`, `STATE.md`, `TODO.md` | Unified pure-VerBose `Test`/`Assure` suites (`tests/harness.vb`, `tests/test_*.vb`, `tests/bootstrap_suite.vb`) plus the Raylib 5.x demo & headless test shim (`tests/raylib/`), run natively via `./verbose test`. |
 
 ---
 
@@ -64,11 +64,4 @@ See **[FEATURES.md](FEATURES.md)** for the full user-facing catalog. Milestone c
 
 ## Roadmap / TODO
 
-- [x] **Self-Hosted Semantic Type Checker & CLI**: Ported Stage 0's Type Analyzer diagnostics (`src/type_analyzer.vb`), AST printer (`src/printer.vb`), and full CLI driver (`src/verbose.vb`) with direct compile-and-execute by default
-- [x] **Tooling & CI**: Added `make install`/`uninstall`/`dist` packaging and GitHub Actions CI + Release workflows (`.github/workflows/ci.yml`, `.github/workflows/release.yml`)
-- [x] **Brace-Free Array Syntax, Stage 0 Archival & Repo Cleanup**: Replaced `{..}` array literals with `(..)` in both Stage 0 and self-hosted compilers, branched `stage0` and removed `stage0/` from `main`, moved `raylib/` into `examples/raylib/`, and extracted `Features.md`
-- [x] **Built-in `Test` / `Assure` & Zero-Python Testing**: Added `Test`/`Assure` syntax, semantic checks, native test harness codegen, and `./verbose test` CLI runner; replaced all Python test runners with pure VerBose suites
-- [ ] **Compress Language Syntax & Compiler Ergonomics**: Allow common declarations (`Dim`, `Public`, `Private`, `Static`, etc.) to group same-type variables; move compiler diagnostic/message logs into a shared `constants.vb` module; add native string concatenation so `codegen.vb` avoids repetitive `fprintf` calls
-- [ ] **Cross-Compilation & Target Triples**: Emit explicit LLVM target triples & data layouts for Linux x86-64, macOS arm64, and bare-metal 32-bit ARM-M (incl. `Volatile` / fixed memory regions)
-- [ ] **Standard Library Modules**: Build `std/` modules (`strings`, `math`, `collections`, `io`) using `Include` + `Arena`
-- [ ] **Language Extensions**: Structured concurrency (`Async`/`Await`) and low-level address/label primitives
+See **[TODO.md](TODO.md)** for the active roadmap and completed milestones.

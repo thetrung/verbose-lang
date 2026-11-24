@@ -48,19 +48,19 @@ End Sub
 
 Test "Boolean literals, reassignment, and logical operators"
   Dim logic As Boolean = True
-  Assure logic = True
-  Assure Not (logic = False)
+  Assert logic = True
+  Assert Not (logic = False)
   logic = False
-  Assure logic = False
-  Assure Not logic
+  Assert logic = False
+  Assert Not logic
 End Test
 
 Test "Arithmetic precedence, Mod, and bitwise Shl/Shr/Or/Xor/Not"
   Dim calc As Integer = (10 + 20 * 3) / 2 Mod 4
-  Assure calc = 3
+  Assert calc = 3
   Dim flag As Integer = (1 Shl 4) Or (2 Shr 1) Xor Not 0
-  Assure flag = -18
-  Assure ComputeCheck() = 3
+  Assert flag = -18
+  Assert ComputeCheck() = 3
 End Test
 
 Test "While and For loops with comparisons"
@@ -72,22 +72,22 @@ Test "While and For loops with comparisons"
     flag = flag + 2
     iters = iters + 1
   End While
-  Assure iters = 13
-  Assure calculation = 26
-  Assure flag = 26
+  Assert iters = 13
+  Assert calculation = 26
+  Assert flag = 26
 
   Dim total As Integer = 0
   For i = 1 To 10
     total = total + i
   End For
-  Assure total = 55
+  Assert total = 55
 End Test
 
 Test "Enum values and Select Case multi-value dispatch"
   Dim nt As Integer = NodeType.Literal
-  Assure nt = 1
-  Assure NodeType.BinaryOp = 2
-  Assure NodeType.FunctionCall = 3
+  Assert nt = 1
+  Assert NodeType.BinaryOp = 2
+  Assert NodeType.FunctionCall = 3
 
   Dim hits As Integer = 0
   For k = 1 To 5
@@ -100,47 +100,47 @@ Test "Enum values and Select Case multi-value dispatch"
         hits = hits + 100
     End Select
   End For
-  Assure hits = 122
+  Assert hits = 122
 End Test
 
 Test "Structure positional ctor, hex literals, and Pointer field"
   Dim t As TokenRec = TokenRec(1, 0x12345678)
   Dim kind As Integer = t.Kind
-  Assure kind = 1
+  Assert kind = 1
   kind = -2
   t.Kind = 4
   t.Value = 0x1234
-  Assure kind < t.Kind
-  Assure t.Kind = 4
-  Assure Not IsNull(t.Value)
+  Assert kind < t.Kind
+  Assert t.Kind = 4
+  Assert Not IsNull(t.Value)
 End Test
 
 Test "Single/Double/Long structs, nested struct copy isolation, and ByRef With update"
   Dim vec1 As Vector3(1.0, 2.000, 9999999)
-  Assure vec1.x = 1.0
-  Assure vec1.y = 2.0
-  Assure vec1.z = 9999999
+  Assert vec1.x = 1.0
+  Assert vec1.y = 2.0
+  Assert vec1.z = 9999999
 
   Dim mix As MixBox(vec1, NodeType.Literal)
-  Assure mix.node = 1
-  Assure mix.vec.z = 9999999
+  Assert mix.node = 1
+  Assert mix.vec.z = 9999999
 
   mix.vec = Vector3(1.0, 1.0, 777)
-  Assure mix.vec.z = 777
-  Assure vec1.z = 9999999, "nested struct mutation must not alias original vec1"
+  Assert mix.vec.z = 777
+  Assert vec1.z = 9999999, "nested struct mutation must not alias original vec1"
 
   UpdateMix(ByRef mix)
-  Assure mix.vec.x = 3.5
-  Assure mix.vec.y = 4.25
-  Assure mix.vec.z = 999
-  Assure mix.node = 3
+  Assert mix.vec.x = 3.5
+  Assert mix.vec.y = 4.25
+  Assert mix.vec.z = 999
+  Assert mix.node = 3
 End Test
 
 Test "C FFI file reading via fopen/getc/fclose with Select Case"
   Dim fp As Pointer = fopen("src/ast.vb", "r")
-  Assure Not IsNull(fp), "src/ast.vb must open cleanly"
+  Assert Not IsNull(fp), "src/ast.vb must open cleanly"
   Dim first As Integer = getc(fp)
-  Assure first = 39, "first byte of src/ast.vb is comment quote"
+  Assert first = 39, "first byte of src/ast.vb is comment quote"
   Dim spaces As Integer = 0
   For i = 1 To 60
     Dim ch As Integer = getc(fp)
@@ -151,6 +151,6 @@ Test "C FFI file reading via fopen/getc/fclose with Select Case"
         spaces = spaces
     End Select
   End For
-  Assure spaces > 0
-  Assure fclose(fp) = 0
+  Assert spaces > 0
+  Assert fclose(fp) = 0
 End Test

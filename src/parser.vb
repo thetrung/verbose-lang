@@ -1,5 +1,6 @@
 ' VerBose Self-Hosting Compiler (verbose) - Full Recursive-Descent Parser
 
+Include "constants.vb"
 Include "lexer.vb"
 Include "ast.vb"
 
@@ -34,7 +35,7 @@ End Sub
 
 Private Sub PExpect(k As Integer)
   If PPeekKind() <> k Then
-    Printf("verbose parse error: expected token %d, got %d at line %d\n", k, PPeekKind(), g_tokens(p_pos).line)
+    Printf(MSG_PARSE_EXPECT, k, PPeekKind(), g_tokens(p_pos).line)
     p_errors = p_errors + 1
   End If
   PAdvance()
@@ -81,7 +82,7 @@ Private Sub PParseBaseType(ByRef outKind As Integer, ByRef outNamePos As Integer
       outNameLen = g_tokens(p_pos).len
       PAdvance()
     Case Else
-      Printf("verbose parse error: expected type, got token %d at line %d\n", k, g_tokens(p_pos).line)
+      Printf(MSG_PARSE_EXPECT_TYPE, k, g_tokens(p_pos).line)
       p_errors = p_errors + 1
       outKind = TypeKind.TyInt
       PAdvance()
@@ -382,7 +383,7 @@ Private Function PParsePrimary() As Integer
     End If
   End If
 
-  Printf("verbose parse error: unexpected token %d in primary at line %d\n", k, g_tokens(p_pos).line)
+  Printf(MSG_PARSE_UNEXPECTED_PRIMARY, k, g_tokens(p_pos).line)
   p_errors = p_errors + 1
   PAdvance()
   Return NewNode(NodeKind.NdIntLit)
@@ -444,6 +445,37 @@ Private Function PParseMulDiv() As Integer
   Return lhs
 End Function
 
+Private Function PFoldStrLit(lhs As Integer, rhs As Integer) As Integer
+  Dim p1 As Integer = g_nodes(lhs).intVal
+  Dim l1 As Integer = g_nodes(lhs).lenVal
+  Dim p2 As Integer = g_nodes(rhs).intVal
+  Dim l2 As Integer = g_nodes(rhs).lenVal
+  If (g_srcPoolLen + l1 + l2 + 1) >= g_srcPoolCap Then
+    Dim bin As Integer = NewNode(NodeKind.NdBinOp)
+    g_nodes(bin).op = TokenKind.TkAmp
+    g_nodes(bin).left = lhs
+    g_nodes(bin).right = rhs
+    Return bin
+  End If
+  Dim startPos As Integer = g_srcPoolLen
+  Dim i As Integer = 0
+  While i < l1 Do
+    g_srcPool(g_srcPoolLen) = g_srcPool(p1 + i)
+    g_srcPoolLen = g_srcPoolLen + 1
+    i = i + 1
+  End While
+  Dim j As Integer = 0
+  While j < l2 Do
+    g_srcPool(g_srcPoolLen) = g_srcPool(p2 + j)
+    g_srcPoolLen = g_srcPoolLen + 1
+    j = j + 1
+  End While
+  Dim id As Integer = NewNode(NodeKind.NdStrLit)
+  g_nodes(id).intVal = startPos
+  g_nodes(id).lenVal = l1 + l2
+  Return id
+End Function
+
 Private Function PParseAddSub() As Integer
   Dim lhs As Integer = PParseMulDiv()
   Dim going As Boolean = True
@@ -452,11 +484,15 @@ Private Function PParseAddSub() As Integer
     If (k = TokenKind.TkPlus) Or (k = TokenKind.TkMinus) Then
       PAdvance()
       Dim rhs As Integer = PParseMulDiv()
-      Dim bin As Integer = NewNode(NodeKind.NdBinOp)
-      g_nodes(bin).op = k
-      g_nodes(bin).left = lhs
-      g_nodes(bin).right = rhs
-      lhs = bin
+      If (k = TokenKind.TkPlus) And (g_nodes(lhs).kind = NodeKind.NdStrLit) And (g_nodes(rhs).kind = NodeKind.NdStrLit) Then
+        lhs = PFoldStrLit(lhs, rhs)
+      Else
+        Dim bin As Integer = NewNode(NodeKind.NdBinOp)
+        g_nodes(bin).op = k
+        g_nodes(bin).left = lhs
+        g_nodes(bin).right = rhs
+        lhs = bin
+      End If
     Else
       going = False
     End If
@@ -464,14 +500,33 @@ Private Function PParseAddSub() As Integer
   Return lhs
 End Function
 
-Private Function PParseShift() As Integer
+Private Function PParseConcat() As Integer
   Dim lhs As Integer = PParseAddSub()
+  While PPeekKind() = TokenKind.TkAmp Do
+    PAdvance()
+    PSkipNewlines()
+    Dim rhs As Integer = PParseAddSub()
+    If (g_nodes(lhs).kind = NodeKind.NdStrLit) And (g_nodes(rhs).kind = NodeKind.NdStrLit) Then
+      lhs = PFoldStrLit(lhs, rhs)
+    Else
+      Dim bin As Integer = NewNode(NodeKind.NdBinOp)
+      g_nodes(bin).op = TokenKind.TkAmp
+      g_nodes(bin).left = lhs
+      g_nodes(bin).right = rhs
+      lhs = bin
+    End If
+  End While
+  Return lhs
+End Function
+
+Private Function PParseShift() As Integer
+  Dim lhs As Integer = PParseConcat()
   Dim going As Boolean = True
   While going Do
     Dim k As Integer = PPeekKind()
     If (k = TokenKind.TkShl) Or (k = TokenKind.TkShr) Then
       PAdvance()
-      Dim rhs As Integer = PParseAddSub()
+      Dim rhs As Integer = PParseConcat()
       Dim bin As Integer = NewNode(NodeKind.NdBinOp)
       g_nodes(bin).op = k
       g_nodes(bin).left = lhs
@@ -544,73 +599,76 @@ Public Function ParseExpr() As Integer
   Return lhs
 End Function
 
-' stopMode: 0 = stop at End/Eof, 1 = stop at Else/End/Eof, 2 = stop at Case/End/Eof
-Private Sub PParseBlock(stopMode As Integer, ByRef outStart As Integer, ByRef outCount As Integer)
-  Dim buf(256) As Integer
-  Dim cnt As Integer = 0
-  Dim running As Boolean = True
-  While running Do
-    PSkipNewlines()
-    Dim k As Integer = PPeekKind()
-    If (k = TokenKind.TkEnd) Or (k = TokenKind.TkEof) Then
-      running = False
-    Else
-      If (stopMode = 1) And (k = TokenKind.TkElse) Then
-        running = False
-      Else
-        If (stopMode = 2) And (k = TokenKind.TkCase) Then
-          running = False
-        Else
-          buf(cnt) = ParseStmt()
-          cnt = cnt + 1
-        End If
-      End If
-    End If
-  End While
-  outStart = g_kidCount
-  outCount = cnt
-  Dim i As Integer = 0
-  While i < cnt Do
-    PushKid(buf(i))
-    i = i + 1
-  End While
-End Sub
-
-Public Function ParseStmt() As Integer
-  Dim k As Integer = PPeekKind()
-
-  ' Dim / Static name[(N | )] As Type [= expr | With ( ... ) | (args)]
-  If (k = TokenKind.TkDim) Or (k = TokenKind.TkStatic) Then
-    Dim isStat As Boolean = (k = TokenKind.TkStatic)
-    PAdvance()
-    Dim namePos As Integer = g_tokens(p_pos).pos
-    Dim nameLen As Integer = g_tokens(p_pos).len
-    PExpect(TokenKind.TkIdent)
-    Dim arrLen As Integer = 0
-    If PPeekKind() = TokenKind.TkLParen Then
-      PAdvance()
-      If PPeekKind() = TokenKind.TkRParen Then
-        arrLen = -1
+' Parses grouped same-type and/or comma-separated variable declarations:
+'   a, b, c As Integer [= init]
+'   a = 1, b = 2, c As Integer
+'   x, y As Integer, flag As Boolean = True
+Private Sub PParseVarDeclGroup(ndKind As Integer, vis As Integer, defModId As Integer, outBuf() As Integer, ByRef outCnt As Integer)
+  Dim moreClauses As Boolean = True
+  While moreClauses Do
+    Dim nPos(32) As Integer
+    Dim nLen(32) As Integer
+    Dim aLen(32) As Integer
+    Dim iInit(32) As Integer
+    Dim itemCnt As Integer = 0
+    Dim moreItems As Boolean = True
+    While moreItems Do
+      nPos(itemCnt) = g_tokens(p_pos).pos
+      nLen(itemCnt) = g_tokens(p_pos).len
+      PExpect(TokenKind.TkIdent)
+      Dim arrLen As Integer = 0
+      If PPeekKind() = TokenKind.TkLParen Then
         PAdvance()
-      Else
-        arrLen = g_tokens(p_pos).intVal
-        PExpect(TokenKind.TkIntLit)
-        PExpect(TokenKind.TkRParen)
-        If arrLen <= 0 Then
-          arrLen = -2
+        If PPeekKind() = TokenKind.TkRParen Then
+          arrLen = -1
+          PAdvance()
+        Else
+          arrLen = g_tokens(p_pos).intVal
+          PExpect(TokenKind.TkIntLit)
+          PExpect(TokenKind.TkRParen)
+          If arrLen <= 0 Then
+            arrLen = -2
+          End If
         End If
       End If
-    End If
+      Dim itemInit As Integer = -1
+      If PPeekKind() = TokenKind.TkEq Then
+        PAdvance()
+        If (arrLen <> 0) And (PPeekKind() = TokenKind.TkLParen) Then
+          itemInit = PParseArrayLit()
+        Else
+          itemInit = ParseExpr()
+        End If
+        If (arrLen = -1) And (g_nodes(itemInit).kind = NodeKind.NdArrayLit) Then
+          arrLen = g_nodes(itemInit).childCount
+        End If
+      End If
+      aLen(itemCnt) = arrLen
+      iInit(itemCnt) = itemInit
+      itemCnt = itemCnt + 1
+      If PPeekKind() = TokenKind.TkComma Then
+        PAdvance()
+        PSkipNewlines()
+      Else
+        moreItems = False
+      End If
+    End While
+
     PExpect(TokenKind.TkAs)
     Dim tk As Integer = 0
     Dim tnPos As Integer = 0
     Dim tnLen As Integer = 0
     PParseBaseType(ByRef tk, ByRef tnPos, ByRef tnLen)
-    Dim initNode As Integer = -1
+
+    Dim sharedInit As Integer = -1
+    Dim firstArrLen As Integer = 0
+    If itemCnt > 0 Then
+      firstArrLen = aLen(0)
+    End If
     If PPeekKind() = TokenKind.TkWith Then
-      initNode = PParseWithInit(tnPos, tnLen)
+      sharedInit = PParseWithInit(tnPos, tnLen)
     Else
-      If (arrLen = 0) And (tk = TypeKind.TyStruct) And (PPeekKind() = TokenKind.TkLParen) Then
+      If (firstArrLen = 0) And (tk = TypeKind.TyStruct) And (PPeekKind() = TokenKind.TkLParen) Then
         PAdvance()
         Dim argBuf(32) As Integer
         Dim argCount As Integer = 0
@@ -637,35 +695,106 @@ Public Function ParseStmt() As Integer
           PushKid(argBuf(ci))
           ci = ci + 1
         End While
-        initNode = callId
+        sharedInit = callId
       Else
         If PPeekKind() = TokenKind.TkEq Then
           PAdvance()
-          If (arrLen <> 0) And (PPeekKind() = TokenKind.TkLParen) Then
-            initNode = PParseArrayLit()
+          If (firstArrLen <> 0) And (PPeekKind() = TokenKind.TkLParen) Then
+            sharedInit = PParseArrayLit()
           Else
-            initNode = ParseExpr()
-          End If
-          If (arrLen = -1) And (g_nodes(initNode).kind = NodeKind.NdArrayLit) Then
-            arrLen = g_nodes(initNode).childCount
+            sharedInit = ParseExpr()
           End If
         End If
       End If
     End If
+
+    Dim vi As Integer = 0
+    While vi < itemCnt Do
+      Dim curArrLen As Integer = aLen(vi)
+      Dim curInit As Integer = iInit(vi)
+      If curInit < 0 Then
+        curInit = sharedInit
+      End If
+      If (curArrLen = -1) And (curInit >= 0) And (g_nodes(curInit).kind = NodeKind.NdArrayLit) Then
+        curArrLen = g_nodes(curInit).childCount
+      End If
+      Dim id As Integer = NewNode(ndKind)
+      If ndKind = NodeKind.NdGlobalVar Then
+        g_nodes(id).op = vis
+        g_nodes(id).modId = defModId
+      End If
+      g_nodes(id).intVal = nPos(vi)
+      g_nodes(id).lenVal = nLen(vi)
+      g_nodes(id).left = curInit
+      g_nodes(id).tyKind = tk
+      g_nodes(id).tyArrLen = curArrLen
+      g_nodes(id).tyNamePos = tnPos
+      g_nodes(id).tyNameLen = tnLen
+      outBuf(outCnt) = id
+      outCnt = outCnt + 1
+      vi = vi + 1
+    End While
+
+    If PPeekKind() = TokenKind.TkComma Then
+      PAdvance()
+      PSkipNewlines()
+    Else
+      moreClauses = False
+    End If
+  End While
+End Sub
+
+' stopMode: 0 = stop at End/Eof, 1 = stop at Else/End/Eof, 2 = stop at Case/End/Eof
+Private Sub PParseBlock(stopMode As Integer, ByRef outStart As Integer, ByRef outCount As Integer)
+  Dim buf(512) As Integer
+  Dim cnt As Integer = 0
+  Dim running As Boolean = True
+  While running Do
+    PSkipNewlines()
+    Dim k As Integer = PPeekKind()
+    If (k = TokenKind.TkEnd) Or (k = TokenKind.TkEof) Then
+      running = False
+    Else
+      If (stopMode = 1) And (k = TokenKind.TkElse) Then
+        running = False
+      Else
+        If (stopMode = 2) And (k = TokenKind.TkCase) Then
+          running = False
+        Else
+          PParseStmtInto(buf, ByRef cnt)
+        End If
+      End If
+    End If
+  End While
+  outStart = g_kidCount
+  outCount = cnt
+  Dim i As Integer = 0
+  While i < cnt Do
+    PushKid(buf(i))
+    i = i + 1
+  End While
+End Sub
+
+Private Sub PParseStmtInto(outBuf() As Integer, ByRef outCnt As Integer)
+  Dim k As Integer = PPeekKind()
+
+  ' Dim / Static name[(N | )] [= init], ... As Type [= expr | With ( ... ) | (args)], ...
+  If (k = TokenKind.TkDim) Or (k = TokenKind.TkStatic) Then
     Dim ndKind As Integer = NodeKind.NdDim
-    If isStat Then
+    If k = TokenKind.TkStatic Then
       ndKind = NodeKind.NdStaticDim
     End If
-    Dim id As Integer = NewNode(ndKind)
-    g_nodes(id).intVal = namePos
-    g_nodes(id).lenVal = nameLen
-    g_nodes(id).left = initNode
-    g_nodes(id).tyKind = tk
-    g_nodes(id).tyArrLen = arrLen
-    g_nodes(id).tyNamePos = tnPos
-    g_nodes(id).tyNameLen = tnLen
-    Return id
+    PAdvance()
+    PParseVarDeclGroup(ndKind, 0, 0, outBuf, ByRef outCnt)
+    Return
   End If
+
+  outBuf(outCnt) = ParseStmt()
+  outCnt = outCnt + 1
+End Sub
+
+Public Function ParseStmt() As Integer
+  Dim k As Integer = PPeekKind()
 
   ' Return [expr]
   If k = TokenKind.TkReturn Then
@@ -678,8 +807,8 @@ Public Function ParseStmt() As Integer
     Return id
   End If
 
-  ' Assure cond [, msg]
-  If k = TokenKind.TkAssure Then
+  ' Assert cond [, msg]
+  If k = TokenKind.TkAssert Then
     Dim lineNum As Integer = g_tokens(p_pos).line
     PAdvance()
     Dim condId As Integer = ParseExpr()
@@ -688,7 +817,7 @@ Public Function ParseStmt() As Integer
       PAdvance()
       msgId = ParseExpr()
     End If
-    Dim id As Integer = NewNode(NodeKind.NdAssure)
+    Dim id As Integer = NewNode(NodeKind.NdAssert)
     g_nodes(id).intVal = lineNum
     g_nodes(id).left = condId
     g_nodes(id).right = msgId
@@ -866,7 +995,7 @@ Public Function ParseStmt() As Integer
       g_nodes(id).third = rhs
       Return id
     End If
-    Printf("verbose parse error: invalid assignment target at line %d\n", g_tokens(p_pos).line)
+    Printf(MSG_PARSE_INVALID_ASSIGN, g_tokens(p_pos).line)
     p_errors = p_errors + 1
   End If
 
@@ -875,49 +1004,96 @@ Public Function ParseStmt() As Integer
   Return stmtId
 End Function
 
-Private Function PParseParam() As Integer
-  Dim isByRef As Integer = 0
-  If PPeekKind() = TokenKind.TkByRef Then
-    isByRef = 1
-    PAdvance()
-  Else
-    If PPeekKind() = TokenKind.TkByVal Then
-      PAdvance()
-    End If
+' Parses parameter list with optional same-type grouping:
+'   (a, b As Integer, ByRef x, y As Single, ...)
+Private Sub PParseParamList(allowEllipsis As Integer, paramBuf() As Integer, ByRef paramCount As Integer, ByRef outIsVar As Integer)
+  paramCount = 0
+  outIsVar = 0
+  PSkipNewlines()
+  If PPeekKind() = TokenKind.TkRParen Then
+    Return
   End If
-  Dim pPos As Integer = g_tokens(p_pos).pos
-  Dim pLen As Integer = g_tokens(p_pos).len
-  PExpect(TokenKind.TkIdent)
-  Dim arrLen As Integer = 0
-  If PPeekKind() = TokenKind.TkLParen Then
-    PAdvance()
-    If PPeekKind() = TokenKind.TkRParen Then
-      arrLen = -1
+  Dim grpStart As Integer = 0
+  Dim grpByRef As Integer = 0
+  Dim reading As Boolean = True
+  While reading Do
+    PSkipNewlines()
+    If (allowEllipsis = 1) And (PPeekKind() = TokenKind.TkEllipsis) Then
+      If paramCount > grpStart Then
+        PExpect(TokenKind.TkAs)
+      End If
+      outIsVar = 1
       PAdvance()
+      reading = False
     Else
-      arrLen = g_tokens(p_pos).intVal
-      PExpect(TokenKind.TkIntLit)
-      PExpect(TokenKind.TkRParen)
+      Dim isByRef As Integer = grpByRef
+      If PPeekKind() = TokenKind.TkByRef Then
+        isByRef = 1
+        grpByRef = 1
+        PAdvance()
+      Else
+        If PPeekKind() = TokenKind.TkByVal Then
+          isByRef = 0
+          grpByRef = 0
+          PAdvance()
+        End If
+      End If
+      Dim pPos As Integer = g_tokens(p_pos).pos
+      Dim pLen As Integer = g_tokens(p_pos).len
+      PExpect(TokenKind.TkIdent)
+      Dim arrLen As Integer = 0
+      If PPeekKind() = TokenKind.TkLParen Then
+        PAdvance()
+        If PPeekKind() = TokenKind.TkRParen Then
+          arrLen = -1
+          PAdvance()
+        Else
+          arrLen = g_tokens(p_pos).intVal
+          PExpect(TokenKind.TkIntLit)
+          PExpect(TokenKind.TkRParen)
+        End If
+      End If
+      Dim pNode As Integer = NewNode(NodeKind.NdParam)
+      g_nodes(pNode).op = isByRef
+      g_nodes(pNode).intVal = pPos
+      g_nodes(pNode).lenVal = pLen
+      g_nodes(pNode).tyArrLen = arrLen
+      paramBuf(paramCount) = pNode
+      paramCount = paramCount + 1
+
+      If PPeekKind() = TokenKind.TkAs Then
+        PAdvance()
+        Dim tk As Integer = 0
+        Dim tnPos As Integer = 0
+        Dim tnLen As Integer = 0
+        PParseBaseType(ByRef tk, ByRef tnPos, ByRef tnLen)
+        Dim gi As Integer = grpStart
+        While gi < paramCount Do
+          Dim pn As Integer = paramBuf(gi)
+          g_nodes(pn).tyKind = tk
+          g_nodes(pn).tyNamePos = tnPos
+          g_nodes(pn).tyNameLen = tnLen
+          gi = gi + 1
+        End While
+        grpStart = paramCount
+        grpByRef = 0
+      End If
+
+      PSkipNewlines()
+      If PPeekKind() = TokenKind.TkComma Then
+        PAdvance()
+        PSkipNewlines()
+      Else
+        reading = False
+      End If
     End If
+  End While
+  If paramCount > grpStart Then
+    PExpect(TokenKind.TkAs)
   End If
-  PExpect(TokenKind.TkAs)
-  Dim tk As Integer = 0
-  Dim tnPos As Integer = 0
-  Dim tnLen As Integer = 0
-  PParseBaseType(ByRef tk, ByRef tnPos, ByRef tnLen)
+End Sub
 
-  Dim pNode As Integer = NewNode(NodeKind.NdParam)
-  g_nodes(pNode).op = isByRef
-  g_nodes(pNode).intVal = pPos
-  g_nodes(pNode).lenVal = pLen
-  g_nodes(pNode).tyKind = tk
-  g_nodes(pNode).tyArrLen = arrLen
-  g_nodes(pNode).tyNamePos = tnPos
-  g_nodes(pNode).tyNameLen = tnLen
-  Return pNode
-End Function
-
-Private Function PParseDef() As Integer
+Private Sub PParseDefInto(defBuf() As Integer, ByRef defCount As Integer)
   Dim defModId As Integer = g_tokens(p_pos).modId
   Dim vis As Integer = 0
   If PPeekKind() = TokenKind.TkPublic Then
@@ -932,45 +1108,73 @@ Private Function PParseDef() As Integer
 
   Dim k As Integer = PPeekKind()
 
-  ' Structure Name ... End Structure
+  ' Structure Name ... End Structure (supports grouped Dim a, b As T, c As U)
   If k = TokenKind.TkStructure Then
     PAdvance()
     Dim sPos As Integer = g_tokens(p_pos).pos
     Dim sLen As Integer = g_tokens(p_pos).len
     PExpect(TokenKind.TkIdent)
     PSkipNewlines()
-    Dim fBuf(64) As Integer
+    Dim fBuf(128) As Integer
     Dim fCount As Integer = 0
     While (PPeekKind() <> TokenKind.TkEnd) And (PPeekKind() <> TokenKind.TkEof) Do
       PExpect(TokenKind.TkDim)
-      Dim fPos As Integer = g_tokens(p_pos).pos
-      Dim fLen As Integer = g_tokens(p_pos).len
-      PExpect(TokenKind.TkIdent)
-      Dim arrLen As Integer = 0
-      If PPeekKind() = TokenKind.TkLParen Then
-        PAdvance()
-        arrLen = g_tokens(p_pos).intVal
-        PExpect(TokenKind.TkIntLit)
-        PExpect(TokenKind.TkRParen)
-        If arrLen <= 0 Then
-          arrLen = -2
+      Dim moreClauses As Boolean = True
+      While moreClauses Do
+        Dim fnPos(32) As Integer
+        Dim fnLen(32) As Integer
+        Dim faLen(32) As Integer
+        Dim itemCnt As Integer = 0
+        Dim moreItems As Boolean = True
+        While moreItems Do
+          fnPos(itemCnt) = g_tokens(p_pos).pos
+          fnLen(itemCnt) = g_tokens(p_pos).len
+          PExpect(TokenKind.TkIdent)
+          Dim arrLen As Integer = 0
+          If PPeekKind() = TokenKind.TkLParen Then
+            PAdvance()
+            arrLen = g_tokens(p_pos).intVal
+            PExpect(TokenKind.TkIntLit)
+            PExpect(TokenKind.TkRParen)
+            If arrLen <= 0 Then
+              arrLen = -2
+            End If
+          End If
+          faLen(itemCnt) = arrLen
+          itemCnt = itemCnt + 1
+          If PPeekKind() = TokenKind.TkComma Then
+            PAdvance()
+            PSkipNewlines()
+          Else
+            moreItems = False
+          End If
+        End While
+        PExpect(TokenKind.TkAs)
+        Dim tk As Integer = 0
+        Dim tnPos As Integer = 0
+        Dim tnLen As Integer = 0
+        PParseBaseType(ByRef tk, ByRef tnPos, ByRef tnLen)
+        Dim fi As Integer = 0
+        While fi < itemCnt Do
+          Dim fd As Integer = NewNode(NodeKind.NdFieldDecl)
+          g_nodes(fd).intVal = fnPos(fi)
+          g_nodes(fd).lenVal = fnLen(fi)
+          g_nodes(fd).tyKind = tk
+          g_nodes(fd).tyArrLen = faLen(fi)
+          g_nodes(fd).tyNamePos = tnPos
+          g_nodes(fd).tyNameLen = tnLen
+          fBuf(fCount) = fd
+          fCount = fCount + 1
+          fi = fi + 1
+        End While
+        If PPeekKind() = TokenKind.TkComma Then
+          PAdvance()
+          PSkipNewlines()
+        Else
+          moreClauses = False
         End If
-      End If
-      PExpect(TokenKind.TkAs)
-      Dim tk As Integer = 0
-      Dim tnPos As Integer = 0
-      Dim tnLen As Integer = 0
-      PParseBaseType(ByRef tk, ByRef tnPos, ByRef tnLen)
+      End While
       PSkipNewlines()
-      Dim fd As Integer = NewNode(NodeKind.NdFieldDecl)
-      g_nodes(fd).intVal = fPos
-      g_nodes(fd).lenVal = fLen
-      g_nodes(fd).tyKind = tk
-      g_nodes(fd).tyArrLen = arrLen
-      g_nodes(fd).tyNamePos = tnPos
-      g_nodes(fd).tyNameLen = tnLen
-      fBuf(fCount) = fd
-      fCount = fCount + 1
     End While
     PExpect(TokenKind.TkEnd)
     PExpect(TokenKind.TkStructure)
@@ -986,7 +1190,9 @@ Private Function PParseDef() As Integer
       PushKid(fBuf(i))
       i = i + 1
     End While
-    Return sd
+    defBuf(defCount) = sd
+    defCount = defCount + 1
+    Return
   End If
 
   ' Enum Name ... Member = Val ... End Enum
@@ -1032,92 +1238,16 @@ Private Function PParseDef() As Integer
       PushKid(mBuf(i))
       i = i + 1
     End While
-    Return ed
+    defBuf(defCount) = ed
+    defCount = defCount + 1
+    Return
   End If
 
-  ' Static name[(N | )] As T [= expr | With ( ... )]
+  ' [Public | Private] Static name[(N | )] [= init], ... As T [= expr | With ( ... )], ...
   If k = TokenKind.TkStatic Then
     PAdvance()
-    Dim gPos As Integer = g_tokens(p_pos).pos
-    Dim gLen As Integer = g_tokens(p_pos).len
-    PExpect(TokenKind.TkIdent)
-    Dim arrLen As Integer = 0
-    If PPeekKind() = TokenKind.TkLParen Then
-      PAdvance()
-      If PPeekKind() = TokenKind.TkRParen Then
-        arrLen = -1
-        PAdvance()
-      Else
-        arrLen = g_tokens(p_pos).intVal
-        PExpect(TokenKind.TkIntLit)
-        PExpect(TokenKind.TkRParen)
-        If arrLen <= 0 Then
-          arrLen = -2
-        End If
-      End If
-    End If
-    PExpect(TokenKind.TkAs)
-    Dim tk As Integer = 0
-    Dim tnPos As Integer = 0
-    Dim tnLen As Integer = 0
-    PParseBaseType(ByRef tk, ByRef tnPos, ByRef tnLen)
-    Dim initNode As Integer = -1
-    If PPeekKind() = TokenKind.TkWith Then
-      initNode = PParseWithInit(tnPos, tnLen)
-    Else
-      If (arrLen = 0) And (tk = TypeKind.TyStruct) And (PPeekKind() = TokenKind.TkLParen) Then
-        PAdvance()
-        Dim argBuf(32) As Integer
-        Dim argCount As Integer = 0
-        If PPeekKind() <> TokenKind.TkRParen Then
-          Dim reading As Boolean = True
-          While reading Do
-            argBuf(argCount) = PParseCallArg()
-            argCount = argCount + 1
-            If PPeekKind() = TokenKind.TkComma Then
-              PAdvance()
-            Else
-              reading = False
-            End If
-          End While
-        End If
-        PExpect(TokenKind.TkRParen)
-        Dim callId As Integer = NewNode(NodeKind.NdCall)
-        g_nodes(callId).intVal = tnPos
-        g_nodes(callId).lenVal = tnLen
-        g_nodes(callId).firstChild = g_kidCount
-        g_nodes(callId).childCount = argCount
-        Dim ci As Integer = 0
-        While ci < argCount Do
-          PushKid(argBuf(ci))
-          ci = ci + 1
-        End While
-        initNode = callId
-      Else
-        If PPeekKind() = TokenKind.TkEq Then
-          PAdvance()
-          If (arrLen <> 0) And (PPeekKind() = TokenKind.TkLParen) Then
-            initNode = PParseArrayLit()
-          Else
-            initNode = ParseExpr()
-          End If
-          If (arrLen = -1) And (g_nodes(initNode).kind = NodeKind.NdArrayLit) Then
-            arrLen = g_nodes(initNode).childCount
-          End If
-        End If
-      End If
-    End If
-    Dim gv As Integer = NewNode(NodeKind.NdGlobalVar)
-    g_nodes(gv).op = vis
-    g_nodes(gv).modId = defModId
-    g_nodes(gv).intVal = gPos
-    g_nodes(gv).lenVal = gLen
-    g_nodes(gv).left = initNode
-    g_nodes(gv).tyKind = tk
-    g_nodes(gv).tyArrLen = arrLen
-    g_nodes(gv).tyNamePos = tnPos
-    g_nodes(gv).tyNameLen = tnLen
-    Return gv
+    PParseVarDeclGroup(NodeKind.NdGlobalVar, vis, defModId, defBuf, ByRef defCount)
+    Return
   End If
 
   ' Declare Function/Sub name(params [, ...]) [As T]
@@ -1134,27 +1264,10 @@ Private Function PParseDef() As Integer
     Dim nLen As Integer = g_tokens(p_pos).len
     PExpect(TokenKind.TkIdent)
     PExpect(TokenKind.TkLParen)
-    Dim paramBuf(16) As Integer
+    Dim paramBuf(32) As Integer
     Dim paramCount As Integer = 0
     Dim isVar As Integer = 0
-    If PPeekKind() <> TokenKind.TkRParen Then
-      Dim reading As Boolean = True
-      While reading Do
-        If PPeekKind() = TokenKind.TkEllipsis Then
-          isVar = 1
-          PAdvance()
-          reading = False
-        Else
-          paramBuf(paramCount) = PParseParam()
-          paramCount = paramCount + 1
-          If PPeekKind() = TokenKind.TkComma Then
-            PAdvance()
-          Else
-            reading = False
-          End If
-        End If
-      End While
-    End If
+    PParseParamList(1, paramBuf, ByRef paramCount, ByRef isVar)
     PExpect(TokenKind.TkRParen)
     Dim rKind As Integer = TypeKind.TyNothing
     Dim rnPos As Integer = 0
@@ -1177,7 +1290,9 @@ Private Function PParseDef() As Integer
       PushKid(paramBuf(i))
       i = i + 1
     End While
-    Return ex
+    defBuf(defCount) = ex
+    defCount = defCount + 1
+    Return
   End If
 
   ' Test "name" ... End Test
@@ -1197,7 +1312,9 @@ Private Function PParseDef() As Integer
     g_nodes(td).lenVal = tLen
     g_nodes(td).firstChild = bodyStart
     g_nodes(td).childCount = bodyCount
-    Return td
+    defBuf(defCount) = td
+    defCount = defCount + 1
+    Return
   End If
 
   ' Function / Sub definition
@@ -1212,20 +1329,10 @@ Private Function PParseDef() As Integer
   Dim nameLen As Integer = g_tokens(p_pos).len
   PExpect(TokenKind.TkIdent)
   PExpect(TokenKind.TkLParen)
-  Dim paramBuf(16) As Integer
+  Dim paramBuf(32) As Integer
   Dim paramCount As Integer = 0
-  If PPeekKind() <> TokenKind.TkRParen Then
-    Dim reading As Boolean = True
-    While reading Do
-      paramBuf(paramCount) = PParseParam()
-      paramCount = paramCount + 1
-      If PPeekKind() = TokenKind.TkComma Then
-        PAdvance()
-      Else
-        reading = False
-      End If
-    End While
-  End If
+  Dim dummyVar As Integer = 0
+  PParseParamList(0, paramBuf, ByRef paramCount, ByRef dummyVar)
   PExpect(TokenKind.TkRParen)
 
   Dim retKind As Integer = TypeKind.TyNothing
@@ -1264,18 +1371,18 @@ Private Function PParseDef() As Integer
     PushKid(paramBuf(i))
     i = i + 1
   End While
-  Return fnId
-End Function
+  defBuf(defCount) = fnId
+  defCount = defCount + 1
+End Sub
 
 Public Function ParseProgram() As Integer
   p_pos = 0
   p_errors = 0
-  Dim defBuf(512) As Integer
+  Dim defBuf(1024) As Integer
   Dim defCount As Integer = 0
   PSkipNewlines()
   While PPeekKind() <> TokenKind.TkEof Do
-    defBuf(defCount) = PParseDef()
-    defCount = defCount + 1
+    PParseDefInto(defBuf, ByRef defCount)
     PSkipNewlines()
   End While
   Dim progId As Integer = NewNode(NodeKind.NdProgram)

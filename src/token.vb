@@ -26,7 +26,7 @@ Public Enum TokenKind
   TkWith = 24
   TkReturn = 25
   TkTest = 26
-  TkAssure = 27
+  TkAssert = 27
 
   ' Types
   TkInteger = 30
@@ -84,6 +84,7 @@ Public Enum TokenKind
   TkMinus = 84
   TkStar = 85
   TkSlash = 86
+  TkAmp = 87
 End Enum
 
 Public Structure Token

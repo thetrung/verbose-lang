@@ -58,7 +58,7 @@ Public Enum NodeKind
   NdSelect = 29
   NdCaseBranch = 30
   NdStaticDim = 31
-  NdAssure = 32
+  NdAssert = 32
 
   ' Definitions
   NdParam = 40

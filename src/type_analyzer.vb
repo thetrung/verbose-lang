@@ -1,5 +1,6 @@
 ' VerBose Self-Hosting Compiler (verbose) - Semantic Type Analyzer (--ta)
 
+Include "constants.vb"
 Include "parser.vb"
 
 Structure TaEnumInfo
@@ -329,23 +330,33 @@ End Function
 
 Private Sub TaValidateType(ty As TypeInfo)
   If ty.arrLen = -2 Then
-    Printf("Semantic Type Error: Array size must be greater than 0\n")
+    Printf(MSG_TA_ARRAY_SIZE_POS)
     ta_errCount = ta_errCount + 1
   End If
   If (ty.kind = TypeKind.TyStruct) And (ty.typeIdx < 0) Then
     If TaHasPrivateStructOther(ty.namePos, ty.nameLen) Or TaHasPrivateEnumOther(ty.namePos, ty.nameLen) Then
-      Printf("Semantic Type Error: Cannot access Private type '")
+      Printf(MSG_TA_PRIVATE_TYPE)
       TaPrintSlice(ty.namePos, ty.nameLen)
-      Printf("' from included module\n")
+      Printf(MSG_TA_FROM_MOD_SUFFIX)
       ta_errCount = ta_errCount + 1
     Else
-      Printf("Semantic Type Error: Unknown type '")
+      Printf(MSG_TA_UNKNOWN_TYPE)
       TaPrintSlice(ty.namePos, ty.nameLen)
       Printf("'\n")
       ta_errCount = ta_errCount + 1
     End If
   End If
 End Sub
+
+Private Function TaIsStrLike(t As TypeInfo) As Boolean
+  If (t.arrLen = 0) And (t.kind = TypeKind.TyPointer) Then
+    Return True
+  End If
+  If (t.arrLen <> 0) And (t.kind = TypeKind.TyByte) Then
+    Return True
+  End If
+  Return False
+End Function
 
 Private Function TaNormKind(k As Integer) As Integer
   If k = TypeKind.TyEnum Then
@@ -1104,6 +1115,17 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
     Dim op As Integer = g_nodes(id).op
     Dim t1 As TypeInfo = TaTypeOfExpr(e1)
     Dim t2 As TypeInfo = TaTypeOfExpr(e2)
+    If op = TokenKind.TkAmp Then
+      If TaIsStrLike(t1) And TaIsStrLike(t2) Then
+        Return TaMakePrim(TypeKind.TyPointer)
+      End If
+      Printf(MSG_TA_STR_CONCAT_ERR)
+      ta_errCount = ta_errCount + 1
+      Return TaMakePrim(TypeKind.TyPointer)
+    End If
+    If (op = TokenKind.TkPlus) And TaIsStrLike(t1) And TaIsStrLike(t2) Then
+      Return TaMakePrim(TypeKind.TyPointer)
+    End If
     Dim unified As TypeInfo = t1
     Dim okUnify As Boolean = False
     If TaTypesEqual(t1, t2) Then
@@ -1131,7 +1153,7 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
       End If
     End If
     If Not okUnify Then
-      Printf("Semantic Type Error: Type mismatch in binary operation: ")
+      Printf(MSG_TA_BINOP_MISMATCH)
       TaPrintType(t1)
       Printf(" vs ")
       TaPrintType(t2)
@@ -1142,7 +1164,7 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
     Dim isCmp As Boolean = (op = TokenKind.TkEq) Or (op = TokenKind.TkNeq) Or (op = TokenKind.TkLt) Or (op = TokenKind.TkGt) Or (op = TokenKind.TkLe) Or (op = TokenKind.TkGe)
     If TaIsFloatType(unified) Then
       If (op = TokenKind.TkAnd) Or (op = TokenKind.TkOr) Or (op = TokenKind.TkXor) Or (op = TokenKind.TkShl) Or (op = TokenKind.TkShr) Then
-        Printf("Semantic Type Error: Unsupported bitwise operation on floating point values\n")
+        Printf(MSG_TA_FLOAT_BITWISE)
         ta_errCount = ta_errCount + 1
         Return unified
       End If
@@ -1538,10 +1560,10 @@ Private Sub TaCheckStmt(id As Integer)
     Return
   End If
 
-  If k = NodeKind.NdAssure Then
+  If k = NodeKind.NdAssert Then
     Dim condTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
     If Not (((condTy.arrLen = 0) And (condTy.kind = TypeKind.TyBoolean)) Or TaIsIntType(condTy)) Then
-      Printf("Semantic Type Error: Assure condition must be Boolean, got ")
+      Printf("Semantic Type Error: Assert condition must be Boolean, got ")
       TaPrintType(condTy)
       Printf("\n")
       ta_errCount = ta_errCount + 1
@@ -1549,7 +1571,7 @@ Private Sub TaCheckStmt(id As Integer)
     If g_nodes(id).right >= 0 Then
       Dim msgTy As TypeInfo = TaTypeOfExpr(g_nodes(id).right)
       If Not ((msgTy.arrLen = 0) And (msgTy.kind = TypeKind.TyPointer)) Then
-        Printf("Semantic Type Error: Assure message must be a string Pointer, got ")
+        Printf("Semantic Type Error: Assert message must be a string Pointer, got ")
         TaPrintType(msgTy)
         Printf("\n")
         ta_errCount = ta_errCount + 1

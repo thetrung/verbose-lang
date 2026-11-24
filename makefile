@@ -1,7 +1,7 @@
 TARGET ?= prototype
 PREFIX ?= /usr/local
 DESTDIR ?=
-VERSION ?= 0.3.0
+VERSION ?= 0.4.0
 BOOTSTRAP ?=
 RELEASE_URL ?= https://github.com/thetrung/verbose-lang/releases/latest/download/verbose
 
@@ -49,7 +49,7 @@ run:
 	@if [ ! -x ./verbose ]; then $(MAKE) build; fi
 	./verbose $(TARGET).vb
 
-# Run all pure-VerBose Test/Assure suites under tests/
+# Run all pure-VerBose Test/Assert suites under tests/
 test:
 	@if [ ! -x ./verbose ]; then $(MAKE) build; fi
 	./verbose test

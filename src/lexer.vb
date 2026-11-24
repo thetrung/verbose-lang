@@ -1,6 +1,7 @@
 ' VerBose Self-Hosting Compiler (verbose) - Multi-File Lexer & Include Module Loader
 
 Include "token.vb"
+Include "constants.vb"
 
 Declare Function fclose(fp As Pointer) As Integer
 Declare Function fseek(fp As Pointer, offset As Long, whence As Integer) As Integer
@@ -166,8 +167,8 @@ Private Function LxClassifyKeyword(pos As Integer, slen As Integer) As Integer
   If SliceEqualsStr(pos, slen, "Test", 4) Then
     Return TokenKind.TkTest
   End If
-  If SliceEqualsStr(pos, slen, "Assure", 6) Then
-    Return TokenKind.TkAssure
+  If SliceEqualsStr(pos, slen, "Assert", 6) Then
+    Return TokenKind.TkAssert
   End If
   If SliceEqualsStr(pos, slen, "Integer", 7) Then
     Return TokenKind.TkInteger
@@ -496,7 +497,7 @@ Private Function LxResolveIncludePath(curPos As Integer, curLen As Integer, incP
     ii = ii + 1
   End While
   incBuf(ii) = 0
-  Printf("Module Load Error: Included file not found: '%s'\n", incBuf)
+  Printf(MSG_LEX_INC_NOT_FOUND, incBuf)
   Return -1
 End Function
 
@@ -511,7 +512,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
         ci2 = ci2 + 1
       End While
       cycBuf(ci2) = 0
-      Printf("Module Load Error: Circular Include detected: '%s'\n", cycBuf)
+      Printf(MSG_LEX_CIRCULAR_INC, cycBuf)
       Return -1
     End If
     Return 0
@@ -533,7 +534,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
 
   Dim fp As Pointer = Fopen(pathBuf, "rb")
   If IsNull(fp) Then
-    Printf("verbose error: cannot open file '%s'\n", pathBuf)
+    Printf(MSG_LEX_OPEN_FAIL, pathBuf)
     Return -1
   End If
 
@@ -546,7 +547,7 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
   Dim tmpBuf As Pointer = ArenaAllocBytes(ByRef arena, fsize + 1)
   If IsNull(tmpBuf) Then
     fclose(fp)
-    Printf("verbose error: arena OOM reading file\n")
+    Printf(MSG_LEX_OOM)
     Return -1
   End If
   fread(tmpBuf, 1, fsizeLong, fp)
@@ -717,8 +718,10 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos As Integer, pathLen 
                             LxEmitTok(TokenKind.TkStar, pos, 1, 0, line)
                           Case 47
                             LxEmitTok(TokenKind.TkSlash, pos, 1, 0, line)
+                          Case 38
+                            LxEmitTok(TokenKind.TkAmp, pos, 1, 0, line)
                           Case Else
-                            Printf("verbose lexer error: unexpected char %d at line %d\n", c, line)
+                            Printf(MSG_LEX_UNEXPECTED_CHAR, c, line)
                             Return -1
                         End Select
                         pos = pos + 1

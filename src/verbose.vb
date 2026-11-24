@@ -2,6 +2,7 @@
 ' Compiles VerBose-Lang programs (.vb) -> Semantic Type Check -> LLVM IR -> Native Binary -> Execution.
 ' Written in VerBose-Lang and capable of compiling itself (Stage 1 -> Stage 2 -> Stage 3 fixpoint).
 
+Include "constants.vb"
 Include "printer.vb"
 Include "type_analyzer.vb"
 Include "codegen.vb"
@@ -18,7 +19,7 @@ Declare Function fflush(fp As Pointer) As Integer
 Declare Function snprintf(buf As Pointer, sz As Long, fmt As Pointer, ...) As Integer
 
 Private Sub PrintUsage()
-  Printf("Usage: verbose <filename>.vb [options]\n       verbose test [file.vb | dir] [options]\n  test         Run built-in Test/Assure blocks in a .vb file or directory (default: tests)\n  --test       Alias for 'verbose test'\n  --ast        Show parsed AST\n  --ir         Show generated LLVM-IR\n  --ta         Verbose type-analyzer pass (runs automatically before codegen)\n  --no-ta      Skip semantic type-analyzer pass\n  --emit-only  Emit .ll only (skip clang & execution)\n  --no-run     Compile binary with clang without executing it\n  -I <dir>     Add module Include search directory\n  -o <path>    Specify output binary path (or .ll path with --emit-only)\n  -l<lib>      Link external C library (e.g. -lm, -lraylib)\n  -L<dir>      Add library search path for clang\n  <file.c/.o>  Additional C/object files to compile and link with clang\n  -h, --help   Show this help message\n  --version    Show compiler version\n")
+  Printf(MSG_CLI_USAGE)
 End Sub
 
 Private Function CliHasSuffix(s As Pointer, suf As Pointer) As Boolean
@@ -147,13 +148,13 @@ Private Function RunSingleTarget(inPath As Pointer, testMode As Integer, showAst
   AstInit(ByRef arena)
   Dim progRoot As Integer = ParseProgram()
   If g_nodes(progRoot).op > 0 Then
-    Printf("verbose: aborting due to %d parse error(s)\n", g_nodes(progRoot).op)
+    Printf(MSG_CLI_PARSE_ABORT, g_nodes(progRoot).op)
     ArenaDestroy(ByRef arena)
     Return 1
   End If
 
   If showAst = 1 Then
-    Printf("\n --------- Parsed Source Code ---------\n")
+    Printf(MSG_CLI_AST_HEADER)
     PrintProgramAst(progRoot)
   End If
 
@@ -164,14 +165,14 @@ Private Function RunSingleTarget(inPath As Pointer, testMode As Integer, showAst
       Return 1
     End If
     If showTa = 1 Then
-      Printf(" [OK] Type Analyzer: semantic check passed.\n")
+      Printf(MSG_CLI_TA_OK)
     End If
   End If
 
   If testMode = 1 Then
     Dim nTests As Integer = CliCountTests(progRoot)
     If nTests = 0 Then
-      Printf("verbose test error: no Test blocks found in '%s'\n", inPath)
+      Printf(MSG_CLI_TEST_NO_BLOCKS, inPath)
       ArenaDestroy(ByRef arena)
       Return 1
     End If
@@ -211,7 +212,7 @@ Private Function RunSingleTarget(inPath As Pointer, testMode As Integer, showAst
   End If
 
   If showIr = 1 Then
-    Printf("\n ------- GENERATED LLVM IR CODE -------\n")
+    Printf(MSG_CLI_IR_HEADER)
     CliPrintFile(llPathBuf)
   End If
 
@@ -263,7 +264,7 @@ Private Function RunSingleTarget(inPath As Pointer, testMode As Integer, showAst
     If cleanupBin = 1 Then
       unlink(binPathBuf)
     End If
-    Printf("Status: clang = %d\n", clangRc)
+    Printf(MSG_CLI_CLANG_STATUS, clangRc)
     Return 1
   End If
 
@@ -320,7 +321,7 @@ Private Function RunTestDirectory(dirPath As Pointer, showAst As Integer, showIr
 
   Dim fp As Pointer = popen(findCmd, "r")
   If IsNull(fp) Then
-    Printf("verbose test error: failed to scan directory '%s'\n", cleanDir)
+    Printf(MSG_CLI_TEST_SCAN_FAIL, cleanDir)
     Return 1
   End If
 
@@ -355,7 +356,7 @@ Private Function RunTestDirectory(dirPath As Pointer, showAst As Integer, showIr
     End If
     curFile(cLen) = 0
     If cLen > 0 Then
-      Printf("\n=== Running %s ===\n", curFile)
+      Printf(MSG_CLI_TEST_RUNNING, curFile)
       fflush(0)
       Dim rc As Integer = RunSingleTarget(curFile, 1, showAst, showIr, showTa, skipTa, emitOnly, noRun, nullOut, extraInputs, extraInputCount, clangFlags, clangFlagCount)
       If rc = 0 Then
@@ -368,12 +369,12 @@ Private Function RunTestDirectory(dirPath As Pointer, showAst As Integer, showIr
 
   Dim totalSuites As Integer = suitesPassed + suitesFailed
   If totalSuites = 0 Then
-    Printf("verbose test error: no test_*.vb or *_test.vb files found in '%s'\n", cleanDir)
+    Printf(MSG_CLI_TEST_NO_FILES, cleanDir)
     Return 1
   End If
 
-  Printf("\n========================================\n")
-  Printf("Test suites: %d/%d passed, %d failed.\n", suitesPassed, totalSuites, suitesFailed)
+  Printf(MSG_CLI_TEST_SEP)
+  Printf(MSG_CLI_TEST_SUMMARY, suitesPassed, totalSuites, suitesFailed)
   fflush(0)
   If suitesFailed > 0 Then
     Return 1
@@ -419,7 +420,7 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
       Return 0
     End If
     If strcmp(arg, "--version") = 0 Then
-      Printf("verbose 0.3.0 (VerBose-Lang Self-Hosted Compiler)\n")
+      Printf(MSG_CLI_VERSION)
       Return 0
     End If
     If strcmp(arg, "--test") = 0 Then
@@ -452,7 +453,7 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
     End If
     If (handled = 0) And (strcmp(arg, "-o") = 0) Then
       If (i + 1) >= argc Then
-        Printf("Error: -o requires a path argument\n")
+        Printf(MSG_CLI_ERR_O_ARG)
         PrintUsage()
         Return 1
       End If
@@ -462,7 +463,7 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
     End If
     If (handled = 0) And (strcmp(arg, "-I") = 0) Then
       If (i + 1) >= argc Then
-        Printf("Error: -I requires a directory argument\n")
+        Printf(MSG_CLI_ERR_I_ARG)
         PrintUsage()
         Return 1
       End If
@@ -500,7 +501,7 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
       handled = 1
     End If
     If (handled = 0) And (arg(0) = 45) Then
-      Printf("Unknown option: %s\n", arg)
+      Printf(MSG_CLI_ERR_UNKNOWN_OPT, arg)
       PrintUsage()
       Return 1
     End If
@@ -524,7 +525,7 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
             End If
             handled = 1
           Else
-            Printf("Unexpected argument: %s\n", arg)
+            Printf(MSG_CLI_ERR_UNEXPECTED_ARG, arg)
             PrintUsage()
             Return 1
           End If
@@ -548,7 +549,7 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
     Dim suitesFailed As Integer = 0
     Dim ti As Integer = 0
     While ti < targetCount Do
-      Printf("\n=== Running %s ===\n", targets(ti))
+      Printf(MSG_CLI_TEST_RUNNING, targets(ti))
       fflush(0)
       Dim trc As Integer = 0
       If CliIsDir(targets(ti)) Then
@@ -563,8 +564,8 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
       End If
       ti = ti + 1
     End While
-    Printf("\n========================================\n")
-    Printf("Test suites: %d/%d passed, %d failed.\n", suitesPassed, targetCount, suitesFailed)
+    Printf(MSG_CLI_TEST_SEP)
+    Printf(MSG_CLI_TEST_SUMMARY, suitesPassed, targetCount, suitesFailed)
     If suitesFailed > 0 Then
       Return 1
     End If

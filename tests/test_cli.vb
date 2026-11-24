@@ -22,10 +22,10 @@ Test "cli: verbose hello.vb (compile + direct execute)"
 
   Dim cmd(1536) As Byte
   snprintf(cmd, 1536, "cd '%s' && '%s' hello.vb", tmpDir, comp)
-  Assure RunShell(cmd) = 0
-  Assure OutHas("hello=42")
-  Assure FileExists(binPath)
-  Assure FileExists(llPath)
+  Assert RunShell(cmd) = 0
+  Assert OutHas("hello=42")
+  Assert FileExists(binPath)
+  Assert FileExists(llPath)
 
   snprintf(mkCmd, 512, "rm -rf '%s'", tmpDir)
   system(mkCmd)
@@ -56,48 +56,48 @@ Test "cli: --ast, --ir, --no-run, --emit-only, --ta, bad-code rejection, --help,
 
   ' --ast --emit-only
   snprintf(cmd, 1536, "cd '%s' && '%s' hello.vb --ast --emit-only", tmpDir, comp)
-  Assure RunShell(cmd) = 0
-  Assure OutHas("Structure Box")
-  Assure Not OutHas("hello=42")
+  Assert RunShell(cmd) = 0
+  Assert OutHas("Structure Box")
+  Assert Not OutHas("hello=42")
 
   ' --ir --no-run -o custom_bin
   snprintf(cmd, 1536, "cd '%s' && '%s' hello.vb --ir --no-run -o custom_bin", tmpDir, comp)
-  Assure RunShell(cmd) = 0
-  Assure OutHas("define i32 @main()")
-  Assure FileExists(customBin)
-  Assure Not OutHas("hello=42")
+  Assert RunShell(cmd) = 0
+  Assert OutHas("define i32 @main()")
+  Assert FileExists(customBin)
+  Assert Not OutHas("hello=42")
 
   ' --emit-only -o custom.ll
   snprintf(cmd, 1536, "cd '%s' && '%s' hello.vb --emit-only -o custom.ll", tmpDir, comp)
-  Assure RunShell(cmd) = 0
-  Assure FileExists(customLl)
-  Assure FileHas(customLl, "define i32 @main()")
+  Assert RunShell(cmd) = 0
+  Assert FileExists(customLl)
+  Assert FileHas(customLl, "define i32 @main()")
 
   ' --ta verbose pass
   snprintf(cmd, 1536, "cd '%s' && '%s' hello.vb --ta --emit-only", tmpDir, comp)
-  Assure RunShell(cmd) = 0
-  Assure OutHas("[OK] Type Analyzer")
+  Assert RunShell(cmd) = 0
+  Assert OutHas("[OK] Type Analyzer")
 
   ' default semantic type check rejects bad code
   snprintf(cmd, 1536, "cd '%s' && '%s' bad.vb --emit-only", tmpDir, comp)
-  Assure RunShell(cmd) <> 0
-  Assure OutHas("Semantic Type Error")
+  Assert RunShell(cmd) <> 0
+  Assert OutHas("Semantic Type Error")
 
   ' --help and --version
   snprintf(cmd, 1536, "'%s' --help", comp)
-  Assure RunShell(cmd) = 0
-  Assure OutHas("--emit-only")
-  Assure OutHas("verbose test")
+  Assert RunShell(cmd) = 0
+  Assert OutHas("--emit-only")
+  Assert OutHas("verbose test")
 
   snprintf(cmd, 1536, "'%s' --version", comp)
-  Assure RunShell(cmd) = 0
-  Assure OutHas("verbose")
+  Assert RunShell(cmd) = 0
+  Assert OutHas("verbose")
 
   snprintf(mkCmd, 512, "rm -rf '%s'", tmpDir)
   system(mkCmd)
 End Test
 
 Test "prototype.vb smoke test"
-  Assure RunVb("prototype.vb", "") = 0
-  Assure OutHas("vec1.z ^ 2 =")
+  Assert RunVb("prototype.vb", "") = 0
+  Assert OutHas("vec1.z ^ 2 =")
 End Test
