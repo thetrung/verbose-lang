@@ -1,4 +1,4 @@
-# VerBose Language
+# Verbose Language
 
 [![CI](https://github.com/thetrung/verbose-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/thetrung/verbose-lang/actions/workflows/ci.yml)
 [![Release](https://github.com/thetrung/verbose-lang/actions/workflows/release.yml/badge.svg)](https://github.com/thetrung/verbose-lang/actions/workflows/release.yml)
@@ -180,12 +180,13 @@ All implemented language, memory, FFI, standard library, compiler, and tooling f
 ## Design Goals
 
 - Bootstrap minimally and stay 100% self-hosted.
-- Human-readable, brace-free VB6/VB.NET-inspired syntax that fits in your head (case-sensitive to eliminate C/DLL `Alias` boilerplate).
-- Fast as C/Rust with zero GC, native C interop, and deterministic memory (`Arena`, `Static`, `Heap`, raw `Pointer`).
+- Human-readable, brace-free, VisualBasic-inspired syntax that fits in your head.
+- Case-sensitive to eliminate C/DLL `Alias` boilerplate.
+- Fast as C/Rust with zero GC, native C-interop, and deterministic memory (`Arena`, `Static`, `Heap`, raw `Pointer`).
 - Portable across LLVM targets — Linux (x86-64, arm64), macOS (arm64), Windows (x86-64), and bare-metal 32-bit ARM-M microcontrollers.
 
 ---
 
-## Roadmap / TODO
+## Roadmap
 
 See **[TODO.md](TODO.md)** for the active roadmap and completed milestones.
