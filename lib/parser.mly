@@ -10,9 +10,9 @@ open Ast
 %token <string> ID
 
 (* Core structural tokens *)
-%token PUBLIC PRIVATE STRUCTURE FUNCTION SUB BYVAL BYREF END AS DIM RETURN 
+%token PUBLIC PRIVATE DECLARE WITH STRUCTURE FUNCTION SUB BYVAL BYREF END AS DIM RETURN 
 %token NOTHING POINTER_TYPE ENUM INT_TYPE BYTE_TYPE SHORT_TYPE LONG_TYPE SINGLE_TYPE DOUBLE_TYPE BOOLEAN_TYPE 
-%token EOF LPAREN RPAREN COMMA NEWLINE DOT
+%token EOF LPAREN RPAREN LBRACE RBRACE COMMA NEWLINE DOT ELLIPSIS
 
 (* Operators and Control Flow *)
 %token IF THEN ELSE SELECT CASE WHILE DO FOR TO
@@ -56,13 +56,31 @@ param:
   | name=ID       AS t=data_type    { (Ast.ByVal, name, t) } (*Default: ByVal to Copy *)
 ;
 
+extern_params:
+  | /* empty */                               { ([], false) }
+  | ELLIPSIS                                  { ([], true) }
+  | ps=extern_param_nonempty                  { ps }
+;
+
+extern_param_nonempty:
+  | p=param                                   { ([p], false) }
+  | p=param COMMA ELLIPSIS                    { ([p], true) }
+  | p=param COMMA rest=extern_param_nonempty  { let (ps, var) = rest in (p :: ps, var) }
+;
+
 definition:
   | vis=visibility STRUCTURE name=ID mandatory_newlines fields=list(struct_field) END STRUCTURE mandatory_newlines
     { Ast.Structure(vis, name, fields) }
 
-    | vis=visibility ENUM name=ID mandatory_newlines members=list(enum_member) END ENUM mandatory_newlines
+  | vis=visibility ENUM name=ID mandatory_newlines members=list(enum_member) END ENUM mandatory_newlines
     { Ast.EnumDef(vis, name, members) }
   
+  | vis=visibility DECLARE FUNCTION name=ID LPAREN ep=extern_params RPAREN AS ret=data_type mandatory_newlines
+    { let (params, is_var) = ep in Ast.ExternDecl(vis, name, params, ret, is_var) }
+
+  | vis=visibility DECLARE SUB name=ID LPAREN ep=extern_params RPAREN mandatory_newlines
+    { let (params, is_var) = ep in Ast.ExternDecl(vis, name, params, Ast.Nothing, is_var) }
+
   | vis=visibility FUNCTION name=ID LPAREN params=separated_list(COMMA, param) RPAREN AS ret=data_type mandatory_newlines body=block END FUNCTION mandatory_newlines
     { Ast.FuncDef(vis, name, params, ret, body) }
   
@@ -112,6 +130,8 @@ code_stmt:
   | DIM name=ID AS struct_name=ID 
     LPAREN args=separated_list(COMMA, expr) RPAREN  
     { Ast.Dim(name, Ast.Pointer, Some(Ast.Call(struct_name, List.map (fun e -> (Ast.ByVal, e)) args))) }
+  | DIM name=ID AS struct_name=ID WITH LBRACE optional_newlines inits=field_init_list RBRACE
+    { Ast.Dim(name, Ast.Custom(struct_name), Some(Ast.StructInit(struct_name, inits))) }
 
   | obj=expr; DOT; field=ID; EQUALS; e=expr   { Ast.FieldAssign(obj, field, e) }
   | name=ID EQUALS e=expr                     { Ast.Assign(name, e) }
@@ -158,6 +178,16 @@ call_arg:
   | e=expr       { (Ast.ByVal, e) }
 ;
 
+field_init:
+  | field=ID EQUALS value=expr { (field, value) }
+;
+
+field_init_list:
+  | /* empty */                                                                  { [] }
+  | fi=field_init optional_newlines                                              { [fi] }
+  | fi=field_init optional_newlines COMMA optional_newlines rest=field_init_list { fi :: rest }
+;
+
 expr:
   | id=ID                                                   { Ast.Id(id) }
   | i=INT_LIT                                               { Ast.IntLit(i) }
@@ -167,6 +197,7 @@ expr:
   | LPAREN e=expr RPAREN                                    { e }
   | NOT e=expr                                              { Ast.UnaryOp("Not", e) }
   | name=ID LPAREN args=separated_list(COMMA, call_arg) RPAREN  { Ast.Call(name, args) }
+  | name=ID WITH LBRACE optional_newlines inits=field_init_list RBRACE { Ast.StructInit(name, inits) }
   
   /* FieldAccess */
   | e1=expr DOT field=ID           { Ast.FieldAccess(e1, field) }

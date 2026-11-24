@@ -38,6 +38,9 @@ let rec string_of_expr = function
       in
       f ^ "(" ^ String.concat ", " (List.map fmt_arg args) ^ ")"
   | FieldAccess (e, field) -> string_of_expr e ^ "." ^ field
+  | StructInit (name, inits) ->
+      let fmt_init (f, e) = f ^ " = " ^ string_of_expr e in
+      name ^ " With { " ^ String.concat ", " (List.map fmt_init inits) ^ " }"
 
 let rec string_of_stmt indent = function
   | Dim (v, dt, opt_e) -> 
@@ -83,5 +86,13 @@ let string_of_def = function
       let as_clause = if rt = Nothing then "" else " As " ^ string_of_dt rt in
       let pl = String.concat ", " (List.map (fun (m, n, t) -> string_of_pmode m ^ " " ^ n ^ " As " ^ string_of_dt t) params) in
       prefix ^ keyword ^ name ^ "(" ^ pl ^ ")" ^ as_clause ^ "\n" ^ string_of_block "  " body ^ "End " ^ keyword ^ "\n"
+    | ExternDecl (is_public, name, params, rt, is_variadic) ->
+      let prefix = if is_public then "Public " else "" in
+      let keyword = if rt = Nothing then "Sub " else "Function " in
+      let as_clause = if rt = Nothing then "" else " As " ^ string_of_dt rt in
+      let param_strs = List.map (fun (m, n, t) -> string_of_pmode m ^ " " ^ n ^ " As " ^ string_of_dt t) params in
+      let param_strs = if is_variadic then param_strs @ ["..."] else param_strs in
+      let pl = String.concat ", " param_strs in
+      prefix ^ "Declare " ^ keyword ^ name ^ "(" ^ pl ^ ")" ^ as_clause ^ "\n"
 
 let print_program prog = String.concat "\n" (List.map string_of_def prog)
