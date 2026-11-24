@@ -15,10 +15,12 @@ verbose-lang/
 ├── prototype.vb                # Scratch prototype
 ├── makefile                    # Build, run, test, install, and dist targets
 ├── FEATURES.md                 # Full list of implemented language & compiler features
+├── TEST.md                     # Built-in testing guide (verbose test, writing tests, C linking)
 ├── FLAGS.md                    # Compiler command-line interface flags & options reference
 ├── LAYOUT.md                   # Repository directory and file structure reference
 ├── STATE.md                    # Detailed technical state & verification metrics
-├── TODO.md                     # Active roadmap & completed milestones
+├── TODO.md                     # Active roadmap & future extensions
+├── LOGS.md                     # Completed tasks & milestone history
 └── README.md                   # Project overview, quick taste, and getting started
 ```
 

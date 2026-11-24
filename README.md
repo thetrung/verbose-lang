@@ -160,7 +160,7 @@ make
 make install          # or: make install PREFIX=$HOME/.local
 make dist             # builds stripped platform binary in dist/ + dist/SHA256SUMS.txt
 
-# Run pure-VerBose test suites (zero Python!)
+# Run pure-VerBose test suites (zero Python!) — see TEST.md for full testing & C-linking guide
 make test             # runs ./verbose test
 make test-all         # Full pipeline: Stage 1-3 build fixpoint + make test
 ```
@@ -182,11 +182,12 @@ All implemented language, memory, FFI, standard library, compiler, and tooling f
 - Bootstrap minimally and stay 100% self-hosted.
 - Human-readable, brace-free, VisualBasic-inspired syntax that fits in your head.
 - Case-sensitive to eliminate C/DLL `Alias` boilerplate.
-- Fast as C/Rust with zero GC, native C-interop, and deterministic memory (`Arena`, `Static`, `Heap`, raw `Pointer`).
+- Fast as C/Rust with zero GC, native C-interop.
+- Deterministic memory (`Arena`, `Static`, `Heap`, raw `Pointer`).
 - Portable across LLVM targets — Linux (x86-64, arm64), macOS (arm64), Windows (x86-64), and bare-metal 32-bit ARM-M microcontrollers.
 
 ---
 
 ## Roadmap
 
-See **[TODO.md](TODO.md)** for the active roadmap and completed milestones.
+See **[TODO.md](TODO.md)** for the active roadmap and future extensions, and **[LOGS.md](LOGS.md)** for completed tasks and milestone history.
