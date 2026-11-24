@@ -36,6 +36,10 @@ let ret_types   = Hashtbl.create 50
 let local_types = Hashtbl.create 50
 let local_ast_types : (string, data_type) Hashtbl.t = Hashtbl.create 50
 let indirect_arrays : (string, bool) Hashtbl.t = Hashtbl.create 16
+let global_ast_types : (string, data_type) Hashtbl.t = Hashtbl.create 32
+let global_indirect_arrays : (string, bool) Hashtbl.t = Hashtbl.create 16
+let static_counter : int ref = ref 0
+let current_func_name : string ref = ref ""
 (* Enum Values  *)
 let enum_values = Hashtbl.create 50
 
@@ -177,6 +181,85 @@ let emit_store_typed ctx expected_dt v dt_str target_ptr =
       emit ctx (Printf.sprintf "  store %s %s, ptr %s, align %d" expected_dt_str v target_ptr align)
   end
 
+let lookup_var ctx name =
+  if Hashtbl.mem ctx.variables name then
+    let reg = Hashtbl.find ctx.variables name in
+    let dt =
+      match Hashtbl.find_opt local_ast_types name with
+      | Some d -> d
+      | None ->
+          if Hashtbl.mem var_types name then Custom (Hashtbl.find var_types name)
+          else Int
+    in
+    Some (reg, dt, Hashtbl.mem indirect_arrays name)
+  else if Hashtbl.mem global_ast_types name then
+    Some ("@" ^ name, Hashtbl.find global_ast_types name, Hashtbl.mem global_indirect_arrays name)
+  else
+    None
+
+let zero_llvm_value = function
+  | Int | Byte | Short | Long -> "0"
+  | Single | Double -> "0.0"
+  | Boolean -> "false"
+  | Pointer | Array (_, -1) -> "null"
+  | Custom name when Hashtbl.mem enum_values (name ^ "._is_enum") -> "0"
+  | Custom _ | Array _ -> "zeroinitializer"
+  | Nothing -> "0"
+
+let rec const_llvm_value ctx dt = function
+  | None -> zero_llvm_value dt
+  | Some expr ->
+      (match dt, expr with
+       | Pointer, IntLit 0 -> "null"
+       | Array (_, -1), IntLit 0 -> "null"
+       | (Int | Byte | Short | Long), IntLit i -> string_of_int i
+       | Custom name, IntLit i when Hashtbl.mem enum_values (name ^ "._is_enum") -> string_of_int i
+       | Single, FloatLit f ->
+           let f32 = Int32.float_of_bits (Int32.bits_of_float f) in
+           Printf.sprintf "0x%016LX" (Int64.bits_of_float f32)
+       | Double, FloatLit f -> string_of_float f
+       | Boolean, BooleanLit b -> if b then "true" else "false"
+       | Pointer, StringLit s ->
+           incr static_counter;
+           let global_reg = Printf.sprintf "@.str_g_%d" !static_counter in
+           let len = String.length s + 1 in
+           let decl = Printf.sprintf "%s = private unnamed_addr constant [%d x i8] c\"%s\\00\", align 1"
+                        global_reg len s in
+           ctx.globals <- decl :: ctx.globals;
+           global_reg
+       | (Int | Byte | Short | Long | Custom _), FieldAccess (Id ename, mname)
+         when Hashtbl.mem enum_values (ename ^ "." ^ mname) ->
+           string_of_int (Hashtbl.find enum_values (ename ^ "." ^ mname))
+       | Array (elem_dt, n), ArrayLit elems when n > 0 ->
+           if List.length elems > n then
+             raise (Error (Printf.sprintf "Static array initializer has %d elements, exceeding size %d"
+                             (List.length elems) n));
+           let elem_llvm = string_of_dt elem_dt in
+           let rendered = List.map (fun e -> elem_llvm ^ " " ^ const_llvm_value ctx elem_dt (Some e)) elems in
+           let pad_count = n - List.length elems in
+           let pads = List.init pad_count (fun _ -> elem_llvm ^ " " ^ zero_llvm_value elem_dt) in
+           "[" ^ String.concat ", " (rendered @ pads) ^ "]"
+       | Custom sn, StructInit (init_sn, inits) when Hashtbl.mem struct_fields sn ->
+           if sn <> init_sn then
+             raise (Error (Printf.sprintf "Static struct type mismatch: expected '%s', got '%s'" sn init_sn));
+           let field_types = Hashtbl.find struct_field_types sn in
+           let seen = Hashtbl.create (List.length inits) in
+           List.iter (fun (fname, _) ->
+             if Hashtbl.mem seen fname then
+               raise (Error (Printf.sprintf "Duplicate field '%s' in '%s' With initializer" fname sn));
+             if not (List.mem_assoc fname field_types) then
+               raise (Error (Printf.sprintf "Structure '%s' has no field named '%s'" sn fname));
+             Hashtbl.add seen fname ()
+           ) inits;
+           let rendered = List.map (fun (fname, fdt) ->
+             let f_llvm = string_of_dt fdt in
+             let f_val = const_llvm_value ctx fdt (List.assoc_opt fname inits) in
+             f_llvm ^ " " ^ f_val
+           ) field_types in
+           "{ " ^ String.concat ", " rendered ^ " }"
+       | _ ->
+           raise (Error "Static variable initializer must be a compile-time constant"))
+
 (* Inside your main compilation driver function tracking definitions *)
 let compile_enum_definition enum_name members =
   Hashtbl.add enum_values (enum_name ^ "._is_enum") 1; (* 👈 Anchor tag for identification *)
@@ -203,40 +286,25 @@ let rec codegen_expr ctx = function
       (global_reg, "ptr")
 
    | Id name ->
-    if Hashtbl.mem ctx.variables name then
-      let alloca_reg = Hashtbl.find ctx.variables name in
-      match Hashtbl.find_opt local_ast_types name with
-      | Some dt when is_aggregate_dt dt ->
-          (alloca_reg, "ptr")
-      | Some (Array (_, -1)) ->
-          if Hashtbl.mem indirect_arrays name then begin
-            let res_reg = next_reg ctx in
-            emit ctx (Printf.sprintf "  %s = load ptr, ptr %s, align 8" res_reg alloca_reg);
-            (res_reg, "ptr")
-          end else
-            (alloca_reg, "ptr")
-      | Some dt ->
-          let t_str = string_of_dt dt in
-          let align = max 1 (get_type_align dt) in
-          let res_reg = next_reg ctx in
-          emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align %d" res_reg t_str alloca_reg align);
-          (res_reg, t_str)
-      | None ->
-          let res_reg = next_reg ctx in
-          let t_str =
-            if Hashtbl.mem var_types name then
-              Printf.sprintf "%%struct.%s" (Hashtbl.find var_types name)
-            else if name = "buffer" || name = "fileHandle" then "ptr"
-            else Hashtbl.find local_types name
-          in
-          if Hashtbl.mem var_types name then
-            (alloca_reg, "ptr")
-          else begin
-            emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align 4" res_reg t_str alloca_reg);
-            (res_reg, t_str)
-          end
-    else
-      raise (Error ("Undefined variable reference: " ^ name))
+    (match lookup_var ctx name with
+     | Some (alloca_reg, dt, is_indirect) ->
+         (match dt with
+          | d when is_aggregate_dt d -> (alloca_reg, "ptr")
+          | Array (_, -1) ->
+              if is_indirect then begin
+                let res_reg = next_reg ctx in
+                emit ctx (Printf.sprintf "  %s = load ptr, ptr %s, align 8" res_reg alloca_reg);
+                (res_reg, "ptr")
+              end else
+                (alloca_reg, "ptr")
+          | d ->
+              let t_str = string_of_dt d in
+              let align = max 1 (get_type_align d) in
+              let res_reg = next_reg ctx in
+              emit ctx (Printf.sprintf "  %s = load %s, ptr %s, align %d" res_reg t_str alloca_reg align);
+              (res_reg, t_str))
+     | None ->
+         raise (Error ("Undefined variable reference: " ^ name)))
 
  
   | FieldAccess (base_expr, field_name) ->
@@ -404,6 +472,51 @@ let rec codegen_expr ctx = function
       ) inits;
       (alloca_reg, "ptr")
 
+  | SizeOf dt ->
+      (string_of_int (get_type_size dt), "i32")
+
+  | HeapAlloc (dt, count_expr) ->
+      let elem_size = get_type_size dt in
+      if elem_size <= 0 then
+        raise (Error "HeapAlloc requires a non-empty element type");
+      let count64 = widen_index_to_i64 ctx count_expr in
+      let res_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = call ptr @calloc(i64 %s, i64 %d)" res_reg count64 elem_size);
+      (res_reg, "ptr")
+
+  | HeapRealloc (ptr_expr, dt, count_expr) ->
+      let elem_size = get_type_size dt in
+      if elem_size <= 0 then
+        raise (Error "HeapRealloc requires a non-empty element type");
+      let pv, pt = codegen_expr ctx ptr_expr in
+      if pt <> "ptr" then
+        raise (Error ("HeapRealloc expects a Pointer or heap array, got " ^ pt));
+      let count64 = widen_index_to_i64 ctx count_expr in
+      let bytes_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = mul i64 %s, %d" bytes_reg count64 elem_size);
+      let res_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = call ptr @realloc(ptr %s, i64 %s)" res_reg pv bytes_reg);
+      (res_reg, "ptr")
+
+  | Call ("HeapAllocBytes", [(ByVal, size_expr)]) ->
+      let size64 = widen_index_to_i64 ctx size_expr in
+      let res_reg = next_reg ctx in
+      emit ctx (Printf.sprintf "  %s = call ptr @calloc(i64 1, i64 %s)" res_reg size64);
+      (res_reg, "ptr")
+
+  | Call ("HeapAllocBytes", _) ->
+      raise (Error "HeapAllocBytes() expects exactly one ByVal byte-count argument")
+
+  | Call ("HeapFree", [(ByVal, ptr_expr)]) ->
+      let pv, pt = codegen_expr ctx ptr_expr in
+      if pt <> "ptr" then
+        raise (Error ("HeapFree expects a Pointer or heap array, got " ^ pt));
+      emit ctx (Printf.sprintf "  call void @free(ptr %s)" pv);
+      ("", "void")
+
+  | Call ("HeapFree", _) ->
+      raise (Error "HeapFree() expects exactly one ByVal pointer/array argument")
+
   | Call ("Len", [(ByVal, arg_expr)]) ->
       let _, dt = get_lvalue_ptr ctx arg_expr in
       (match dt with
@@ -477,16 +590,14 @@ let rec codegen_expr ctx = function
         let eval_byref_arg arg_expr =
           match arg_expr with
           | Id var_name ->
-              if Hashtbl.mem ctx.variables var_name then
-                let reg = Hashtbl.find ctx.variables var_name in
-                if Hashtbl.mem indirect_arrays var_name then begin
-                  let loaded = next_reg ctx in
-                  emit ctx (Printf.sprintf "  %s = load ptr, ptr %s, align 8" loaded reg);
-                  (loaded, "ptr")
-                end else
-                  (reg, "ptr")
-              else
-                raise (Error ("Undefined variable reference for ByRef argument: " ^ var_name))
+              (match lookup_var ctx var_name with
+               | Some (reg, _, true) ->
+                   let loaded = next_reg ctx in
+                   emit ctx (Printf.sprintf "  %s = load ptr, ptr %s, align 8" loaded reg);
+                   (loaded, "ptr")
+               | Some (reg, _, false) -> (reg, "ptr")
+               | None ->
+                   raise (Error ("Undefined variable reference for ByRef argument: " ^ var_name)))
           | FieldAccess _ | IndexAccess _ ->
               let lval_ptr, _ = get_lvalue_ptr ctx arg_expr in
               (lval_ptr, "ptr")
@@ -569,18 +680,9 @@ and widen_index_to_i64 ctx idx_expr =
 
 and get_lvalue_ptr ctx = function
   | Id name ->
-      if Hashtbl.mem ctx.variables name then
-        let base_ptr = Hashtbl.find ctx.variables name in
-        let dt =
-          match Hashtbl.find_opt local_ast_types name with
-          | Some d -> d
-          | None ->
-              if Hashtbl.mem var_types name then Custom (Hashtbl.find var_types name)
-              else Int
-        in
-        (base_ptr, dt)
-      else
-        raise (Error ("Undefined variable base identifier: " ^ name))
+      (match lookup_var ctx name with
+       | Some (base_ptr, dt, _) -> (base_ptr, dt)
+       | None -> raise (Error ("Undefined variable base identifier: " ^ name)))
 
   | FieldAccess (sub_expr, field_name) ->
       let parent_ptr, parent_dt = get_lvalue_ptr ctx sub_expr in
@@ -617,10 +719,13 @@ and get_lvalue_ptr ctx = function
         | Array (elem_dt, -1) ->
             let raw_ptr =
               match base_expr with
-              | Id var_name when Hashtbl.mem indirect_arrays var_name ->
-                  let p = next_reg ctx in
-                  emit ctx (Printf.sprintf "  %s = load ptr, ptr %s, align 8" p base_ptr);
-                  p
+              | Id var_name ->
+                  (match lookup_var ctx var_name with
+                   | Some (_, _, true) ->
+                       let p = next_reg ctx in
+                       emit ctx (Printf.sprintf "  %s = load ptr, ptr %s, align 8" p base_ptr);
+                       p
+                   | _ -> base_ptr)
               | _ -> base_ptr
             in
             let elem_llvm = string_of_dt elem_dt in
@@ -717,26 +822,34 @@ let rec codegen_stmt ctx = function
              emit_store_typed ctx effective_dt v t alloca_reg
          | None -> ()))
 
+  | StaticDim (name, dt, opt_exp) ->
+      (match dt with
+       | Array (_, n) when n <> -1 && n <= 0 ->
+           raise (Error ("Array size must be greater than 0 for '" ^ name ^ "'"))
+       | _ -> ());
+      incr static_counter;
+      let sym = Printf.sprintf "@__static_%s_%s_%d" !current_func_name name !static_counter in
+      let llvm_dt = string_of_dt dt in
+      let init_str = const_llvm_value ctx dt opt_exp in
+      let decl = Printf.sprintf "%s = internal global %s %s, align 8" sym llvm_dt init_str in
+      ctx.globals <- decl :: ctx.globals;
+      Hashtbl.replace ctx.variables name sym;
+      Hashtbl.replace local_types name llvm_dt;
+      Hashtbl.replace local_ast_types name dt;
+      (match dt with
+       | Array (_, -1) -> Hashtbl.replace indirect_arrays name true
+       | Custom sn when Hashtbl.mem struct_fields sn -> Hashtbl.replace var_types name sn
+       | _ -> ())
+
   | Assign (name, exp) ->
-      if Hashtbl.mem ctx.variables name then
-        let alloca_reg = Hashtbl.find ctx.variables name in
-        let v, t = codegen_expr ctx exp in
-        match Hashtbl.find_opt local_ast_types name with
-        | Some (Array (_, -1)) ->
-            emit_store_typed ctx Pointer v t alloca_reg
-        | Some expected_dt ->
-            emit_store_typed ctx expected_dt v t alloca_reg
-        | None ->
-            if Hashtbl.mem var_types name then begin
-              let struct_name = Hashtbl.find var_types name in
-              let byte_size = get_struct_size struct_name in
-              emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)"
-                         alloca_reg v byte_size)
-            end else if Hashtbl.mem local_types name then
-              emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" t v alloca_reg)
-            else raise(Error ("Can't find local type " ^ name))
-      else
-        raise (Error ("Assignment target undefined: " ^ name))
+      (match lookup_var ctx name with
+       | Some (alloca_reg, expected_dt, _) ->
+           let v, t = codegen_expr ctx exp in
+           (match expected_dt with
+            | Array (_, -1) -> emit_store_typed ctx Pointer v t alloca_reg
+            | _ -> emit_store_typed ctx expected_dt v t alloca_reg)
+       | None ->
+           raise (Error ("Assignment target undefined: " ^ name)))
 
   | FieldAssign (base_expr, field_name, value_expr) ->
       let v, dt_str = codegen_expr ctx value_expr in
@@ -904,6 +1017,7 @@ let codegen_def ctx = function
 
   | FuncDef (is_public, name, params, ret_type, body) ->
       (* Clear local registers and variable tables before processing each unique function body *)
+      current_func_name := name;
       Hashtbl.clear ctx.variables;
       Hashtbl.clear local_types;
       Hashtbl.clear local_ast_types;
@@ -987,6 +1101,7 @@ let codegen_def ctx = function
 
   | Structure (is_public, name, _)  -> Hashtbl.add visibility_table name is_public;
   | EnumDef (is_public, name, _)    -> Hashtbl.add visibility_table name is_public
+  | GlobalVar (is_public, name, _, _) -> Hashtbl.replace visibility_table name is_public
   | ExternDecl _                    -> ()
 
 (* Global Pass Registrar to define metadata structures cleanly *)
@@ -1005,6 +1120,14 @@ let register_definition ctx = function
         let lookup_key = enum_name ^ "." ^ member_name in
         Hashtbl.add enum_values lookup_key value
       ) members
+
+  | GlobalVar (_, name, dt, _) ->
+      (match dt with
+       | Array (_, n) when n <> -1 && n <= 0 ->
+           raise (Error ("Array size must be greater than 0 for '" ^ name ^ "'"))
+       | Array (_, -1) -> Hashtbl.replace global_indirect_arrays name true
+       | _ -> ());
+      Hashtbl.replace global_ast_types name dt
       
   | FuncDef (_, name, params, ret_type, _) ->
       Hashtbl.replace ret_types name (string_of_dt ret_type);
@@ -1041,6 +1164,10 @@ let generate_program prog =
   Hashtbl.clear local_types;
   Hashtbl.clear local_ast_types;
   Hashtbl.clear indirect_arrays;
+  Hashtbl.clear global_ast_types;
+  Hashtbl.clear global_indirect_arrays;
+  static_counter := 0;
+  current_func_name := "";
   Hashtbl.clear enum_values;
   
   (* Step 0: Populate structural metadata indices first *)
@@ -1052,6 +1179,17 @@ let generate_program prog =
         let field_types_joined = String.concat ", " (List.map (fun (_, dt) -> string_of_dt dt) fields) in
         let struct_decl = Printf.sprintf "%%struct.%s = type { %s }" name field_types_joined in
         ctx.globals <- struct_decl :: ctx.globals
+    | _ -> ()
+  ) prog;
+
+  (* Step 1.5: Emit module-level Static global variables *)
+  List.iter (function
+    | GlobalVar (is_public, name, dt, opt_exp) ->
+        let linkage = if is_public then "" else "internal " in
+        let llvm_dt = string_of_dt dt in
+        let init_str = const_llvm_value ctx dt opt_exp in
+        let g_decl = Printf.sprintf "@%s = %sglobal %s %s, align 8" name linkage llvm_dt init_str in
+        ctx.globals <- g_decl :: ctx.globals
     | _ -> ()
   ) prog;
   
@@ -1068,12 +1206,14 @@ let generate_program prog =
   
   (* Standard C Library default declarations (skipped if overridden by user Declare) *)
   let builtin_externs = [
-    ("printf", "declare i32 @printf(ptr, ...)");
-    ("malloc", "declare ptr @malloc(i32)");
-    ("free",   "declare void @free(ptr)");
-    ("fopen",  "declare ptr @fopen(ptr, ptr)");
-    ("getc",   "declare i32 @getc(ptr)");
-    ("putc",   "declare i32 @putc(i32, ptr)");
+    ("printf",  "declare i32 @printf(ptr, ...)");
+    ("malloc",  "declare ptr @malloc(i32)");
+    ("calloc",  "declare ptr @calloc(i64, i64)");
+    ("realloc", "declare ptr @realloc(ptr, i64)");
+    ("free",    "declare void @free(ptr)");
+    ("fopen",   "declare ptr @fopen(ptr, ptr)");
+    ("getc",    "declare i32 @getc(ptr)");
+    ("putc",    "declare i32 @putc(i32, ptr)");
   ] in
   List.iter (fun (fname, decl) ->
     if not (Hashtbl.mem extern_decls fname) then emit_header decl

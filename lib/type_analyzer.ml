@@ -163,6 +163,15 @@ let rec type_of_expr env = function
            List.iter (fun e -> ignore (type_of_expr env e)) rest;
            Array (et, List.length elems))
 
+  | SizeOf _ -> Int
+  | HeapAlloc (dt, count) ->
+      ignore (type_of_expr env count);
+      Array (dt, -1)
+  | HeapRealloc (p, dt, count) ->
+      ignore (type_of_expr env p);
+      ignore (type_of_expr env count);
+      Array (dt, -1)
+
 
 let rec check_stmt env = function
 
@@ -185,6 +194,10 @@ let rec check_stmt env = function
         
         Hashtbl.add env.locals name expected_dt
       | None -> ());
+
+  | StaticDim (name, expected_dt, opt_expr) ->
+      (match opt_expr with Some e -> ignore (type_of_expr env e) | None -> ());
+      Hashtbl.replace env.locals name expected_dt
 
   (* ✅ Added old structural handlers to clear the pattern warning completely *)
   | Assign (name, expr) ->
@@ -260,6 +273,7 @@ let analyze_program prog =
   List.iter (function
     | Structure (_, name, fields) -> Hashtbl.add env.structs name fields
     | EnumDef (_, name, members) -> Hashtbl.add env.enums name (List.map fst members)
+    | GlobalVar (_, name, dt, _) -> Hashtbl.replace env.locals name dt
     | FuncDef (_, name, params, ret_type, _) ->
         let param_specs = List.map (fun (m, _, t) -> (m, t)) params in
         Hashtbl.add env.functions name (param_specs, ret_type)

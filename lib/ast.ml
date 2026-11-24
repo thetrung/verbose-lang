@@ -37,9 +37,13 @@ type expr =
   | IndexAccess of expr * expr      (* arr[i] *)
   | ArrayLit of expr list           (* [1, 2, 3] *)
   | StructInit of string * (string * expr) list (* Vector With { x = 1.0, y = 2.0 } *)
+  | SizeOf of data_type             (* SizeOf(Point) *)
+  | HeapAlloc of data_type * expr   (* HeapAlloc(Integer, 10) *)
+  | HeapRealloc of expr * data_type * expr (* HeapRealloc(arr, Integer, 20) *)
   
 type stmt =
   | Dim of string * data_type * expr option
+  | StaticDim of string * data_type * expr option (* function-local persistent Static *)
   | Assign of string * expr
   | AssignExpr of expr * expr 
   | FieldAssign of expr * string * expr (* 🆕 Added for field assignment: e.g., t.Kind = 5 *)
@@ -60,6 +64,7 @@ type stmt =
 type definition =
   | Structure of bool * string * (string * data_type) list (* added bool flag *)
   | EnumDef of bool * string * (string * int) list
+  | GlobalVar of bool * string * data_type * expr option   (* module-level Static global *)
   | FuncDef of bool * string * (param_mode * string * data_type) list * data_type * stmt list
   | ExternDecl of bool * string * (param_mode * string * data_type) list * data_type * bool (* vis, name, params, ret, is_variadic *)
 
