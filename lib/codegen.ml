@@ -19,8 +19,8 @@ let create_context () = {
   variables = Hashtbl.create 50;
   globals = [];
 }
-(* Track reference pointers *)
-let byref_params  : (string, bool) Hashtbl.t = Hashtbl.create 16
+(* Track per-function parameter passing modes (ByVal / ByRef) *)
+let func_param_modes : (string, param_mode list) Hashtbl.t = Hashtbl.create 32
 (* Track visibility of structures/enums *)
 let visibility_table : (string, bool) Hashtbl.t = Hashtbl.create 16
 (* Struct Field/Type  *)
@@ -283,8 +283,32 @@ let rec codegen_expr ctx = function
         ) args;
         (alloca_reg, "ptr")
       end else begin
-        (* Keep your standard external runtime fallback function calls logic exactly the same *)
-        let evaluated_args = List.map (codegen_expr ctx) args in
+        (* Evaluate call arguments respecting callee ByRef/ByVal parameter modes *)
+        let param_modes = Hashtbl.find_opt func_param_modes name in
+        let is_byref_arg idx =
+          match param_modes with
+          | Some modes ->
+              (match List.nth_opt modes idx with
+               | Some ByRef -> true
+               | _ -> false)
+          | None -> false
+        in
+        let evaluated_args = List.mapi (fun idx arg_expr ->
+          if is_byref_arg idx then
+            match arg_expr with
+            | Id var_name ->
+                if Hashtbl.mem ctx.variables var_name then
+                  (Hashtbl.find ctx.variables var_name, "ptr")
+                else
+                  raise (Error ("Undefined variable reference for ByRef argument: " ^ var_name))
+            | FieldAccess _ ->
+                let field_ptr, _ = get_field_pointer ctx arg_expr in
+                (field_ptr, "ptr")
+            | _ ->
+                raise (Error "ByRef argument must be a variable or struct field")
+          else
+            codegen_expr ctx arg_expr
+        ) args in
         let arg_strs = List.map (fun (v, t) -> 
           let checked_type = if name = "free" then "ptr" else t in
           checked_type ^ " " ^ v) evaluated_args in
@@ -337,7 +361,7 @@ and get_field_pointer ctx = function
       
       (* 5. Crucial step: Return the child structure name string as the type identifier *)
       (match actual_dt with
-       | Custom child_struct -> (field_ptr, child_struct)
+       | Custom child_struct when Hashtbl.mem struct_fields child_struct -> (field_ptr, child_struct)
        | _ -> (field_ptr, string_of_dt actual_dt))
 
   | _ -> raise (Error "LHS evaluation expects an explicit identifier or nested property pathway")
@@ -413,37 +437,19 @@ let rec codegen_stmt ctx = function
         raise (Error ("Assignment target undefined: " ^ name))
 
   | FieldAssign (base_expr, field_name, value_expr) ->
-      let v, dt_str = codegen_expr ctx value_expr in 
-      let base_ptr, _ = codegen_expr ctx base_expr in
-      
-      let struct_name = match base_expr with
-        | Id name -> Hashtbl.find var_types name
-        | _ -> raise (Error "Field adjustments require an explicit instance identifier")
-      in
-      let fields = Hashtbl.find struct_fields struct_name in
-      let field_index = List.assoc field_name fields in
-      let field_types = Hashtbl.find struct_field_types struct_name in
-      let actual_dt = List.assoc field_name field_types in
-      
-      let field_ptr = next_reg ctx in
-      let struct_type_str = Printf.sprintf "%%struct.%s" struct_name in
-      emit ctx (Printf.sprintf "  %s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d" 
-                 field_ptr struct_type_str base_ptr field_index);
-      
-      (* ✅ FIXED: If the destination field is an embedded struct, issue a block memory copy *)
-      (match actual_dt with
-       | Custom child_struct_name when Hashtbl.mem struct_fields child_struct_name ->
-           let byte_size = get_struct_size child_struct_name in
-           emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)" 
-                      field_ptr v byte_size)
-       | _ ->
-           let expected_dt_str = string_of_dt actual_dt in
-           if expected_dt_str = "ptr" && dt_str = "i32" then begin
-             let cast_reg = next_reg ctx in
-             emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
-             emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 4" cast_reg field_ptr)
-           end else
-             emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" expected_dt_str v field_ptr))
+      let v, dt_str = codegen_expr ctx value_expr in
+      let field_ptr, target_type = get_field_pointer ctx (FieldAccess(base_expr, field_name)) in
+      if Hashtbl.mem struct_fields target_type then begin
+        let byte_size = get_struct_size target_type in
+        emit ctx (Printf.sprintf "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %s, ptr align 8 %s, i64 %d, i1 false)"
+                   field_ptr v byte_size)
+      end else if target_type = "ptr" && dt_str = "i32" then begin
+        let cast_reg = next_reg ctx in
+        emit ctx (Printf.sprintf "  %s = inttoptr i32 %s to ptr" cast_reg v);
+        emit ctx (Printf.sprintf "  store ptr %s, ptr %s, align 4" cast_reg field_ptr)
+      end else begin
+        emit ctx (Printf.sprintf "  store %s %s, ptr %s, align 4" target_type v field_ptr)
+      end
 
   | AssignExpr (lhs_expr, rhs_expr) ->
       let rhs_val, rhs_type = codegen_expr ctx rhs_expr in
@@ -609,6 +615,7 @@ let codegen_def ctx = function
       (* Clear local registers and variable tables before processing each unique function body *)
       Hashtbl.clear ctx.variables;
       Hashtbl.clear local_types;
+      Hashtbl.clear var_types;
       ctx.reg_counter <- 1;
 
       (* 1. Structure function signature strings: System structs or ByRef require a direct 'ptr' *)
@@ -690,10 +697,20 @@ let register_definition ctx = function
         Hashtbl.add enum_values lookup_key value
       ) members
       
-  | FuncDef (_, _, _, _, _) -> ()
+  | FuncDef (_, name, params, ret_type, _) ->
+      Hashtbl.replace ret_types name (string_of_dt ret_type);
+      Hashtbl.replace func_param_modes name (List.map (fun (mode, _, _) -> mode) params)
 
 let generate_program prog =
   let ctx = create_context () in
+  Hashtbl.clear func_param_modes;
+  Hashtbl.clear visibility_table;
+  Hashtbl.clear struct_fields;
+  Hashtbl.clear struct_field_types;
+  Hashtbl.clear var_types;
+  Hashtbl.clear ret_types;
+  Hashtbl.clear local_types;
+  Hashtbl.clear enum_values;
   
   (* Step 0: Populate structural metadata indices first *)
   List.iter (register_definition ctx) prog;
