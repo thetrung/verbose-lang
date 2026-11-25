@@ -126,12 +126,18 @@ See **[LAYOUT.md](LAYOUT.md)** for the complete repository structure and directo
 
 ## Usage
 
-**Prerequisites**: `clang` (LLVM 19+ recommended) and `curl` (only if bootstrapping without an existing `verbose` binary). Prebuilt native binaries for **Linux x86-64**, **Linux arm64**, **macOS arm64**, and **Windows x86-64** are published on [GitHub Releases](https://github.com/thetrung/verbose-lang/releases/latest). No OCaml or Python required!
+**Prerequisites**: `clang` (LLVM 19+ recommended). No prebuilt binary, network access, OCaml, or Python required — the repository includes a target-neutral `verbose.ll` for offline bootstrapping via `make bootstrap`! Prebuilt native binaries for **Linux x86-64**, **Linux arm64**, **macOS arm64**, and **Windows x86-64** are also published on [GitHub Releases](https://github.com/thetrung/verbose-lang/releases/latest).
 
 ```bash
+# Cold-bootstrap ./verbose directly from checked-in verbose.ll using clang only (Stage 1 -> Stage 2 -> Stage 3 fixpoint)
+make bootstrap
+
 # Build & verify the self-hosted compiler (./verbose) via Stage 1 -> Stage 2 -> Stage 3 fixpoint
-# Uses existing ./verbose, `verbose` in PATH, BOOTSTRAP=/path/to/verbose, or downloads the latest GitHub Release binary
+# Uses existing ./verbose, `verbose` in PATH, BOOTSTRAP=/path/to/verbose, checked-in verbose.ll, or latest GitHub Release
 make build
+
+# Refresh checked-in target-neutral verbose.ll after compiler changes
+make bootstrap-ir
 
 # Compile and execute any .vb file with a main() function (default mode)
 ./verbose your_file.vb

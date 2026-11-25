@@ -12,7 +12,8 @@ verbose-lang/
 │   ├── math.vb                 # Pure-VerBose math routines & constants (trig, exp/ln, sqrt, pow, abs, gcd)
 │   └── strings.vb              # String manipulation, StrView, and StrBuilder utilities (Str*, Sb*)
 ├── tests/                      # Pure-VerBose Test/Assert suites, regression cases & Raylib 5.x demo (tests/raylib/)
-├── makefile                    # Build, run, test, install, and dist targets
+├── verbose.ll                  # Checked-in target-neutral LLVM IR for offline cold bootstrap (`make bootstrap`)
+├── makefile                    # Build, bootstrap, bootstrap-ir, run, test, install, and dist targets
 ├── FEATURES.md                 # Full list of implemented language & compiler features
 ├── TEST.md                     # Built-in testing guide (verbose test, writing tests, C linking)
 ├── FLAGS.md                    # Compiler command-line interface flags & options reference

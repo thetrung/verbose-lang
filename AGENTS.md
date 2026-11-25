@@ -37,7 +37,9 @@ All pure VerBose, zero-GC, Arena-backed:
 ## Build, Bootstrap & Test Commands
 
 ```bash
+make bootstrap                            # Cold-bootstrap ./verbose from checked-in verbose.ll via clang + Stage 1->2->3 fixpoint
 make build                                # Stage 1 -> 2 -> 3 fixpoint (diff verbose2.ll verbose3.ll) + bootstrap_suite.vb
+make bootstrap-ir                         # Regenerate checked-in target-neutral verbose.ll from ./verbose
 make test                                 # Run all 23 pure-VerBose suites (./verbose test)
 make test-all                             # Full fixpoint build + all tests
 ./verbose test tests/test_<name>.vb       # Run a single suite
@@ -60,7 +62,7 @@ make test-all                             # Full fixpoint build + all tests
 
 ## Hard Invariants & Gotchas
 
-1. **Bootstrap fixpoint safety**: `make build` must pass Stage 3 byte-for-byte (`verbose2.ll == verbose3.ll`). Never dogfood new syntax inside `src/` before bootstrapping a `./verbose` binary that parses it; if introducing a new syntax cut-point, update `BOOTSTRAP_CHAIN` in `makefile` (and CI/Release workflows).
+1. **Bootstrap fixpoint safety**: `make build` and `make bootstrap` must pass Stage 3 byte-for-byte (`verbose2.ll == verbose3.ll`). Never dogfood new syntax inside `src/` before bootstrapping a `./verbose` binary that parses it; refresh checked-in `verbose.ll` via `make bootstrap-ir` when updating compiler syntax/releases (and update `BOOTSTRAP_CHAIN` in `makefile` if adding a cut-point).
 2. **Multi-target & C ABI parity**: Any `codegen.vb` change must preserve pointer sizes (`4` on `arm-m`, `8` on 64-bit), all 4 C struct ABIs, C variadic promotions, and freestanding `arm-m` cleanliness (no unused host libc/`pthread` decls).
 3. **Pure stdlib & zero-script CI**: Keep `std/math.vb` free of `-lm`, `std/strings.vb` free of libc, and builds/tests/CI free of Python/OCaml.
 4. **Docs hygiene**: Update `FEATURES.md`, `FLAGS.md`, `LAYOUT.md`, `STATE.md`, `TODO.md`, `LOGS.md` (and the GitHub Wiki if language syntax/features change) when modifying compiler capabilities.

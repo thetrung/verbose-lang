@@ -4,5 +4,8 @@ dist
 /verbose1
 /verbose.new
 /.verbose.boot
-/verbose*.ll
+/.verbose.boot.ll
+/verbose1.ll
+/verbose2.ll
+/verbose3.ll
 src/*.ll

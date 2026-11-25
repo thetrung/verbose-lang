@@ -34,12 +34,36 @@ DIST_NAME := verbose-$(PLATFORM)$(EXE)
 RELEASE_URL ?= https://github.com/thetrung/verbose-lang/releases/latest/download/$(DIST_NAME)
 BOOTSTRAP_CHAIN ?= bc56415 c6d6f37
 
-.PHONY: default build run test test-all install uninstall dist clean
+.PHONY: default build bootstrap bootstrap-ir run test test-all install uninstall dist clean
 
 default: build run
 
+# Cold-bootstrap ./verbose from checked-in target-neutral verbose.ll using clang only (no existing binary or network needed)
+bootstrap:
+	@if [ ! -f ./verbose.ll ]; then \
+		echo "Error: ./verbose.ll not found. Run 'make build' or pass BOOTSTRAP=/path/to/verbose."; \
+		exit 1; \
+	fi
+	@echo "=== Cold bootstrap ($(PLATFORM)): compiling verbose.ll with clang ==="
+	@if [ "$(PLATFORM)" = "windows-x86_64" ]; then \
+		sed -e 's/@popen(/@_popen(/g' -e 's/@pclose(/@_pclose(/g' verbose.ll > ./.verbose.boot.ll; \
+		clang -O2 -Wno-override-module ./.verbose.boot.ll -o ./.verbose.boot$(EXE); \
+		rm -f ./.verbose.boot.ll; \
+	else \
+		clang -O2 -Wno-override-module verbose.ll -o ./.verbose.boot$(EXE); \
+	fi
+	@$(MAKE) build BOOTSTRAP=./.verbose.boot$(EXE)
+
+# Refresh the checked-in target-neutral verbose.ll bootstrap IR from ./verbose
+bootstrap-ir:
+	@if [ ! -x ./$(BIN) ]; then $(MAKE) build; fi
+	./$(BIN) --target linux-x86_64 src/verbose.vb --emit-only -o ./.verbose.boot.ll
+	grep -v '^target ' ./.verbose.boot.ll > verbose.ll
+	@rm -f ./.verbose.boot.ll
+	@echo "[OK] Updated target-neutral bootstrap IR at ./verbose.ll"
+
 # Build self-hosted ./verbose via Stage 1 -> Stage 2 -> Stage 3 fixpoint verification
-# Uses BOOTSTRAP if set, else existing ./verbose, else `verbose` in PATH, else downloads the latest release binary.
+# Uses BOOTSTRAP if set, else existing ./verbose, else `verbose` in PATH, else checked-in verbose.ll, else downloads the latest release binary.
 build:
 	@BOOT="$(BOOTSTRAP)"; \
 	if [ -n "$$BOOT" ] && [ -x "$$BOOT" ]; then \
@@ -51,6 +75,16 @@ build:
 	elif command -v verbose >/dev/null 2>&1; then \
 		BOOT="$$(command -v verbose)"; \
 		echo "=== Bootstrap compiler: $$BOOT (from PATH) ==="; \
+	elif [ -f ./verbose.ll ]; then \
+		echo "=== Bootstrap compiler: compiling checked-in verbose.ll ($(PLATFORM)) ==="; \
+		if [ "$(PLATFORM)" = "windows-x86_64" ]; then \
+			sed -e 's/@popen(/@_popen(/g' -e 's/@pclose(/@_pclose(/g' verbose.ll > ./.verbose.boot.ll; \
+			clang -O2 -Wno-override-module ./.verbose.boot.ll -o ./.verbose.boot$(EXE); \
+			rm -f ./.verbose.boot.ll; \
+		else \
+			clang -O2 -Wno-override-module verbose.ll -o ./.verbose.boot$(EXE); \
+		fi; \
+		BOOT="./.verbose.boot$(EXE)"; \
 	else \
 		echo "=== Downloading bootstrap compiler from $(RELEASE_URL) ==="; \
 		curl -fsSL "$(RELEASE_URL)" -o ./.verbose.boot$(EXE) || { \
@@ -89,7 +123,7 @@ build:
 	@echo "=== Stage 3 ($(PLATFORM)): Fixpoint check (verbose2.ll == verbose3.ll) ==="
 	./$(BIN) src/verbose.vb --emit-only -o verbose3.ll
 	diff -u verbose2.ll verbose3.ll && echo "[OK] Stage 3 self-hosting fixpoint verified (byte-for-byte identical)!"
-	@rm -f ./.verbose.boot ./.verbose.boot.exe verbose1 verbose1.exe src/verbose.ll verbose.ll verbose1.ll verbose2.ll verbose3.ll
+	@rm -f ./.verbose.boot ./.verbose.boot.exe ./.verbose.boot.ll verbose1 verbose1.exe src/verbose.ll verbose1.ll verbose2.ll verbose3.ll
 	@echo "=== Running Self-Hosting Feature Suite ==="
 	./$(BIN) test tests/bootstrap_suite.vb
 	@echo "[READY] Self-hosted compiler binary built at ./$(BIN)"
@@ -134,7 +168,7 @@ dist:
 
 clean:
 	rm -rf dist cross-ir \
-		verbose verbose.exe verbose1 verbose1.exe verbose.new .verbose.boot .verbose.boot.exe verbose*.ll src/*.ll \
+		verbose verbose.exe verbose1 verbose1.exe verbose.new .verbose.boot .verbose.boot.exe .verbose.boot.ll verbose1.ll verbose2.ll verbose3.ll src/*.ll \
 		$(TARGET).ll $(TARGET).s $(TARGET) $(TARGET).exe \
 		tests/raylib/bouncing_ball.ll tests/raylib/camera3d_demo.ll tests/raylib/raylib.ll tests/raylib/bouncing_ball tests/raylib/camera3d_demo
 	@for dir in tests/byref tests/syntax tests/arrays tests/static_heap tests/arena tests/type_analyzer tests/modules tests/c_interop; do \
