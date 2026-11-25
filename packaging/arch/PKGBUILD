@@ -1,0 +1,37 @@
+# Maintainer: thetrung <deulamco@gmail.com>
+pkgname=verbose-lang
+pkgver=0.6.1
+pkgrel=1
+pkgdesc="Brace-free, Visual Basic-inspired systems programming language compiled directly to LLVM IR"
+arch=('x86_64' 'aarch64')
+url="https://github.com/thetrung/verbose-lang"
+license=('MIT')
+depends=('clang' 'glibc')
+makedepends=('make' 'diffutils')
+provides=('verbose')
+conflicts=('verbose-lang-bin' 'verbose-lang-git')
+options=('!debug')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$pkgname-$pkgver"
+  make bootstrap
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  make test
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  make install DESTDIR="$pkgdir" PREFIX=/usr
+  install -d "$pkgdir/usr/share/$pkgname/std"
+  install -m 644 std/*.vb "$pkgdir/usr/share/$pkgname/std/"
+  install -Dm 644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm 644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm 644 FEATURES.md "$pkgdir/usr/share/doc/$pkgname/FEATURES.md"
+  install -Dm 644 FLAGS.md "$pkgdir/usr/share/doc/$pkgname/FLAGS.md"
+  install -Dm 644 TEST.md "$pkgdir/usr/share/doc/$pkgname/TEST.md"
+}

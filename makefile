@@ -34,7 +34,7 @@ DIST_NAME := verbose-$(PLATFORM)$(EXE)
 RELEASE_URL ?= https://github.com/thetrung/verbose-lang/releases/latest/download/$(DIST_NAME)
 BOOTSTRAP_CHAIN ?= bc56415 c6d6f37
 
-.PHONY: default build bootstrap bootstrap-ir run test test-all install uninstall dist clean
+.PHONY: default build bootstrap bootstrap-ir run test test-all install uninstall dist pkg-arch clean
 
 default: build run
 
@@ -165,6 +165,24 @@ dist:
 		cd dist && $(SHA_CMD) $(DIST_NAME) > SHA256SUMS.txt; \
 	fi
 	@ls -lh dist/
+
+# Build Arch Linux .pkg.tar.zst and pacman repo DB in packaging/arch/ from the current working tree
+pkg-arch:
+	@command -v makepkg >/dev/null 2>&1 || { echo "Error: makepkg not found (Arch Linux required)."; exit 1; }
+	@rm -rf packaging/arch/src packaging/arch/pkg packaging/arch/*.tar.* packaging/arch/verbose-lang.db* packaging/arch/verbose-lang.files*
+	@tar --exclude='.git' --exclude='dist' --exclude='cross-ir' \
+		--exclude='packaging/arch/src' --exclude='packaging/arch/pkg' --exclude='packaging/arch/*.tar.*' \
+		--exclude='./verbose' --exclude='./verbose.exe' --exclude='./verbose1' --exclude='./verbose1.exe' \
+		--transform="s,^\.,verbose-lang-$(VERSION)," \
+		-czf packaging/arch/verbose-lang-$(VERSION).tar.gz .
+	@cd packaging/arch && makepkg -f --skipchecksums
+	@if command -v repo-add >/dev/null 2>&1; then \
+		cd packaging/arch && repo-add verbose-lang.db.tar.gz verbose-lang-$(VERSION)-*.pkg.tar.zst && \
+		rm -f verbose-lang.db verbose-lang.files && \
+		cp verbose-lang.db.tar.gz verbose-lang.db && \
+		cp verbose-lang.files.tar.gz verbose-lang.files; \
+	fi
+	@ls -lh packaging/arch/verbose-lang-*.pkg.tar.zst
 
 clean:
 	rm -rf dist cross-ir \

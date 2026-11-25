@@ -158,12 +158,55 @@ jobs:
           name: dist-windows-x86_64
           path: dist/verbose-windows-x86_64.exe
 
+  package-arch:
+    needs: bootstrap-linux-x86_64
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Arch build toolchain (base-devel, clang, git)
+        run: |
+          pacman -Syu --noconfirm base-devel clang git
+
+      - name: Build Arch package (.pkg.tar.zst) and pacman repository DB
+        env:
+          TAG_NAME: ${{ inputs.tag || github.ref_name }}
+        run: |
+          PKGVER="${TAG_NAME#v}"
+          useradd -m builder
+          mkdir -p /tmp/arch-build /tmp/arch-repo
+          tar --exclude='.git' --exclude='dist' --exclude='cross-ir' \
+            --transform="s,^\.,verbose-lang-${PKGVER}," \
+            -czf "/tmp/arch-build/verbose-lang-${PKGVER}.tar.gz" .
+          sed "s/^pkgver=.*/pkgver=${PKGVER}/" packaging/arch/PKGBUILD > /tmp/arch-build/PKGBUILD
+          chown -R builder:builder /tmp/arch-build
+          su - builder -c "cd /tmp/arch-build && makepkg --noconfirm --skipchecksums"
+          cp /tmp/arch-build/verbose-lang-${PKGVER}-*-x86_64.pkg.tar.zst /tmp/arch-repo/
+          cd /tmp/arch-repo
+          repo-add verbose-lang.db.tar.gz verbose-lang-${PKGVER}-*-x86_64.pkg.tar.zst
+          rm -f verbose-lang.db verbose-lang.files
+          cp verbose-lang.db.tar.gz verbose-lang.db
+          cp verbose-lang.files.tar.gz verbose-lang.files
+          ls -lh /tmp/arch-repo
+          mkdir -p "$GITHUB_WORKSPACE/arch-repo"
+          cp /tmp/arch-repo/* "$GITHUB_WORKSPACE/arch-repo/"
+
+      - name: Upload Arch pacman repo artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-arch-x86_64
+          path: arch-repo/*
+
   publish:
     needs:
       - bootstrap-linux-x86_64
       - build-linux-arm64
       - build-macos-arm64
       - build-windows-x86_64
+      - package-arch
     runs-on: ubuntu-latest
     steps:
       - name: Download all platform binaries
@@ -182,6 +225,7 @@ jobs:
             verbose-linux-arm64 \
             verbose-macos-arm64 \
             verbose-windows-x86_64.exe \
+            verbose-lang-*-x86_64.pkg.tar.zst \
             > SHA256SUMS.txt
           ls -lh
           cat SHA256SUMS.txt
@@ -192,7 +236,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ inputs.tag || github.ref_name }}
         run: |
-          ASSETS="release-assets/verbose release-assets/verbose-linux-x86_64 release-assets/verbose-linux-arm64 release-assets/verbose-macos-arm64 release-assets/verbose-windows-x86_64.exe release-assets/SHA256SUMS.txt"
+          ASSETS="release-assets/verbose release-assets/verbose-linux-x86_64 release-assets/verbose-linux-arm64 release-assets/verbose-macos-arm64 release-assets/verbose-windows-x86_64.exe release-assets/verbose-lang-*-x86_64.pkg.tar.zst release-assets/verbose-lang.db release-assets/verbose-lang.db.tar.gz release-assets/verbose-lang.files release-assets/verbose-lang.files.tar.gz release-assets/SHA256SUMS.txt"
           if gh release view "$TAG_NAME" --repo "$GH_REPO" >/dev/null 2>&1; then
             gh release upload "$TAG_NAME" $ASSETS --repo "$GH_REPO" --clobber
           else

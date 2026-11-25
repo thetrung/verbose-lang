@@ -12,8 +12,11 @@ verbose-lang/
 │   ├── math.vb                 # Pure-VerBose math routines & constants (trig, exp/ln, sqrt, pow, abs, gcd)
 │   └── strings.vb              # String manipulation, StrView, and StrBuilder utilities (Str*, Sb*)
 ├── tests/                      # Pure-VerBose Test/Assert suites, regression cases & Raylib 5.x demo (tests/raylib/)
+├── packaging/arch/             # Arch Linux PKGBUILD & .SRCINFO (`make pkg-arch`)
+├── install.sh                  # Cross-platform Linux/macOS one-line installer script
+├── LICENSE                     # MIT License
 ├── verbose.ll                  # Checked-in target-neutral LLVM IR for offline cold bootstrap (`make bootstrap`)
-├── makefile                    # Build, bootstrap, bootstrap-ir, run, test, install, and dist targets
+├── makefile                    # Build, bootstrap, bootstrap-ir, pkg-arch, run, test, install, and dist targets
 ├── FEATURES.md                 # Full list of implemented language & compiler features
 ├── TEST.md                     # Built-in testing guide (verbose test, writing tests, C linking)
 ├── FLAGS.md                    # Compiler command-line interface flags & options reference

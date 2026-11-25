@@ -1,0 +1,20 @@
+pkgbase = verbose-lang
+	pkgdesc = Brace-free, Visual Basic-inspired systems programming language compiled directly to LLVM IR
+	pkgver = 0.6.1
+	pkgrel = 1
+	url = https://github.com/thetrung/verbose-lang
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = make
+	makedepends = diffutils
+	depends = clang
+	depends = glibc
+	provides = verbose
+	conflicts = verbose-lang-bin
+	conflicts = verbose-lang-git
+	options = !debug
+	source = verbose-lang-0.6.1.tar.gz::https://github.com/thetrung/verbose-lang/archive/refs/tags/v0.6.1.tar.gz
+	sha256sums = SKIP
+
+pkgname = verbose-lang

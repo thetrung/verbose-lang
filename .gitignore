@@ -9,3 +9,8 @@ dist
 /verbose2.ll
 /verbose3.ll
 src/*.ll
+packaging/arch/src/
+packaging/arch/pkg/
+packaging/arch/*.tar.*
+packaging/arch/verbose-lang.db*
+packaging/arch/verbose-lang.files*

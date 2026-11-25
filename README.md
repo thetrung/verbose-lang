@@ -128,6 +128,35 @@ See **[LAYOUT.md](LAYOUT.md)** for the complete repository structure and directo
 
 **Prerequisites**: `clang` (LLVM 19+ recommended). No prebuilt binary, network access, OCaml, or Python required — the repository includes a target-neutral `verbose.ll` for offline bootstrapping via `make bootstrap`! Prebuilt native binaries for **Linux x86-64**, **Linux arm64**, **macOS arm64**, and **Windows x86-64** are also published on [GitHub Releases](https://github.com/thetrung/verbose-lang/releases/latest).
 
+### Quick Install
+
+**Linux & macOS (one-line installer):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/thetrung/verbose-lang/main/install.sh | sh
+# Optional: custom prefix or source cold-bootstrap from verbose.ll
+# curl -fsSL https://raw.githubusercontent.com/thetrung/verbose-lang/main/install.sh | sh -s -- --prefix /usr/local
+# curl -fsSL https://raw.githubusercontent.com/thetrung/verbose-lang/main/install.sh | sh -s -- --from-source
+```
+
+**Arch Linux (`pacman` custom repo via GitHub Releases):**
+Add to `/etc/pacman.conf` (available starting from releases publishing the Arch repo assets):
+```ini
+[verbose-lang]
+SigLevel = Optional TrustAll
+Server = https://github.com/thetrung/verbose-lang/releases/latest/download
+```
+Then install with:
+```bash
+sudo pacman -Sy verbose-lang
+```
+Or build & install locally from the repository using `makepkg`:
+```bash
+make pkg-arch
+sudo pacman -U packaging/arch/verbose-lang-*.pkg.tar.zst
+```
+
+### Build from Source & CLI Usage
+
 ```bash
 # Cold-bootstrap ./verbose directly from checked-in verbose.ll using clang only (Stage 1 -> Stage 2 -> Stage 3 fixpoint)
 make bootstrap
