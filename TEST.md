@@ -55,6 +55,12 @@ Run it with:
 
 # Cross-check types or inspect the generated test binary without executing:
 ./verbose test --ta --no-run -o /tmp/my_test_bin my_test.vb
+
+# Run tests with explicit opt-in runtime array bounds checking (zero overhead when omitted):
+./verbose test --bounds-check tests/test_bounds.vb
+
+# Override the per-function stack-frame compile-time limit (default: 64 KB hosted / 4 KB arm-m):
+./verbose test --max-stack 16384 my_test.vb
 ```
 
 For integration tests that invoke the compiler itself against external C shims or libraries (like [`tests/test_raylib.vb`](tests/test_raylib.vb)), see [`tests/harness.vb`](tests/harness.vb) for the `RunVb(srcPath, extraArgs)` helper.

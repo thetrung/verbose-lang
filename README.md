@@ -10,7 +10,7 @@ A Human-Readable Language inspired by Visual Basic, compiled directly to LLVM-IR
 
 ## Overview
 
-Verbose-Lang pairs Visual Basic's brace-free readability with C-speed, zero-GC systems programming directly on LLVM IR. It compiles natively for Linux (x86-64, arm64), macOS (arm64), Windows (x86-64), and bare-metal 32-bit ARM-M, providing deterministic memory (`Static`, `Heap`, `Arena`), hardware MMIO (`Volatile`, `At`), native C FFI, structured `Async`/`Await` concurrency, a pure-VerBose standard library (`std/`), and built-in `Test`/`Assert` suites. The compiler (`./verbose`) is 100% self-hosted in VerBose-Lang itself with zero OCaml or Python dependencies.
+Verbose-Lang pairs Visual Basic's brace-free readability with C-speed, zero-GC systems programming directly on LLVM IR. It compiles natively for Linux (x86-64, arm64), macOS (arm64), Windows (x86-64), and bare-metal 32-bit ARM-M, providing deterministic memory (`Static`, `Heap`, `Arena`), hardware MMIO (`Volatile`, `At`), native C FFI, built-in explicit scalar/pointer conversions (`Single(x)`, `Integer(x)`, etc.), strict compile-time stack-frame & constant array-bounds checks (`--max-stack`, opt-in `--bounds-check`, `std/span.vb`), structured `Async`/`Await` concurrency, a pure-VerBose standard library (`std/`), and built-in `Test`/`Assert` suites. The compiler (`./verbose`) is 100% self-hosted in VerBose-Lang itself with zero OCaml or Python dependencies.
 
 See **[FEATURES.md](FEATURES.md)** for the complete feature catalog.
 
@@ -115,16 +115,17 @@ Public Function main() As Integer
   ArenaDestroy(ByRef scratch)
   Dim dead As Pointer = ArenaAllocBytes(ByRef scratch, 16)
 
-  ' Explicit Heap allocator & SizeOf
+  ' Explicit Heap allocator, built-in primitive casts & SizeOf
   Dim buf() As Integer = HeapAlloc(Integer, 3)
   buf(0) = 5
   buf(1) = 15
   buf(2) = 25
   Dim heapSum As Integer = SumSlice(buf, 3)
+  Dim avg As Single = Single(heapSum) / 3.0
   HeapFree(buf)
 
   Printf("hero#%d state=%d pos=(%.2f,%.2f) ticks=%ld\n", hero.id, hero.state, hero.pos.x, hero.pos.y, g_ticks)
-  Printf("fixedLen=%d heapSum=%d sqrt=%.1f sizeof(Entity)=%d\n", Len(fixed), heapSum, root, SizeOf(Entity))
+  Printf("fixedLen=%d heapSum=%d avg=%.1f sqrt=%.1f sizeof(Entity)=%d\n", Len(fixed), heapSum, avg, root, SizeOf(Entity))
   Printf("arenaUsed=%ld afterDestroyNull=%d mask=%d ready=%d\n", used, IsNull(dead), mask, VolatileLoad(AddressOf(ready), Integer))
   Return 0
 End Function
@@ -190,8 +191,12 @@ make bootstrap-ir
 ./verbose tests/raylib/bouncing_ball.vb -lraylib -lm
 
 # Run built-in Test/Assert blocks (required for test files without a main() function)
-./verbose test tests/test_std_io.vb   # run a single test file
-./verbose test                        # run all tests/test_*.vb suites
+./verbose test tests/test_std_io.vb               # run a single test file
+./verbose test                                    # run all 29 tests/test_*.vb suites
+./verbose test --bounds-check tests/test_bounds.vb # opt-in runtime bounds checking for debug/test builds
+
+# Enforce custom per-function stack frame budget (default: 64 KB hosted / 4 KB arm-m)
+./verbose --max-stack 16384 your_file.vb
 
 # Cross-compile for bare-metal ARM-M, Linux arm64, macOS arm64, or Windows x86-64 to object file
 ./verbose --target arm-m -c your_file.vb -o your_file.o
@@ -236,25 +241,25 @@ All implemented language, memory, FFI, standard library, compiler, and tooling f
 
 ## Ecosystem
 
-Official companion repositories built for VerBose-Lang `v0.6.0+` / `v0.7.0+`:
+Official companion repositories built for VerBose-Lang `v0.7.x`:
 
-- **[verbose-raylib](https://github.com/thetrung/verbose-raylib)** — Idiomatic VerBose-Lang + C ABI wrapper for Raylib 5.x/6.x with 2D/3D math, color palettes, orbital camera helpers, headless mock, and graphical demos.
+- **[verbose-raylib](https://github.com/thetrung/verbose-raylib)** — **100% pure VerBose-Lang** wrapper for Raylib 5.x/6.x (zero custom C shims!) with native ABI structs, 2D/3D math, color palettes, orbital camera helpers, pure-VerBose headless mock, and graphical demos.
 - **[verbose.nvim](https://github.com/thetrung/verbose.nvim)** — Neovim plugin with Tree-sitter grammar & queries, recursive `Include`-cached in-process LSP (completion, `gd`, hover, diagnostics), and `:VerboseInstall` latest compiler installer.
-- **[verbose-pkg](https://github.com/thetrung/verbose-pkg)** — Serverless Cargo-inspired package manager (`vpm`), written natively in VerBose-Lang, supporting git, path, and source/binary `.vpkg.tar.gz` bundles.
-- **[verbose-tui](https://github.com/thetrung/verbose-tui)** — Ratatui-inspired zero-GC double-buffered 24-bit TrueColor TUI framework with Unicode widgets and zero `ncurses` dependency.
-- **[verbose-openSKP](https://github.com/thetrung/verbose-openSKP)** — VerBose-Lang + C ABI wrapper around MIT OpenSKP for loading SketchUp `.skp` scenes (meshes, instanced hierarchy, materials, layers, scenes/pages) directly into flat RAM arrays.
-- **[verbose-viewSKP](https://github.com/thetrung/verbose-viewSKP)** — ZBrush-style multithreaded CPU Pixol + Toon/Ink Webtoon `.skp` shot studio built with `verbose-openSKP` and `verbose-raylib` (`v0.7.0` `Operator` overloading, `Break`/`Continue`, `Async`/`Await`).
+- **[verbose-pkg](https://github.com/thetrung/verbose-pkg)** — Serverless Cargo-inspired package manager (`vpm v0.2.0`), written natively in VerBose-Lang with multithreaded `Async`/`Await` parallel `install`/`build`/`test`, `vpm run` argument forwarding, and git/path/`.vpkg.tar.gz` bundles.
+- **[verbose-tui](https://github.com/thetrung/verbose-tui)** — **100% pure VerBose-Lang** Ratatui-inspired zero-GC double-buffered 24-bit TrueColor TUI framework using direct POSIX `termios`/`ioctl`/`poll` FFI (zero `ncurses`, zero custom C shims) and Unicode widgets.
+- **[verbose-openSKP](https://github.com/thetrung/verbose-openSKP)** — VerBose-Lang + C ABI wrapper around vendored MIT OpenSKP for loading SketchUp `.skp` scenes (meshes, instanced hierarchy, materials, layers, scenes/pages) directly into flat RAM arrays.
+- **[verbose-viewSKP](https://github.com/thetrung/verbose-viewSKP)** — **100% pure VerBose-Lang** ZBrush-style multithreaded CPU Pixol + 2.5D Toon/Ink, Cook-Torrance GGX PBR, and 2-Level CPU BVH RayTracing `.skp` studio with 60 FPS GPU 3D preview, progressive partial rendering, draggable 3D lights, and object outliner (`verbose-openSKP` + `verbose-raylib` via `vpm`).
 
 ---
 
 ## Lesson Learned
 
-Building all 6 ecosystem repositories (`verbose-raylib`, `verbose.nvim`, `verbose-pkg`, `verbose-tui`, `verbose-openSKP`, `verbose-viewSKP`) from scratch revealed how much VerBose-Lang's intentional simplicity accelerates real-world systems work:
+Building and dogfooding all 6 ecosystem repositories (`verbose-raylib`, `verbose.nvim`, `verbose-pkg`, `verbose-tui`, `verbose-openSKP`, `verbose-viewSKP`) from scratch revealed how much VerBose-Lang's intentional simplicity — and strict zero-magic discipline — accelerates real-world systems work:
 
-1. **Direct C ABI & `clang` pass-through**: `Structure` layout matches C verbatim (`12/12` `SizeOf(...) == sizeof(...)` checks matched Raylib 6.2 directly) and `verbose` forwards `.c`/`.a`/`-l`/`-I` flags straight to `clang`. That eliminated bindgen/IDL tooling and FFI marshaling glue — ~190 lines of POSIX C (`tui_term.c`) was enough to build a full zero-`ncurses` TUI framework, and wrapping a full C++17 `.skp` parser (`verbose-openSKP`) needed only a flat C ABI bridge.
-2. **`Arena` + value `Structure`s + `With` blocks + `Operator` overloading**: Deterministic `Arena` allocation and value structs remove borrow-checker ceremony, header/source duplication, and GC-FFI coordination, while `v0.6.0`–`v0.7.0` ergonomics (`Match ... With`, `$"..."`, `With`, grouped `Dim`, `For ... Do`, `Break`/`Continue`, `Structure` `Operator` overloading) keep math-heavy and systems code compact and readable.
-3. **Regular, explicit, line-oriented syntax**: Unambiguous declarations (`Include`, `Structure`, `Enum`, `Function`, `Sub`, `Declare`, `Dim x As Type`) made it straightforward to build both a 100%-parsing Tree-sitter grammar and a zero-dependency in-process Neovim LSP, while the flat `Include "..."` + `-I` model enabled a completely serverless package manager (`vpm`).
-4. **Built-in `Test ... End Test` + fast native compiles**: Self-contained unit tests with zero external test frameworks and sub-second compile-run cycles made iterating across libraries and cross-package integration feel like a scripting language with native C performance.
+1. **Direct C ABI & Pure-VerBose System FFI**: `Structure` layout matches C verbatim (`12/12` `SizeOf(...) == sizeof(...)` checks matched Raylib 6.2 directly) and `verbose` forwards `.c`/`.a`/`-l`/`-I` flags straight to `clang`. Combined with `v0.7.1` built-in primitive casts (`Single(x)`, `Integer(x)`, `Byte(x)`, `Pointer(x)`), `AddressOf`, and `PtrRead`/`PtrWrite`/`PtrAdd`, we eliminated **every custom C shim** across `verbose-raylib`, `verbose-tui` (direct POSIX `termios`/`ioctl`/`poll`), and `verbose-viewSKP` — keeping C/C++ strictly to vendored third-party engines like OpenSKP.
+2. **Explicit, Predictable Memory Beats Hidden Magic**: Fixing real production issues in `verbose-viewSKP` drove `v0.7.2`–`v0.7.4`: hoisting all `alloca`s to LLVM `entry:` blocks eliminated stack growth in long-running loops, while strict compile-time `--max-stack` errors (`64 KB` hosted / `4 KB` `arm-m`, never silently spilling `Dim` to `malloc`), compile-time constant fixed-array OOB errors, opt-in `--bounds-check`, and zero-libc `std/span.vb` keep performance and failure modes 100% transparent.
+3. **`Arena` + Value `Structure`s + `With` + `Operator` Overloading**: Deterministic `Arena` allocation and value structs remove borrow-checker ceremony, header/source duplication, and GC-FFI coordination, while `v0.6.0`–`v0.7.x` ergonomics (`Match ... With`, `$"..."`, `With`, grouped `Dim`, `For ... Do`, `Break`/`Continue`, `Structure` `Operator` overloading, `Async`/`Await`) keep math-heavy 3D/raytracing and systems code compact and readable.
+4. **Regular, Line-Oriented Syntax & Built-in `Test`**: Unambiguous declarations made it straightforward to build a 100%-parsing Tree-sitter grammar, a zero-dependency in-process Neovim LSP, and a serverless multithreaded package manager (`vpm`), while built-in `Test ... End Test` + sub-second native compiles give native C speed with scripting-level iteration.
 
 ---
 
