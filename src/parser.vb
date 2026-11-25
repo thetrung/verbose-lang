@@ -525,7 +525,7 @@ Private Function PParsePrimary() As Integer
     If PPeekKind() = TkLParen Then
       PAdvance()
       PSkipNewlines()
-      Dim argBuf(32) As Integer
+      Dim argBuf(64) As Integer
       Dim argCount As Integer = 0
       If PPeekKind() <> TkRParen Then
         Dim reading As Boolean = True
@@ -858,7 +858,7 @@ Private Sub PParseVarDeclGroup(ndKind, vis, isVolatile, defModId As Integer, out
       If (firstArrLen = 0) And (tk = TyStruct) And (PPeekKind() = TkLParen) Then
         PAdvance()
         PSkipNewlines()
-        Dim argBuf(32) As Integer
+        Dim argBuf(64) As Integer
         Dim argCount As Integer = 0
         If PPeekKind() <> TkRParen Then
           Dim reading As Boolean = True
@@ -1652,7 +1652,7 @@ Private Sub PParseDefInto(defBuf() As Integer, ByRef defCount As Integer)
     Dim nLen As Integer = g_tokens(p_pos).len
     PExpect(TkIdent)
     PExpect(TkLParen)
-    Dim paramBuf(32) As Integer
+    Dim paramBuf(64) As Integer
     Dim paramCount As Integer = 0
     Dim isVar As Integer = 0
     PParseParamList(1, paramBuf, ByRef paramCount, ByRef isVar)
@@ -1773,7 +1773,7 @@ Private Sub PParseDefInto(defBuf() As Integer, ByRef defCount As Integer)
   Dim nameLen As Integer = g_tokens(p_pos).len
   PExpect(TkIdent)
   PExpect(TkLParen)
-  Dim paramBuf(32) As Integer
+  Dim paramBuf(64) As Integer
   Dim paramCount As Integer = 0
   Dim dummyVar As Integer = 0
   PParseParamList(0, paramBuf, ByRef paramCount, ByRef dummyVar)

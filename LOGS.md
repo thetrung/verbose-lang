@@ -15,6 +15,12 @@ Historical log of finished tasks and completed roadmap milestones for **VerBose-
 
 ---
 
+## Completed Tasks (`v0.7.2`)
+
+- [x] **Entry-Block `alloca` Hoisting & 64-Parameter Capacity**: Upgraded `src/codegen.vb` (`CgBeginFuncBody` / `CgEndFuncBody` / `CgEmitHoistedAlloca`) to hoist every static `alloca` across all functions, operators, `Async` bodies, and `Test` blocks into the LLVM `entry:` block — eliminating dynamic per-iteration stack growth in long-running `While`/`For` loops (fixing stack overflow crashes in GUI/render loops like `verbose-viewSKP`) and unlocking LLVM `mem2reg` SSA register promotion for loop locals. Expanded parser/codegen parameter and call-argument buffers from `32 → 64`. Added `tests/test_loop_alloca.vb` (2/2 passing — **27/27** suites, **186/186** `Test` blocks, Stage 3 byte-for-byte fixpoint verified, refreshed `verbose.ll`, and updated Arch `PKGBUILD`/`.SRCINFO`).
+
+---
+
 ## Completed Tasks (`v0.7.1`)
 
 - [x] **Built-in Primitive Type Conversions (`Single(x)`, `Integer(x)`, etc.)**: Added `NdCast` explicit conversion expressions for all built-in scalar and pointer types (`Byte(x)`, `Short(x)`, `Integer(x)`, `Long(x)`, `Single(x)`, `Double(x)`, `Boolean(x)`, `Pointer(x)`, `String(x)`), supporting int↔float (`sitofp`/`fptosi`), safe float→`Byte`/`Short` lowering via `i32` (`fptosi -> i32 -> trunc` avoiding LLVM poison for values > 127 like RGB bytes), `Single`↔`Double`, integer widening/truncation, `Boolean`↔numeric/pointer, `Enum`→numeric, and `Pointer`↔integer (`ptrtoint`/`inttoptr`), with Type Analyzer validation, `--ast` printing, and `tests/test_casts.vb` (3/3 passing — **26/26** suites, **184/184** `Test` blocks, Stage 3 byte-for-byte fixpoint verified, refreshed `verbose.ll`, and updated Arch `PKGBUILD`/`.SRCINFO`).

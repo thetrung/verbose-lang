@@ -29,7 +29,7 @@ verbose-lang/
 
 ## Directory Descriptions
 
-- **`src/`**: The complete 9-module self-hosted compiler (`11,671 LOC`) written entirely in VerBose-Lang:
+- **`src/`**: The complete 9-module self-hosted compiler (`11,738 LOC`) written entirely in VerBose-Lang:
   - `verbose.vb`: CLI entry point, host target auto-detection, argument parsing, pipeline orchestration, test runner synthesis, and clang invocation.
   - `constants.vb`: Version metadata, global limits, token constants, target configurations (`linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`, `arm-m`), and diagnostics.
   - `token.vb`: Token types, keywords (`Break`, `Continue`, `Operator`, `Match`, `When`, `String`, `Volatile`, `VolatileLoad`, `VolatileStore`, `Async`, `Await`, etc.; `ByVal` removed), string-interpolation tokens, and token structure.
@@ -47,7 +47,7 @@ verbose-lang/
 - **`tests/`**: Native pure-VerBose test suites and regression tests run natively via `./verbose test`:
   - `harness.vb`: Shared cross-platform test runner helpers and assertion macros.
   - `bootstrap_suite.vb`: Comprehensive compiler self-hosting feature verification suite.
-  - `test_*.vb`: 26 domain-specific test suites (`test_arena`, `test_arrays`, `test_assert`, `test_break_continue`, `test_byref`, `test_c_interop`, `test_casts`, `test_cli`, `test_compress`, `test_core`, `test_ergonomics`, `test_expressions`, `test_interp`, `test_lang_ext`, `test_match`, `test_modules`, `test_operators`, `test_raylib`, `test_static_heap`, `test_std_collections`, `test_std_io`, `test_std_math`, `test_std_strings`, `test_syntax`, `test_targets`, `test_type_analyzer`).
+  - `test_*.vb`: 27 domain-specific test suites (`test_arena`, `test_arrays`, `test_assert`, `test_break_continue`, `test_byref`, `test_c_interop`, `test_casts`, `test_cli`, `test_compress`, `test_core`, `test_ergonomics`, `test_expressions`, `test_interp`, `test_lang_ext`, `test_loop_alloca`, `test_match`, `test_modules`, `test_operators`, `test_raylib`, `test_static_heap`, `test_std_collections`, `test_std_io`, `test_std_math`, `test_std_strings`, `test_syntax`, `test_targets`, `test_type_analyzer`).
   - `raylib/`: Raylib 5.x C FFI bindings (`raylib.vb`), 2D/3D graphical demos (`bouncing_ball.vb`, `camera3d_demo.vb`), `README.md`, and headless test shim (`raylib_headless_shim.c`).
 
 > **Stage 0 archive**: The original OCaml bootstrap compiler (`stage0/`) has been moved off `main` into the [`stage0`](../../tree/stage0) branch.

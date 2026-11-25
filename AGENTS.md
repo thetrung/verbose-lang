@@ -6,7 +6,7 @@ See also: [Wiki Tutorial](https://github.com/thetrung/verbose-lang/wiki/Tutorial
 
 ## Project Identity
 
-- **VerBose-Lang** (`v0.7.1`): brace-free, case-sensitive, Visual Basic–inspired systems language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**).
+- **VerBose-Lang** (`v0.7.2`): brace-free, case-sensitive, Visual Basic–inspired systems language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**).
 - **Zero external toolchain deps**: `clang` + `curl` only (no OCaml, no Python). The archival OCaml Stage 0 compiler lives on the `stage0` git branch.
 - **Targets** (`--target` / `VERBOSE_TARGET`): `linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`, and freestanding 32-bit `arm-m` (`thumbv7em-unknown-none-eabi`).
 - **Companion ecosystem repos** (sibling dirs in `../` when checked out): `verbose-raylib`, `verbose.nvim`, `verbose-pkg` (`vpm`), `verbose-tui`, `verbose-openSKP`, `verbose-viewSKP`.
@@ -32,7 +32,7 @@ All pure VerBose, zero-GC, Arena-backed:
 - `std/io.vb` — `IoBuf`, `IoReadFile`, `IoWriteFile`, `IoWriteText`, `IoAppendText`, `IoFileExists`, `IoFileSize`, `IoRemoveFile`, `IoPrint`, `IoPrintLn`, `IoReadLine`.
 
 ### Tests (`tests/`)
-- 26 native pure-VerBose `Test`/`Assert` suites (`tests/test_*.vb`, 184 `Test` blocks) + `tests/bootstrap_suite.vb` + `tests/harness.vb` + `tests/raylib/` (Raylib 5.x bindings, demos & headless C shim).
+- 27 native pure-VerBose `Test`/`Assert` suites (`tests/test_*.vb`, 186 `Test` blocks) + `tests/bootstrap_suite.vb` + `tests/harness.vb` + `tests/raylib/` (Raylib 5.x bindings, demos & headless C shim).
 
 ## Build, Bootstrap & Test Commands
 

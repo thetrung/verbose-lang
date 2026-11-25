@@ -1,7 +1,7 @@
 ' VerBose Self-Hosting Compiler (verbose) - Shared Diagnostics, Messages & LLVM IR Templates
 
 ' --- Compiler Version & CLI Driver Messages ---
-Public Static MSG_CLI_VERSION As Pointer = "verbose 0.7.1 (VerBose-Lang Self-Hosted Compiler)\n"
+Public Static MSG_CLI_VERSION As Pointer = "verbose 0.7.2 (VerBose-Lang Self-Hosted Compiler)\n"
 Public Static MSG_CLI_USAGE As Pointer = "Usage: verbose <filename>.vb [options]\n" &
   "       verbose test [file.vb | dir] [options]\n" &
   "  test         Run built-in Test/Assert blocks in a .vb file or directory (default: tests)\n" &

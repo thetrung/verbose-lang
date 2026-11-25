@@ -6,6 +6,9 @@ Include "parser.vb"
 Declare Function fprintf(fp As Pointer, fmt As Pointer, ...) As Integer
 Declare Function fputc(c As Integer, fp As Pointer) As Integer
 Declare Function fputs(s As Pointer, fp As Pointer) As Integer
+Declare Function tmpfile() As Pointer
+Declare Sub rewind(fp As Pointer)
+Declare Function fwrite(buf As Pointer, size As Long, count As Long, fp As Pointer) As Long
 Declare Function strtod(s As Pointer, endp As Pointer) As Double
 Declare Function memcpy(ByRef dst As Long, ByRef src As Double, n As Long) As Pointer
 
@@ -55,7 +58,7 @@ Structure CgStrConst
   Dim srcPos, srcLen, byteLen As Integer
 End Structure
 
-Private Static cg_out As Pointer, cg_curRetTy As TypeInfo
+Private Static cg_out, cg_saved_out, cg_alloca_fp, cg_body_fp As Pointer, cg_curRetTy As TypeInfo
 Private Static cg_reg = 1, cg_lbl = 1, cg_usesArena = 0, cg_usesAssert = 0, cg_usesStrConcat = 0, cg_usesStrInterp = 0, cg_usesStrEq = 0, cg_usesAsync = 0, cg_blockEnded = 0, cg_testMode = 0, cg_inTestFn = 0, cg_testCount = 0, cg_curModId = 0 As Integer
 Private Static cg_target = 0, cg_ptrSize = 8, cg_ptrAlign = 8, cg_isFreestanding = 0 As Integer
 Private Static cg_usesPrintf = 0, cg_usesMalloc = 0, cg_usesCalloc = 0, cg_usesRealloc = 0, cg_usesFree = 0, cg_usesFopen = 0, cg_usesGetc = 0, cg_usesPutc = 0 As Integer
@@ -102,6 +105,71 @@ Private Function CgNextLbl() As Integer
   cg_lbl = cg_lbl + 1
   Return l
 End Function
+
+Private Sub CgCopyFpRange(srcFp, dstFp As Pointer, nBytes As Long)
+  Dim buf(4096) As Byte
+  Dim rem As Long = nBytes
+  While rem > 0 Do
+    Dim chunk As Long = rem
+    If chunk > 4096 Then
+      chunk = 4096
+    End If
+    Dim got As Long = fread(buf, 1, chunk, srcFp)
+    If got <= 0 Then
+      Break
+    End If
+    fwrite(buf, 1, got, dstFp)
+    rem = rem - got
+  End While
+End Sub
+
+Private Sub CgBeginFuncBody()
+  If IsNull(cg_alloca_fp) Or IsNull(cg_body_fp) Then
+    Return
+  End If
+  rewind(cg_alloca_fp)
+  rewind(cg_body_fp)
+  cg_saved_out = cg_out
+  cg_out = cg_body_fp
+End Sub
+
+Private Sub CgEndFuncBody()
+  If IsNull(cg_saved_out) Then
+    Return
+  End If
+  Dim allocLen As Long = ftell(cg_alloca_fp)
+  Dim bodyLen As Long = ftell(cg_body_fp)
+  cg_out = cg_saved_out
+  cg_saved_out = 0
+  If allocLen > 0 Then
+    rewind(cg_alloca_fp)
+    CgCopyFpRange(cg_alloca_fp, cg_out, allocLen)
+  End If
+  If bodyLen > 0 Then
+    rewind(cg_body_fp)
+    CgCopyFpRange(cg_body_fp, cg_out, bodyLen)
+  End If
+End Sub
+
+Private Sub CgEmitHoistedAlloca(slot As Integer, ty As TypeInfo, align As Integer)
+  Dim prevOut As Pointer = cg_out
+  If (Not IsNull(cg_saved_out)) And (Not IsNull(cg_alloca_fp)) Then
+    cg_out = cg_alloca_fp
+  End If
+  fprintf(cg_out, "  %%r%d = alloca ", slot)
+  CgEmitLlvmType(ty)
+  fprintf(cg_out, ", align %d\n", align)
+  cg_out = prevOut
+End Sub
+
+Private Sub CgEmitHoistedAllocaRaw(slot As Integer, tyStr As Pointer, align As Integer)
+  Dim prevOut As Pointer = cg_out
+  If (Not IsNull(cg_saved_out)) And (Not IsNull(cg_alloca_fp)) Then
+    cg_out = cg_alloca_fp
+  End If
+  fprintf(cg_out, "  %%r%d = alloca %s, align %d\n", slot, tyStr, align)
+  cg_out = prevOut
+End Sub
 
 Private Sub CgEmitSlice(pos, slen As Integer)
   For i = 0 To slen - 1 Do
@@ -2262,9 +2330,7 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
       nameLen = g_nodes(id).lenVal
     )
     Dim slot As Integer = CgNextReg()
-    fprintf(cg_out, "  %%r%d = alloca ", slot)
-    CgEmitLlvmType(sTy)
-    fprintf(cg_out, ", align 8\n")
+    CgEmitHoistedAlloca(slot, sTy, 8)
     fprintf(cg_out, "  store ")
     CgEmitLlvmType(sTy)
     fprintf(cg_out, " zeroinitializer, ptr %%r%d, align 8\n", slot)
@@ -2360,9 +2426,7 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
       Dim slot As Integer = CgNextReg()
       Dim al As Integer = CgTypeAlign(valTy)
       Dim sz As Integer = CgTypeSize(valTy)
-      fprintf(cg_out, "  %%r%d = alloca ", slot)
-      CgEmitLlvmType(valTy)
-      fprintf(cg_out, ", align %d\n", al)
+      CgEmitHoistedAlloca(slot, valTy, al)
       fprintf(cg_out, "  call void @llvm.memcpy.p0.p0.i64(ptr align %d %%r%d, ptr align %d %%r%d, i64 %d, i1 true)\n", al, slot, al, addrPtr, sz)
       Return slot
     End If
@@ -2418,9 +2482,7 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     If CgIsAggregate(valTy) Then
       Dim slot As Integer = CgNextReg()
       Dim al = CgTypeAlign(valTy), sz = CgTypeSize(valTy) As Integer
-      fprintf(cg_out, "  %%r%d = alloca ", slot)
-      CgEmitLlvmType(valTy)
-      fprintf(cg_out, ", align %d\n", al)
+      CgEmitHoistedAlloca(slot, valTy, al)
       fprintf(cg_out, "  call void @llvm.memcpy.p0.p0.i64(ptr align %d %%r%d, ptr align %d %%r%d, i64 %d, i1 false)\n", al, slot, al, addrPtr, sz)
       Return slot
     End If
@@ -2493,9 +2555,7 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     fprintf(cg_out, " }, ptr %%r%d, i32 0, i32 2\n", taskReg)
     If CgIsAggregate(resTy) Then
       Dim slot = CgNextReg(), al = CgTypeAlign(resTy), sz = CgTypeSize(resTy) As Integer
-      fprintf(cg_out, "  %%r%d = alloca ", slot)
-      CgEmitLlvmType(resTy)
-      fprintf(cg_out, ", align %d\n", al)
+      CgEmitHoistedAlloca(slot, resTy, al)
       fprintf(cg_out, "  call void @llvm.memcpy.p0.p0.i64(ptr align %d %%r%d, ptr align %d %%r%d, i64 %d, i1 false)\n", al, slot, al, resPtr, sz)
       fprintf(cg_out, "  call void @free(ptr %%r%d)\n", taskReg)
       Return slot
@@ -2552,7 +2612,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim capReg As Integer = CgEmitExpr(g_nodes(g_kids(aStart)).left, ByRef capTy)
     Dim cap64 As Integer = CgWidenToI64(capReg, capTy)
     Dim tmp As Integer = CgNextReg()
-    fprintf(cg_out, "  %%r%d = alloca %%struct.__vb_arena, align 8\n", tmp)
+    CgEmitHoistedAllocaRaw(tmp, "%struct.__vb_arena", 8)
     fprintf(cg_out, "  call void @__vb_arena_init_heap(ptr %%r%d, i64 %%r%d)\n", tmp, cap64)
     outTy = TypeInfo With ( kind = TyArena, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return tmp
@@ -2566,7 +2626,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim capReg As Integer = CgEmitExpr(g_nodes(g_kids(aStart + 1)).left, ByRef capTy)
     Dim cap64 As Integer = CgWidenToI64(capReg, capTy)
     Dim tmp As Integer = CgNextReg()
-    fprintf(cg_out, "  %%r%d = alloca %%struct.__vb_arena, align 8\n", tmp)
+    CgEmitHoistedAllocaRaw(tmp, "%struct.__vb_arena", 8)
     fprintf(cg_out, "  call void @__vb_arena_init_buf(ptr %%r%d, ptr %%r%d, i64 %%r%d)\n", tmp, bufPtr, cap64)
     outTy = TypeInfo With ( kind = TyArena, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return tmp
@@ -2664,8 +2724,8 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
 
   ' Builtin: Printf
   If SliceEqualsStr(nPos, nLen, "Printf", 6) Then
-    Dim argRegs(32) As Integer
-    Dim argTys(32) As TypeInfo
+    Dim argRegs(64) As Integer
+    Dim argTys(64) As TypeInfo
     Dim i As Integer = 0
     While i < aCount Do
       Dim aNode As Integer = g_kids(aStart + i)
@@ -2736,9 +2796,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
       nameLen = nLen
     )
     Dim slot As Integer = CgNextReg()
-    fprintf(cg_out, "  %%r%d = alloca ", slot)
-    CgEmitLlvmType(sTy)
-    fprintf(cg_out, ", align 8\n")
+    CgEmitHoistedAlloca(slot, sTy, 8)
     fprintf(cg_out, "  store ")
     CgEmitLlvmType(sTy)
     fprintf(cg_out, " zeroinitializer, ptr %%r%d, align 8\n", slot)
@@ -2837,9 +2895,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
                 If mode = 4 Then
                   Dim al As Integer = CgTypeAlign(pInfo.ty)
                   Dim cpPtr As Integer = CgNextReg()
-                  fprintf(cg_out, "  %%r%d = alloca ", cpPtr)
-                  CgEmitLlvmType(pInfo.ty)
-                  fprintf(cg_out, ", align %d\n", al)
+                  CgEmitHoistedAlloca(cpPtr, pInfo.ty, al)
                   Dim cpVal As Integer = CgNextReg()
                   fprintf(cg_out, "  %%r%d = load ", cpVal)
                   CgEmitLlvmType(pInfo.ty)
@@ -2987,9 +3043,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
   outTy = retTy
   If CgIsAggregate(retTy) Then
     Dim tmp As Integer = CgNextReg()
-    fprintf(cg_out, "  %%r%d = alloca ", tmp)
-    CgEmitLlvmType(retTy)
-    fprintf(cg_out, ", align 8\n")
+    CgEmitHoistedAlloca(tmp, retTy, 8)
     If isExternFn And (retTy.kind = TyStruct) And (retTy.arrLen = 0) And (retTy.typeIdx >= 0) Then
       Dim rt0 As Integer = 0
       Dim rt1 As Integer = 0
@@ -3053,9 +3107,7 @@ Private Function CgEmitOpCall1(opIdx As Integer, v1 As Integer, t1 As TypeInfo, 
   outTy = oi.retTy
   If CgIsAggregate(oi.retTy) Then
     Dim tmp As Integer = CgNextReg()
-    fprintf(cg_out, "  %%r%d = alloca ", tmp)
-    CgEmitLlvmType(oi.retTy)
-    fprintf(cg_out, ", align 8\n")
+    CgEmitHoistedAlloca(tmp, oi.retTy, 8)
     fprintf(cg_out, "  store ")
     CgEmitLlvmType(oi.retTy)
     fprintf(cg_out, " %%r%d, ptr %%r%d, align 8\n", resReg, tmp)
@@ -3100,9 +3152,7 @@ Private Function CgEmitOpCall2(opIdx As Integer, v1 As Integer, t1 As TypeInfo, 
   outTy = oi.retTy
   If CgIsAggregate(oi.retTy) Then
     Dim tmp As Integer = CgNextReg()
-    fprintf(cg_out, "  %%r%d = alloca ", tmp)
-    CgEmitLlvmType(oi.retTy)
-    fprintf(cg_out, ", align 8\n")
+    CgEmitHoistedAlloca(tmp, oi.retTy, 8)
     fprintf(cg_out, "  store ")
     CgEmitLlvmType(oi.retTy)
     fprintf(cg_out, " %%r%d, ptr %%r%d, align 8\n", resReg, tmp)
@@ -3198,9 +3248,7 @@ Private Sub CgEmitStmt(id As Integer)
     If g_nodes(id).flags = 1 Then
       isVol = 1
     End If
-    fprintf(cg_out, "  %%r%d = alloca ", slot)
-    CgEmitLlvmType(ty)
-    fprintf(cg_out, ", align 8\n")
+    CgEmitHoistedAlloca(slot, ty, 8)
 
     cg_locals(cg_localCount) = CgLocalSym With (
       namePos = g_nodes(id).intVal,
@@ -3462,7 +3510,7 @@ Private Sub CgEmitStmt(id As Integer)
       slot = cg_locals(existing).slotReg
     Else
       slot = CgNextReg()
-      fprintf(cg_out, "  %%r%d = alloca i32, align 4\n", slot)
+      CgEmitHoistedAllocaRaw(slot, "i32", 4)
       cg_locals(cg_localCount) = CgLocalSym With (
         namePos = g_nodes(id).intVal,
         nameLen = g_nodes(id).lenVal,
@@ -3698,6 +3746,7 @@ Private Sub CgEmitAsyncFunc(fnNodeId As Integer, fnIdx As Integer)
     fprintf(cg_out, " %%p%d", i)
   End For
   fprintf(cg_out, ") {\nentry:\n")
+  CgBeginFuncBody()
 
   For j = 0 To fi.paramCount - 1 Do
     Dim p As CgParamInfo = cg_params(fi.paramStart + j)
@@ -3752,6 +3801,7 @@ Private Sub CgEmitAsyncFunc(fnNodeId As Integer, fnIdx As Integer)
       fprintf(cg_out, "\n")
     End If
   End If
+  CgEndFuncBody()
   fprintf(cg_out, "}\n\n")
 
   ' 2) Emit pthread/deferred thunk @__vb_async_thunk_<sym>(ptr %frame) -> ptr
@@ -3759,7 +3809,7 @@ Private Sub CgEmitAsyncFunc(fnNodeId As Integer, fnIdx As Integer)
   fprintf(cg_out, "define internal ptr @__vb_async_thunk_")
   CgEmitSymName(fi.namePos, fi.nameLen, fi.modId, fi.isPrivate)
   fprintf(cg_out, "(ptr %%frame) {\nentry:\n")
-  Dim argRegs(32) As Integer
+  Dim argRegs(64) As Integer
   For j = 0 To fi.paramCount - 1 Do
     Dim p As CgParamInfo = cg_params(fi.paramStart + j)
     Dim fpReg As Integer = CgNextReg()
@@ -3909,6 +3959,7 @@ Private Sub CgEmitFunc(fnNodeId As Integer, fnIdx As Integer)
     fprintf(cg_out, " %%p%d", i)
   End For
   fprintf(cg_out, ") {\nentry:\n")
+  CgBeginFuncBody()
 
   ' Bind parameters to local slots
   For j = 0 To fi.paramCount - 1 Do
@@ -3965,6 +4016,7 @@ Private Sub CgEmitFunc(fnNodeId As Integer, fnIdx As Integer)
       fprintf(cg_out, "\n")
     End If
   End If
+  CgEndFuncBody()
   fprintf(cg_out, "}\n\n")
 End Sub
 
@@ -3994,6 +4046,7 @@ Private Sub CgEmitOpDef(opNodeId As Integer, opIdx As Integer)
     fprintf(cg_out, " %%p%d", i)
   End For
   fprintf(cg_out, ") {\nentry:\n")
+  CgBeginFuncBody()
 
   For j = 0 To oi.paramCount - 1 Do
     Dim p As CgParamInfo = cg_params(oi.paramStart + j)
@@ -4045,6 +4098,7 @@ Private Sub CgEmitOpDef(opNodeId As Integer, opIdx As Integer)
     CgEmitZeroVal(oi.retTy)
     fprintf(cg_out, "\n")
   End If
+  CgEndFuncBody()
   fprintf(cg_out, "}\n\n")
 End Sub
 
@@ -4058,6 +4112,7 @@ Private Sub CgEmitTestFn(tdNodeId As Integer, testIdx As Integer)
   cg_inTestFn = 1
 
   fprintf(cg_out, "define internal void @__vb_test_%d() {\nentry:\n", testIdx)
+  CgBeginFuncBody()
   Dim bStart As Integer = g_nodes(tdNodeId).firstChild
   Dim bCount As Integer = g_nodes(tdNodeId).childCount
   For k = 0 To bCount - 1 Do
@@ -4066,6 +4121,7 @@ Private Sub CgEmitTestFn(tdNodeId As Integer, testIdx As Integer)
   If cg_blockEnded = 0 Then
     fprintf(cg_out, "  ret void\n")
   End If
+  CgEndFuncBody()
   fprintf(cg_out, "}\n\n")
   cg_inTestFn = 0
 End Sub
@@ -4406,6 +4462,9 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
     Printf(MSG_CG_OPEN_FAIL)
     Return -1
   End If
+  cg_alloca_fp = tmpfile()
+  cg_body_fp = tmpfile()
+  cg_saved_out = 0
 
   fputs(IR_MODULE_HEADER, cg_out)
   Match cg_target With
@@ -4619,6 +4678,14 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
     CgEmitStrEqRuntime()
   End If
 
+  If Not IsNull(cg_alloca_fp) Then
+    fclose(cg_alloca_fp)
+    cg_alloca_fp = 0
+  End If
+  If Not IsNull(cg_body_fp) Then
+    fclose(cg_body_fp)
+    cg_body_fp = 0
+  End If
   fclose(cg_out)
   Return 0
 End Function
