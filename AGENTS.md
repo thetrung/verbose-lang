@@ -9,9 +9,9 @@ See also: [Wiki Tutorial](https://github.com/thetrung/verbose-lang/wiki/Tutorial
 - **VerBose-Lang** (`v0.7.0`): brace-free, case-sensitive, Visual Basic–inspired systems language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**).
 - **Zero external toolchain deps**: `clang` + `curl` only (no OCaml, no Python). The archival OCaml Stage 0 compiler lives on the `stage0` git branch.
 - **Targets** (`--target` / `VERBOSE_TARGET`): `linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`, and freestanding 32-bit `arm-m` (`thumbv7em-unknown-none-eabi`).
-- **Companion ecosystem repos** (sibling dirs in `../` when checked out): `verbose-raylib`, `verbose.nvim`, `verbose-pkg` (`vpm`), `verbose-tui`.
+- **Companion ecosystem repos** (sibling dirs in `../` when checked out): `verbose-raylib`, `verbose.nvim`, `verbose-pkg` (`vpm`), `verbose-tui`, `verbose-openSKP`, `verbose-viewSKP`.
 
-## Architecture & Compiler Internals (`src/`, 9 modules, ~10.7k LOC)
+## Architecture & Compiler Internals (`src/`, 9 modules, ~11.5k LOC)
 
 Every compilation allocates a single **64 MiB deterministic `Arena`** in `RunSingleTarget` (`src/verbose.vb`) for source pools, tokens, AST nodes, and symbol tables:
 
@@ -19,10 +19,10 @@ Every compilation allocates a single **64 MiB deterministic `Arena`** in `RunSin
 | --- | --- |
 | `src/verbose.vb` | CLI driver, host auto-detection (`VERBOSE_TARGET`, `OS=Windows_NT`, `uname -sm`), `verbose test` runner (`test_*.vb` / `*_test.vb`), `clang -O2` invocation, auto-links `-lpthread` only when `CgUsesAsync() = 1` on Linux/Windows. |
 | `src/constants.vb` | Version string (`MSG_CLI_VERSION`), diagnostics, `TargetKind`, LLVM datalayouts/triples, inline IR runtime templates (`@__vb_arena_*`, `@__vb_assert_fail`, `@__vb_str_eq`, `@__vb_str_concat`, test harness). |
-| `src/token.vb`, `src/lexer.vb` | `g_srcPool` (1 MiB byte pool), `g_tokens` (131,072 cap), `$"..."` interpolation scanner, cross-platform (`/` & `\`, `<drive>:`) `Include` loader (max 64 files, 32 `-I` dirs; search: current file dir → `-I` → CWD `.`; diamond include-once + circular-include detection; per-file `modId`). |
-| `src/ast.vb`, `src/parser.vb`, `src/printer.vb` | Flat AST pools `g_nodes` (65,536) & `g_kids` (131,072), `--ast` pretty-printer. `Select Case` desugars into `NdMatch`; `With` blocks emit `NdWithTarget`; compile-time literal folding (`PFoldStrLit`) on `&` and `+`. |
-| `src/type_analyzer.vb` | Two-pass semantic checker (1a enums/struct headers → 1b struct fields → 1c globals/funcs/externs → 2 bodies & const global inits). Enforces `Private` module isolation, unqualified enum fallback + ambiguity errors, `ByRef` lvalue rules, `Static` const initializers, `At` MMIO rules, `Label`/`GoTo`, `Async`/`Await`. |
-| `src/codegen.vb` | Direct LLVM IR emitter (opaque `ptr`). Mangles `Private` symbols from included modules (`modId > 0`) as `@__mod<id>_<name>`. Aliases `popen`/`pclose` → `_popen`/`_pclose` on Windows. Target-native C ABI struct lowering (`CgClassifyCStruct`: SysV x86-64, AAPCS64 HFA/packed/indirect, Win64, ARM AAPCS), C variadic promotions (`Single→Double`, `Boolean→zext i32`, `Byte/Short→sext i32`), short-circuit boolean `And`/`Or` via phi trampolines, freestanding `arm-m` (`cg_ptrSize = 4`, suppresses unused libc/`pthread` externs, lowers `Async` to synchronous deferred thunks). |
+| `src/token.vb`, `src/lexer.vb` | `g_srcPool` (2 MiB byte pool), `g_tokens` (262,144 cap), `$"..."` interpolation scanner, cross-platform (`/` & `\`, `<drive>:`) `Include` loader (max 64 files, 32 `-I` dirs; search: current file dir → `-I` → CWD `.`; diamond include-once + circular-include detection; per-file `modId`). |
+| `src/ast.vb`, `src/parser.vb`, `src/printer.vb` | Flat AST pools `g_nodes` (131,072) & `g_kids` (262,144), `--ast` pretty-printer. `Break`/`Continue` (`NdBreak`/`NdContinue`), `Operator` defs (`NdOpDef`), `Select Case` desugars into `NdMatch`, `With` blocks emit `NdWithTarget`, compile-time literal folding (`PFoldStrLit`) on `&` and `+`. |
+| `src/type_analyzer.vb` | Two-pass semantic checker (1a enums/struct headers → 1b struct fields → 1c globals/funcs/operators/externs → 2 bodies & const global inits). Enforces `Private` module isolation, loop-depth `Break`/`Continue` validation, `Structure` operator overload resolution/uniqueness, unqualified enum fallback + ambiguity errors, `ByRef` lvalue rules, `Static` const initializers, `At` MMIO rules, `Label`/`GoTo`, `Async`/`Await`. |
+| `src/codegen.vb` | Direct LLVM IR emitter (opaque `ptr`). Mangles `Private` symbols from included modules (`modId > 0`) as `@__mod<id>_<name>` and `Operator` overloads as `@__vb_op_<op>_<ty>...`. Tracks innermost `While`/`For` label stacks for `Break`/`Continue`. Aliases `popen`/`pclose` → `_popen`/`_pclose` on Windows. Target-native C ABI struct lowering (`CgClassifyCStruct`: SysV x86-64, AAPCS64 HFA/packed/indirect, Win64, ARM AAPCS), C variadic promotions (`Single→Double`, `Boolean→zext i32`, `Byte/Short→sext i32`), short-circuit boolean `And`/`Or` via phi trampolines, freestanding `arm-m` (`cg_ptrSize = 4`, suppresses unused libc/`pthread` externs, lowers `Async` to synchronous deferred thunks). |
 
 ### Standard Library (`std/`, 4 modules, ~1.7k LOC)
 All pure VerBose, zero-GC, Arena-backed:
@@ -41,7 +41,7 @@ make bootstrap                            # Cold-bootstrap ./verbose from checke
 make build                                # Stage 1 -> 2 -> 3 fixpoint (diff verbose2.ll verbose3.ll) + bootstrap_suite.vb
 make bootstrap-ir                         # Regenerate checked-in target-neutral verbose.ll from ./verbose
 make pkg-arch                             # Build Arch Linux .pkg.tar.zst + pacman repo DB in packaging/arch/
-make test                                 # Run all 23 pure-VerBose suites (./verbose test)
+make test                                 # Run all 25 pure-VerBose suites (./verbose test)
 make test-all                             # Full fixpoint build + all tests
 ./verbose test tests/test_<name>.vb       # Run a single suite
 ./verbose --ast file.vb                   # Dump parsed AST

@@ -8,4 +8,4 @@ _All current core language tasks are complete and archived in **[LOGS.md](LOGS.m
 
 ## Extensions
 
-_All completed ecosystem extensions (`verbose-raylib`, `verbose.nvim`, `verbose-pkg`, `verbose-tui`) have been moved to **[LOGS.md](LOGS.md)**._
+_All completed ecosystem extensions (`verbose-raylib`, `verbose.nvim`, `verbose-pkg`, `verbose-tui`, `verbose-openSKP`, `verbose-viewSKP`) have been moved to **[LOGS.md](LOGS.md)**._

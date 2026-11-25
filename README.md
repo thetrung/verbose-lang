@@ -33,6 +33,15 @@ Public Structure Vec2
   Dim x, y As Single
 End Structure
 
+' Operator overloading over Structure (supports mixed struct/scalar & unary ops)
+Public Operator +(a, b As Vec2) As Vec2
+  Return Vec2(a.x + b.x, a.y + b.y)
+End Operator
+
+Public Operator *(v As Vec2, s As Single) As Vec2
+  Return Vec2(v.x * s, v.y * s)
+End Operator
+
 Public Structure Entity
   Dim id As Integer
   Dim state As Status
@@ -50,8 +59,7 @@ Private Sub StepEntity(ByRef e As Entity, dt As Single)
   g_ticks = g_ticks + 1
 
   With e
-    .pos.x = .pos.x + 10.5 * dt
-    .pos.y = .pos.y - 2.25 * dt
+    .pos = .pos + Vec2(10.5, -2.25) * dt
 
     Match .state With
       Case Idle Then .state = Active
@@ -64,6 +72,12 @@ End Sub
 Private Function SumSlice(nums() As Integer, count As Integer) As Integer
   Dim total As Integer = 0
   For i = 0 To count - 1 Do
+    If nums(i) < 0 Then
+      Continue
+    End If
+    If total > 1000 Then
+      Break
+    End If
     total = total + nums(i)
   End For
   Return total
@@ -222,21 +236,23 @@ All implemented language, memory, FFI, standard library, compiler, and tooling f
 
 ## Ecosystem
 
-Official companion repositories built for VerBose-Lang `v0.6.0+`:
+Official companion repositories built for VerBose-Lang `v0.6.0+` / `v0.7.0+`:
 
 - **[verbose-raylib](https://github.com/thetrung/verbose-raylib)** — Idiomatic VerBose-Lang + C ABI wrapper for Raylib 5.x/6.x with 2D/3D math, color palettes, orbital camera helpers, headless mock, and graphical demos.
 - **[verbose.nvim](https://github.com/thetrung/verbose.nvim)** — Neovim plugin with Tree-sitter grammar & queries, recursive `Include`-cached in-process LSP (completion, `gd`, hover, diagnostics), and `:VerboseInstall` latest compiler installer.
 - **[verbose-pkg](https://github.com/thetrung/verbose-pkg)** — Serverless Cargo-inspired package manager (`vpm`), written natively in VerBose-Lang, supporting git, path, and source/binary `.vpkg.tar.gz` bundles.
 - **[verbose-tui](https://github.com/thetrung/verbose-tui)** — Ratatui-inspired zero-GC double-buffered 24-bit TrueColor TUI framework with Unicode widgets and zero `ncurses` dependency.
+- **[verbose-openSKP](https://github.com/thetrung/verbose-openSKP)** — VerBose-Lang + C ABI wrapper around MIT OpenSKP for loading SketchUp `.skp` scenes (meshes, instanced hierarchy, materials, layers, scenes/pages) directly into flat RAM arrays.
+- **[verbose-viewSKP](https://github.com/thetrung/verbose-viewSKP)** — ZBrush-style multithreaded CPU Pixol + Toon/Ink Webtoon `.skp` shot studio built with `verbose-openSKP` and `verbose-raylib` (`v0.7.0` `Operator` overloading, `Break`/`Continue`, `Async`/`Await`).
 
 ---
 
 ## Lesson Learned
 
-Building all 4 ecosystem repositories (`verbose-raylib`, `verbose.nvim`, `verbose-pkg`, `verbose-tui`) from scratch revealed how much VerBose-Lang's intentional simplicity accelerates real-world systems work:
+Building all 6 ecosystem repositories (`verbose-raylib`, `verbose.nvim`, `verbose-pkg`, `verbose-tui`, `verbose-openSKP`, `verbose-viewSKP`) from scratch revealed how much VerBose-Lang's intentional simplicity accelerates real-world systems work:
 
-1. **Direct C ABI & `clang` pass-through**: `Structure` layout matches C verbatim (`12/12` `SizeOf(...) == sizeof(...)` checks matched Raylib 6.2 directly) and `verbose` forwards `.c`/`.a`/`-l`/`-I` flags straight to `clang`. That eliminated bindgen/IDL tooling and FFI marshaling glue — ~190 lines of POSIX C (`tui_term.c`) was enough to build a full zero-`ncurses` TUI framework.
-2. **`Arena` + value `Structure`s + `With` blocks**: Deterministic `Arena` allocation and value structs remove borrow-checker ceremony, header/source duplication, and GC-FFI coordination, while `v0.6.0` ergonomics (`Match ... With`, `$"..."`, `With`, grouped `Dim`, `For ... Do`) keep libraries compact and readable.
+1. **Direct C ABI & `clang` pass-through**: `Structure` layout matches C verbatim (`12/12` `SizeOf(...) == sizeof(...)` checks matched Raylib 6.2 directly) and `verbose` forwards `.c`/`.a`/`-l`/`-I` flags straight to `clang`. That eliminated bindgen/IDL tooling and FFI marshaling glue — ~190 lines of POSIX C (`tui_term.c`) was enough to build a full zero-`ncurses` TUI framework, and wrapping a full C++17 `.skp` parser (`verbose-openSKP`) needed only a flat C ABI bridge.
+2. **`Arena` + value `Structure`s + `With` blocks + `Operator` overloading**: Deterministic `Arena` allocation and value structs remove borrow-checker ceremony, header/source duplication, and GC-FFI coordination, while `v0.6.0`–`v0.7.0` ergonomics (`Match ... With`, `$"..."`, `With`, grouped `Dim`, `For ... Do`, `Break`/`Continue`, `Structure` `Operator` overloading) keep math-heavy and systems code compact and readable.
 3. **Regular, explicit, line-oriented syntax**: Unambiguous declarations (`Include`, `Structure`, `Enum`, `Function`, `Sub`, `Declare`, `Dim x As Type`) made it straightforward to build both a 100%-parsing Tree-sitter grammar and a zero-dependency in-process Neovim LSP, while the flat `Include "..."` + `-I` model enabled a completely serverless package manager (`vpm`).
 4. **Built-in `Test ... End Test` + fast native compiles**: Self-contained unit tests with zero external test frameworks and sub-second compile-run cycles made iterating across libraries and cross-package integration feel like a scripting language with native C performance.
 

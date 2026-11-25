@@ -29,16 +29,16 @@ verbose-lang/
 
 ## Directory Descriptions
 
-- **`src/`**: The complete 9-module self-hosted compiler (`10,732 LOC`) written entirely in VerBose-Lang:
+- **`src/`**: The complete 9-module self-hosted compiler (`11,529 LOC`) written entirely in VerBose-Lang:
   - `verbose.vb`: CLI entry point, host target auto-detection, argument parsing, pipeline orchestration, test runner synthesis, and clang invocation.
   - `constants.vb`: Version metadata, global limits, token constants, target configurations (`linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`, `arm-m`), and diagnostics.
-  - `token.vb`: Token types, keywords (`Match`, `When`, `String`, `Volatile`, `VolatileLoad`, `VolatileStore`, `Async`, `Await`, etc.; `ByVal` removed), string-interpolation tokens, and token structure.
+  - `token.vb`: Token types, keywords (`Break`, `Continue`, `Operator`, `Match`, `When`, `String`, `Volatile`, `VolatileLoad`, `VolatileStore`, `Async`, `Await`, etc.; `ByVal` removed), string-interpolation tokens, and token structure.
   - `lexer.vb`: Lexical scanner, hex/floating-point literals, `$"..."` interpolated string scanner, and cross-platform (`/` & `\`, `<drive>:`) multi-file `Include` resolution with diamond deduplication.
-  - `ast.vb`: Abstract syntax tree node definitions (`NdMatch`, `NdWith`, `NdStrInterp`, etc.) and flattened node arena pool (`g_nodes()`, `g_kids()`).
+  - `ast.vb`: Abstract syntax tree node definitions (`NdBreak`, `NdContinue`, `NdOpDef`, `NdMatch`, `NdWith`, `NdStrInterp`, etc.) and flattened node arena pool (`g_nodes()`, `g_kids()`).
   - `printer.vb`: AST pretty-printer for debugging and `--ast` inspection.
-  - `parser.vb`: Recursive descent parser for brace-free VB grammar, `Match ... With` (plus `Select Case` desugaring), `With ... End With` blocks, enforced `For ... Do` & `While ... Do`, arrays, MMIO declarations, and expressions.
-  - `type_analyzer.vb`: Semantic type checker validating types, variables, scopes, unqualified enum fallback & ambiguity checks, `With` struct targets, `Match` patterns/guards, `ByRef` parameters, and MMIO memory constraints.
-  - `codegen.vb`: Direct LLVM IR generator supporting opaque pointers, multi-target datalayouts/triples, target-native C ABI lowering (SysV x86-64, AAPCS64, Microsoft x64, ARM AAPCS), C variadic promotions, string interpolation/matching helpers, zero-copy `With` blocks, and volatile access.
+  - `parser.vb`: Recursive descent parser for brace-free VB grammar, `Break`/`Continue` statements, `Operator ... End Operator` struct overloads, `Match ... With` (plus `Select Case` desugaring), `With ... End With` blocks, enforced `For ... Do` & `While ... Do`, arrays, MMIO declarations, and expressions.
+  - `type_analyzer.vb`: Semantic type checker validating types, variables, scopes, loop-depth `Break`/`Continue` rules, `Structure` operator overload signatures/resolution, unqualified enum fallback & ambiguity checks, `With` struct targets, `Match` patterns/guards, `ByRef` parameters, and MMIO memory constraints.
+  - `codegen.vb`: Direct LLVM IR generator supporting opaque pointers, multi-target datalayouts/triples, target-native C ABI lowering (SysV x86-64, AAPCS64, Microsoft x64, ARM AAPCS), C variadic promotions, innermost loop `Break`/`Continue` stacks, type-mangled `@__vb_op_*` operator overload dispatch, string interpolation/matching helpers, zero-copy `With` blocks, and volatile access.
 - **`std/`**: Core standard library modules built for zero-GC deterministic memory:
   - `collections.vb`: Dynamic `IntVec` and `PtrVec` arrays, fixed-capacity `IntRing` FIFO ring buffers, and open-addressing `IntMap` hash tables.
   - `io.vb`: File reading/writing (`IoReadFile`, `IoWriteFile`, `IoWriteText`, `IoAppendText`), line-by-line buffered reading (`IoReadLine`), file existence/size/deletion, and console output.
@@ -47,7 +47,7 @@ verbose-lang/
 - **`tests/`**: Native pure-VerBose test suites and regression tests run natively via `./verbose test`:
   - `harness.vb`: Shared cross-platform test runner helpers and assertion macros.
   - `bootstrap_suite.vb`: Comprehensive compiler self-hosting feature verification suite.
-  - `test_*.vb`: 23 domain-specific test suites (`test_arena`, `test_arrays`, `test_assert`, `test_byref`, `test_c_interop`, `test_cli`, `test_compress`, `test_core`, `test_ergonomics`, `test_expressions`, `test_interp`, `test_lang_ext`, `test_match`, `test_modules`, `test_raylib`, `test_static_heap`, `test_std_collections`, `test_std_io`, `test_std_math`, `test_std_strings`, `test_syntax`, `test_targets`, `test_type_analyzer`).
+  - `test_*.vb`: 25 domain-specific test suites (`test_arena`, `test_arrays`, `test_assert`, `test_break_continue`, `test_byref`, `test_c_interop`, `test_cli`, `test_compress`, `test_core`, `test_ergonomics`, `test_expressions`, `test_interp`, `test_lang_ext`, `test_match`, `test_modules`, `test_operators`, `test_raylib`, `test_static_heap`, `test_std_collections`, `test_std_io`, `test_std_math`, `test_std_strings`, `test_syntax`, `test_targets`, `test_type_analyzer`).
   - `raylib/`: Raylib 5.x C FFI bindings (`raylib.vb`), 2D/3D graphical demos (`bouncing_ball.vb`, `camera3d_demo.vb`), `README.md`, and headless test shim (`raylib_headless_shim.c`).
 
 > **Stage 0 archive**: The original OCaml bootstrap compiler (`stage0/`) has been moved off `main` into the [`stage0`](../../tree/stage0) branch.
