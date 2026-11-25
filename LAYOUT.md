@@ -10,6 +10,7 @@ verbose-lang/
 │   ├── collections.vb          # Vector, ring buffer & hash map collections (IntVec, PtrVec, IntRing, IntMap)
 │   ├── io.vb                   # File I/O, buffered reading, text/binary operations (IoRead*, IoWrite*, IoPrint*)
 │   ├── math.vb                 # Pure-VerBose math routines & constants (trig, exp/ln, sqrt, pow, abs, gcd)
+│   ├── span.vb                 # Explicit length-carried bounds-checked views (ByteSpan, IntSpan, LongSpan, SingleSpan, PtrSpan)
 │   └── strings.vb              # String manipulation, StrView, and StrBuilder utilities (Str*, Sb*)
 ├── tests/                      # Pure-VerBose Test/Assert suites, regression cases & Raylib 5.x demo (tests/raylib/)
 ├── packaging/arch/             # Arch Linux PKGBUILD & .SRCINFO (`make pkg-arch`)
@@ -29,7 +30,7 @@ verbose-lang/
 
 ## Directory Descriptions
 
-- **`src/`**: The complete 9-module self-hosted compiler (`11,927 LOC`) written entirely in VerBose-Lang:
+- **`src/`**: The complete 9-module self-hosted compiler (`12,040 LOC`) written entirely in VerBose-Lang:
   - `verbose.vb`: CLI entry point, host target auto-detection, argument parsing, pipeline orchestration, test runner synthesis, and clang invocation.
   - `constants.vb`: Version metadata, global limits, token constants, target configurations (`linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`, `arm-m`), and diagnostics.
   - `token.vb`: Token types, keywords (`Break`, `Continue`, `Operator`, `Match`, `When`, `String`, `Volatile`, `VolatileLoad`, `VolatileStore`, `Async`, `Await`, etc.; `ByVal` removed), string-interpolation tokens, and token structure.
@@ -43,11 +44,12 @@ verbose-lang/
   - `collections.vb`: Dynamic `IntVec` and `PtrVec` arrays, fixed-capacity `IntRing` FIFO ring buffers, and open-addressing `IntMap` hash tables.
   - `io.vb`: File reading/writing (`IoReadFile`, `IoWriteFile`, `IoWriteText`, `IoAppendText`), line-by-line buffered reading (`IoReadLine`), file existence/size/deletion, and console output.
   - `math.vb`: 100% pure-VerBose mathematical functions (zero `-lm` dependency) including trigonometric series, Newton-Raphson `MathSqrt`, logarithms, powers, and rounding.
+  - `span.vb`: Explicit length-carried, bounds-checked memory views (`ByteSpan`, `IntSpan`, `LongSpan`, `SingleSpan`, `PtrSpan`) with zero libc / bare-metal compatibility.
   - `strings.vb`: String operations (`StrLen`, `StrCmp`, `StrConcat`, `StrSubstr`, etc.), zero-copy `StrView`, and efficient `StrBuilder`.
 - **`tests/`**: Native pure-VerBose test suites and regression tests run natively via `./verbose test`:
   - `harness.vb`: Shared cross-platform test runner helpers and assertion macros.
   - `bootstrap_suite.vb`: Comprehensive compiler self-hosting feature verification suite.
-  - `test_*.vb`: 28 domain-specific test suites (`test_arena`, `test_arrays`, `test_assert`, `test_break_continue`, `test_byref`, `test_c_interop`, `test_casts`, `test_cli`, `test_compress`, `test_core`, `test_ergonomics`, `test_expressions`, `test_interp`, `test_lang_ext`, `test_loop_alloca`, `test_match`, `test_modules`, `test_operators`, `test_raylib`, `test_stack_limit`, `test_static_heap`, `test_std_collections`, `test_std_io`, `test_std_math`, `test_std_strings`, `test_syntax`, `test_targets`, `test_type_analyzer`).
+  - `test_*.vb`: 29 domain-specific test suites (`test_arena`, `test_arrays`, `test_assert`, `test_bounds`, `test_break_continue`, `test_byref`, `test_c_interop`, `test_casts`, `test_cli`, `test_compress`, `test_core`, `test_ergonomics`, `test_expressions`, `test_interp`, `test_lang_ext`, `test_loop_alloca`, `test_match`, `test_modules`, `test_operators`, `test_raylib`, `test_stack_limit`, `test_static_heap`, `test_std_collections`, `test_std_io`, `test_std_math`, `test_std_strings`, `test_syntax`, `test_targets`, `test_type_analyzer`).
   - `raylib/`: Raylib 5.x C FFI bindings (`raylib.vb`), 2D/3D graphical demos (`bouncing_ball.vb`, `camera3d_demo.vb`), `README.md`, and headless test shim (`raylib_headless_shim.c`).
 
 > **Stage 0 archive**: The original OCaml bootstrap compiler (`stage0/`) has been moved off `main` into the [`stage0`](../../tree/stage0) branch.

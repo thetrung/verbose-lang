@@ -15,6 +15,16 @@ Historical log of finished tasks and completed roadmap milestones for **VerBose-
 
 ---
 
+## Completed Tasks (`v0.7.4`)
+
+- [x] **Array & Memory Bounds Safety (Compile-Time Constant OOB, Opt-In `--bounds-check`, & `std/span.vb`)**:
+  - **Zero-cost compile-time constant OOB errors**: Added `TaTryEvalConstInt` in `src/type_analyzer.vb` to reject out-of-bounds constant integer indices (including negative indices & constant `+`/`-`/`*` expressions) on fixed-size arrays at compile time with zero runtime overhead.
+  - **Explicit opt-in `--bounds-check` CLI flag**: Added `CgSetBoundsCheck` / `CgEmitBoundsCheck` in `src/codegen.vb` emitting single-instruction `icmp ult i64` runtime checks on fixed-size arrays (hosted `@__vb_bounds_fail` printing exact index & length + `exit(1)`, or freestanding `llvm.trap` on `arm-m`); remains off by default so release builds have zero hidden overhead.
+  - **Explicit bounds-checked spans (`std/span.vb`)**: Added zero-GC, zero-libc, bare-metal-safe `ByteSpan`, `IntSpan`, `LongSpan`, `SingleSpan`, and `PtrSpan` (`*SpanFrom`, `*SpanInBounds`, `*SpanGet`, `*SpanSet`, `*SpanAt`, `*SpanSub`) for length-carried checked access over `HeapAlloc`, `ArenaAlloc`, `Static`, or `Dim` buffers.
+  - Added `tests/test_bounds.vb` (3/3 passing — **29/29** suites, **194/194** `Test` blocks, Stage 3 byte-for-byte fixpoint verified, refreshed `verbose.ll`, and updated Arch `PKGBUILD`/`.SRCINFO`).
+
+---
+
 ## Completed Tasks (`v0.7.3`)
 
 - [x] **Strict Compile-Time Stack-Frame Limit Enforcement (`--max-stack`)**: Added exact target-aware type sizing (`TaTypeAlign` / `TaTypeSize` in 64-bit `Long`) and per-function/operator/test stack frame accounting in `src/type_analyzer.vb` (`TaSetTarget`, `TaSetMaxStack`, `TaAccountStackLocal`, `TaCheckFrameBudget`), enforcing hard compile-time errors (no silent `malloc` auto-spill!) when any `Dim` local or cumulative stack frame exceeds **`64 KB`** on hosted 64-bit targets or **`4 KB`** on bare-metal `arm-m` (nudging explicitly to `HeapAlloc`, `ArenaAlloc`, or `Static`, with explicit `--max-stack <bytes>` CLI override). Upgraded `tests/harness.vb` `FileHas` buffer from stack `Dim` to `Static`, added `tests/test_stack_limit.vb` (5/5 passing — **28/28** suites, **191/191** `Test` blocks, Stage 3 byte-for-byte fixpoint verified, refreshed `verbose.ll`, and updated Arch `PKGBUILD`/`.SRCINFO`).

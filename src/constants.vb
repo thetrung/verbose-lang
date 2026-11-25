@@ -1,7 +1,7 @@
 ' VerBose Self-Hosting Compiler (verbose) - Shared Diagnostics, Messages & LLVM IR Templates
 
 ' --- Compiler Version & CLI Driver Messages ---
-Public Static MSG_CLI_VERSION As Pointer = "verbose 0.7.3 (VerBose-Lang Self-Hosted Compiler)\n"
+Public Static MSG_CLI_VERSION As Pointer = "verbose 0.7.4 (VerBose-Lang Self-Hosted Compiler)\n"
 Public Static MSG_CLI_USAGE As Pointer = "Usage: verbose <filename>.vb [options]\n" &
   "       verbose test [file.vb | dir] [options]\n" &
   "  test         Run built-in Test/Assert blocks in a .vb file or directory (default: tests)\n" &
@@ -10,6 +10,7 @@ Public Static MSG_CLI_USAGE As Pointer = "Usage: verbose <filename>.vb [options]
   "  --ir         Show generated LLVM-IR\n" &
   "  --ta         Verbose type-analyzer pass (runs automatically before codegen)\n" &
   "  --no-ta      Skip semantic type-analyzer pass\n" &
+  "  --bounds-check Enable runtime bounds checks on fixed-size arrays (default: off)\n" &
   "  --max-stack <N> Max stack frame bytes per function (default: 65536 hosted, 4096 arm-m; 0 disables)\n" &
   "  --emit-only  Emit .ll only (skip clang & execution)\n" &
   "  -c, --emit-obj Compile to object file (.o) via clang -c (skip linking & run)\n" &
@@ -295,6 +296,22 @@ Public Static IR_ASSERT_NORM_FN As Pointer = "define internal void @__vb_assert_
   "  call i32 @fflush(ptr null)\n" &
   "  call void @exit(i32 1)\n" &
   "  ret void\n" &
+  "}\n\n"
+
+Public Static IR_BOUNDS_HOSTED_FN As Pointer = "@__vb_bounds_fmt = private unnamed_addr constant [54 x i8] c\"Runtime Error: Array index %lld out of bounds (%lld)\\0A\\00\", align 1\n\n" &
+  "define internal void @__vb_bounds_fail(i64 %idx, i64 %len) {\n" &
+  "entry:\n" &
+  "  call i32 (ptr, ...) @printf(ptr @__vb_bounds_fmt, i64 %idx, i64 %len)\n" &
+  "  call i32 @fflush(ptr null)\n" &
+  "  call void @exit(i32 1)\n" &
+  "  unreachable\n" &
+  "}\n\n"
+
+Public Static IR_BOUNDS_FREESTANDING_FN As Pointer = "declare void @llvm.trap()\n\n" &
+  "define internal void @__vb_bounds_fail(i64 %idx, i64 %len) {\n" &
+  "entry:\n" &
+  "  call void @llvm.trap()\n" &
+  "  unreachable\n" &
   "}\n\n"
 
 Public Static IR_TEST_MAIN_PROLOGUE As Pointer = "define i32 @main() {\n" &

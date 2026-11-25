@@ -825,11 +825,56 @@ Private Function TaCheckArenaArg(fnName As Pointer, mode As Integer, argExpr As 
   Return True
 End Function
 
+Private Function TaTryEvalConstInt(exprId As Integer, ByRef outVal As Long) As Boolean
+  If exprId < 0 Then
+    Return False
+  End If
+  Dim k As Integer = g_nodes(exprId).kind
+  If k = NdIntLit Then
+    outVal = Long(g_nodes(exprId).intVal)
+    Return True
+  End If
+  If k = NdNeg Then
+    Dim subVal As Long = 0
+    If TaTryEvalConstInt(g_nodes(exprId).left, ByRef subVal) Then
+      outVal = -subVal
+      Return True
+    End If
+    Return False
+  End If
+  If k = NdBinOp Then
+    Dim lv = Long(0), rv = Long(0) As Long
+    If TaTryEvalConstInt(g_nodes(exprId).left, ByRef lv) And TaTryEvalConstInt(g_nodes(exprId).right, ByRef rv) Then
+      Match g_nodes(exprId).op With
+        Case TkPlus Then
+          outVal = lv + rv
+          Return True
+        Case TkMinus Then
+          outVal = lv - rv
+          Return True
+        Case TkStar Then
+          outVal = lv * rv
+          Return True
+      End Match
+    End If
+  End If
+  Return False
+End Function
+
 Private Function TaCheckIndex(baseTy As TypeInfo, idxExpr As Integer) As TypeInfo
   Dim idxTy As TypeInfo = TaTypeOfExpr(idxExpr)
   If Not TaIsIntType(idxTy) Then
     Printf("Semantic Type Error: Array index must be an integer type\n")
     ta_errCount = ta_errCount + 1
+  End If
+  If baseTy.arrLen > 0 Then
+    Dim cIdx As Long = 0
+    If TaTryEvalConstInt(idxExpr, ByRef cIdx) Then
+      If (cIdx < 0) Or (cIdx >= Long(baseTy.arrLen)) Then
+        Printf("Semantic Type Error: Array index %lld out of bounds for fixed array of length %d (valid: 0..%d)\n", cIdx, baseTy.arrLen, baseTy.arrLen - 1)
+        ta_errCount = ta_errCount + 1
+      End If
+    End If
   End If
   If baseTy.arrLen <> 0 Then
     Dim elemTy As TypeInfo With ( kind = baseTy.kind, typeIdx = baseTy.typeIdx, arrLen = 0, namePos = baseTy.namePos, nameLen = baseTy.nameLen, innerKind = baseTy.innerKind )

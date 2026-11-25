@@ -59,12 +59,16 @@ Structure CgStrConst
 End Structure
 
 Private Static cg_out, cg_saved_out, cg_alloca_fp, cg_body_fp As Pointer, cg_curRetTy As TypeInfo
-Private Static cg_reg = 1, cg_lbl = 1, cg_usesArena = 0, cg_usesAssert = 0, cg_usesStrConcat = 0, cg_usesStrInterp = 0, cg_usesStrEq = 0, cg_usesAsync = 0, cg_blockEnded = 0, cg_testMode = 0, cg_inTestFn = 0, cg_testCount = 0, cg_curModId = 0 As Integer
+Private Static cg_reg = 1, cg_lbl = 1, cg_usesArena = 0, cg_usesAssert = 0, cg_usesStrConcat = 0, cg_usesStrInterp = 0, cg_usesStrEq = 0, cg_usesAsync = 0, cg_boundsCheck = 0, cg_usesBoundsCheck = 0, cg_emittedExit = 0, cg_emittedFflush = 0, cg_blockEnded = 0, cg_testMode = 0, cg_inTestFn = 0, cg_testCount = 0, cg_curModId = 0 As Integer
 Private Static cg_target = 0, cg_ptrSize = 8, cg_ptrAlign = 8, cg_isFreestanding = 0 As Integer
 Private Static cg_usesPrintf = 0, cg_usesMalloc = 0, cg_usesCalloc = 0, cg_usesRealloc = 0, cg_usesFree = 0, cg_usesFopen = 0, cg_usesGetc = 0, cg_usesPutc = 0 As Integer
 
 Public Sub CgSetTestMode(enabled As Integer)
   cg_testMode = enabled
+End Sub
+
+Public Sub CgSetBoundsCheck(enabled As Integer)
+  cg_boundsCheck = enabled
 End Sub
 
 Public Function CgUsesAsync() As Integer
@@ -160,6 +164,22 @@ Private Sub CgEmitHoistedAlloca(slot As Integer, ty As TypeInfo, align As Intege
   CgEmitLlvmType(ty)
   fprintf(cg_out, ", align %d\n", align)
   cg_out = prevOut
+End Sub
+
+Private Sub CgEmitBoundsCheck(idx64, arrLen As Integer)
+  If cg_boundsCheck = 0 Then
+    Return
+  End If
+  cg_usesBoundsCheck = 1
+  Dim okReg As Integer = CgNextReg()
+  Dim okLbl As Integer = CgNextLbl()
+  Dim failLbl As Integer = CgNextLbl()
+  fprintf(cg_out, "  %%r%d = icmp ult i64 %%r%d, %d\n", okReg, idx64, arrLen)
+  fprintf(cg_out, "  br i1 %%r%d, label %%L%d, label %%L%d\n", okReg, okLbl, failLbl)
+  fprintf(cg_out, "L%d:\n", failLbl)
+  fprintf(cg_out, "  call void @__vb_bounds_fail(i64 %%r%d, i64 %d)\n", idx64, arrLen)
+  fprintf(cg_out, "  unreachable\n")
+  fprintf(cg_out, "L%d:\n", okLbl)
 End Sub
 
 Private Sub CgEmitHoistedAllocaRaw(slot As Integer, tyStr As Pointer, align As Integer)
@@ -1591,6 +1611,7 @@ Private Function CgEmitLValuePtr(id As Integer, ByRef outTy As TypeInfo, ByRef o
     outIsVolatile = baseVol
 
     If baseTy.arrLen > 0 Then
+      CgEmitBoundsCheck(idx64, baseTy.arrLen)
       Dim elemTy As TypeInfo = CgElemType(baseTy)
       Dim r As Integer = CgNextReg()
       fprintf(cg_out, "  %%r%d = getelementptr inbounds ", r)
@@ -1942,6 +1963,7 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
       Dim baseTy As TypeInfo
       Dim baseVal As Integer = CgEmitExpr(g_nodes(id).left, ByRef baseTy)
       If baseTy.arrLen > 0 Then
+        CgEmitBoundsCheck(idx64, baseTy.arrLen)
         eTy = CgElemType(baseTy)
         ePtr = CgNextReg()
         fprintf(cg_out, "  %%r%d = getelementptr inbounds ", ePtr)
@@ -4128,8 +4150,9 @@ End Sub
 
 Private Sub CgEmitAssertRuntime()
   If (cg_testMode = 1) And (cg_testCount > 0) Then
-    If Not CgHasExtern("fflush", 6) Then
+    If (cg_emittedFflush = 0) And (Not CgHasExtern("fflush", 6)) Then
       fputs("declare i32 @fflush(ptr)\n", cg_out)
+      cg_emittedFflush = 1
     End If
     fputs(IR_ASSERT_TEST_DECLS, cg_out)
     fputs(IR_ASSERT_TEST_FN, cg_out)
@@ -4137,15 +4160,33 @@ Private Sub CgEmitAssertRuntime()
   End If
 
   If cg_usesAssert = 1 Then
-    If Not CgHasExtern("exit", 4) Then
+    If (cg_emittedExit = 0) And (Not CgHasExtern("exit", 4)) Then
       fputs("declare void @exit(i32)\n", cg_out)
+      cg_emittedExit = 1
     End If
-    If Not CgHasExtern("fflush", 6) Then
+    If (cg_emittedFflush = 0) And (Not CgHasExtern("fflush", 6)) Then
       fputs("declare i32 @fflush(ptr)\n", cg_out)
+      cg_emittedFflush = 1
     End If
     fputs(IR_ASSERT_NORM_DECLS, cg_out)
     fputs(IR_ASSERT_NORM_FN, cg_out)
   End If
+End Sub
+
+Private Sub CgEmitBoundsRuntime()
+  If cg_isFreestanding = 1 Then
+    fputs(IR_BOUNDS_FREESTANDING_FN, cg_out)
+    Return
+  End If
+  If (cg_emittedExit = 0) And (Not CgHasExtern("exit", 4)) Then
+    fputs("declare void @exit(i32)\n", cg_out)
+    cg_emittedExit = 1
+  End If
+  If (cg_emittedFflush = 0) And (Not CgHasExtern("fflush", 6)) Then
+    fputs("declare i32 @fflush(ptr)\n", cg_out)
+    cg_emittedFflush = 1
+  End If
+  fputs(IR_BOUNDS_HOSTED_FN, cg_out)
 End Sub
 
 Private Sub CgEmitTestMain(progRoot As Integer)
@@ -4231,6 +4272,9 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   cg_lbl = 1
   cg_usesArena = 0
   cg_usesAssert = 0
+  cg_usesBoundsCheck = 0
+  cg_emittedExit = 0
+  cg_emittedFflush = 0
   cg_usesStrConcat = 0
   cg_usesStrInterp = 0
   cg_usesStrEq = 0
@@ -4676,6 +4720,10 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
 
   If cg_usesStrEq = 1 Then
     CgEmitStrEqRuntime()
+  End If
+
+  If cg_usesBoundsCheck = 1 Then
+    CgEmitBoundsRuntime()
   End If
 
   If Not IsNull(cg_alloca_fp) Then

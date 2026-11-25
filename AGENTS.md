@@ -6,7 +6,7 @@ See also: [Wiki Tutorial](https://github.com/thetrung/verbose-lang/wiki/Tutorial
 
 ## Project Identity
 
-- **VerBose-Lang** (`v0.7.3`): brace-free, case-sensitive, Visual Basic–inspired systems language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**).
+- **VerBose-Lang** (`v0.7.4`): brace-free, case-sensitive, Visual Basic–inspired systems language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**).
 - **Zero external toolchain deps**: `clang` + `curl` only (no OCaml, no Python). The archival OCaml Stage 0 compiler lives on the `stage0` git branch.
 - **Targets** (`--target` / `VERBOSE_TARGET`): `linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`, and freestanding 32-bit `arm-m` (`thumbv7em-unknown-none-eabi`).
 - **Companion ecosystem repos** (sibling dirs in `../` when checked out): `verbose-raylib`, `verbose.nvim`, `verbose-pkg` (`vpm`), `verbose-tui`, `verbose-openSKP`, `verbose-viewSKP`.
@@ -24,15 +24,16 @@ Every compilation allocates a single **64 MiB deterministic `Arena`** in `RunSin
 | `src/type_analyzer.vb` | Two-pass semantic checker (1a enums/struct headers → 1b struct fields → 1c globals/funcs/operators/externs → 2 bodies & const global inits). Enforces `Private` module isolation, loop-depth `Break`/`Continue` validation, `Structure` operator overload resolution/uniqueness, unqualified enum fallback + ambiguity errors, `ByRef` lvalue rules, `Static` const initializers, `At` MMIO rules, `Label`/`GoTo`, `Async`/`Await`. |
 | `src/codegen.vb` | Direct LLVM IR emitter (opaque `ptr`). Mangles `Private` symbols from included modules (`modId > 0`) as `@__mod<id>_<name>` and `Operator` overloads as `@__vb_op_<op>_<ty>...`. Tracks innermost `While`/`For` label stacks for `Break`/`Continue`. Aliases `popen`/`pclose` → `_popen`/`_pclose` on Windows. Target-native C ABI struct lowering (`CgClassifyCStruct`: SysV x86-64, AAPCS64 HFA/packed/indirect, Win64, ARM AAPCS), C variadic promotions (`Single→Double`, `Boolean→zext i32`, `Byte/Short→sext i32`), short-circuit boolean `And`/`Or` via phi trampolines, freestanding `arm-m` (`cg_ptrSize = 4`, suppresses unused libc/`pthread` externs, lowers `Async` to synchronous deferred thunks). |
 
-### Standard Library (`std/`, 4 modules, ~1.7k LOC)
+### Standard Library (`std/`, 5 modules, ~1.9k LOC)
 All pure VerBose, zero-GC, Arena-backed:
 - `std/strings.vb` — `Str*`, `StrView`, `StrBuilder` (zero libc deps, bare-metal safe).
 - `std/math.vb` — `MATH_*`, `Math*` integer/long/double/trig/exp/ln/pow/sqrt (**100% pure VerBose, zero `-lm`**).
 - `std/collections.vb` — `IntVec`, `PtrVec`, `IntRing`, `IntMap`.
 - `std/io.vb` — `IoBuf`, `IoReadFile`, `IoWriteFile`, `IoWriteText`, `IoAppendText`, `IoFileExists`, `IoFileSize`, `IoRemoveFile`, `IoPrint`, `IoPrintLn`, `IoReadLine`.
+- `std/span.vb` — `ByteSpan`, `IntSpan`, `LongSpan`, `SingleSpan`, `PtrSpan` (`*SpanFrom`, `*SpanInBounds`, `*SpanGet`, `*SpanSet`, `*SpanAt`, `*SpanSub` — explicit length-carried bounds-checked views, zero libc, bare-metal safe).
 
 ### Tests (`tests/`)
-- 28 native pure-VerBose `Test`/`Assert` suites (`tests/test_*.vb`, 191 `Test` blocks) + `tests/bootstrap_suite.vb` + `tests/harness.vb` + `tests/raylib/` (Raylib 5.x bindings, demos & headless C shim).
+- 29 native pure-VerBose `Test`/`Assert` suites (`tests/test_*.vb`, 194 `Test` blocks) + `tests/bootstrap_suite.vb` + `tests/harness.vb` + `tests/raylib/` (Raylib 5.x bindings, demos & headless C shim).
 
 ## Build, Bootstrap & Test Commands
 

@@ -15,6 +15,7 @@ Command-line interface options and usage reference for `./verbose`.
 | `--ir` | Print the generated LLVM IR to stdout |
 | `--ta` | Verbose semantic Type Analyzer output (runs automatically before codegen) |
 | `--no-ta` | Skip the semantic Type Analyzer pass |
+| `--bounds-check` | Enable explicit opt-in runtime bounds checking (`0 <= idx < N`) on fixed-size arrays (`arrLen > 0`); prints error & aborts on hosted targets or emits `llvm.trap` on freestanding `arm-m`. Off by default (zero hidden overhead in release builds). |
 | `--max-stack <bytes>`, `--max-stack=<bytes>` | Maximum allowed stack frame size per function/operator/test in bytes (enforced as a compile-time error; defaults to `65536` on hosted 64-bit targets and `4096` on bare-metal `arm-m`; `0` disables) |
 | `--emit-only` | Emit LLVM IR (`.ll`) only; skip `clang` compilation and execution |
 | `--no-run` | Compile native executable with `clang`, skip execution |

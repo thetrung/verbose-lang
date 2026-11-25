@@ -22,6 +22,7 @@ Declare Function strstr(haystack, needle As Pointer) As Pointer
 
 Private Static cli_hostTarget As Integer = -1
 Private Static cli_maxStackOverride As Long = -1
+Private Static cli_boundsCheck As Integer = 0
 
 Private Function CliParseNonNegLong(s As Pointer) As Long
   If IsNull(s) Or (s(0) = 0) Then
@@ -298,6 +299,7 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
   End If
 
   CgSetTestMode(testMode)
+  CgSetBoundsCheck(cli_boundsCheck)
   CgSetTarget(targetId)
 
   ' Cross-target execution/linking rules
@@ -588,6 +590,7 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
       Case "--ir" Then showIr = 1
       Case "--ta" Then showTa = 1
       Case "--no-ta" Then skipTa = 1
+      Case "--bounds-check" Then cli_boundsCheck = 1
       Case "--max-stack" Then
         If (i + 1) >= argc Then
           Printf(MSG_CLI_ERR_STACK_ARG)
