@@ -1,7 +1,7 @@
 ' VerBose Self-Hosting Compiler (verbose) - Shared Diagnostics, Messages & LLVM IR Templates
 
 ' --- Compiler Version & CLI Driver Messages ---
-Public Static MSG_CLI_VERSION As Pointer = "verbose 0.6.1 (VerBose-Lang Self-Hosted Compiler)\n"
+Public Static MSG_CLI_VERSION As Pointer = "verbose 0.7.0 (VerBose-Lang Self-Hosted Compiler)\n"
 Public Static MSG_CLI_USAGE As Pointer = "Usage: verbose <filename>.vb [options]\n" &
   "       verbose test [file.vb | dir] [options]\n" &
   "  test         Run built-in Test/Assert blocks in a .vb file or directory (default: tests)\n" &
@@ -87,6 +87,15 @@ Public Static MSG_TA_ARRAY_SIZE_POS = "Semantic Type Error: Array size must be g
   MSG_TA_INTERP_TYPE = "Semantic Type Error: Unsupported type in string interpolation\n",
   MSG_TA_MATCH_TYPE = "Semantic Type Error: Match Case pattern type mismatch\n",
   MSG_TA_MATCH_GUARD = "Semantic Type Error: Match When guard must be Boolean\n" As Pointer
+
+Public Static MSG_TA_BREAK_LOOP = "Semantic Type Error: 'Break' can only be used inside a While or For loop\n",
+  MSG_TA_CONTINUE_LOOP = "Semantic Type Error: 'Continue' can only be used inside a While or For loop\n",
+  MSG_TA_OP_ARITY = "Semantic Type Error: Operator overload has invalid parameter count\n",
+  MSG_TA_OP_BYREF = "Semantic Type Error: Operator overload parameters cannot be ByRef\n",
+  MSG_TA_OP_STRUCT = "Semantic Type Error: Operator overload must have at least one Structure parameter\n",
+  MSG_TA_OP_RET = "Semantic Type Error: Operator overload must specify a non-Nothing return type\n",
+  MSG_TA_OP_DUP = "Semantic Type Error: Duplicate operator overload definition\n",
+  MSG_TA_OP_NO_OVERLOAD = "Semantic Type Error: No matching Operator overload for Structure operand(s)\n" As Pointer
 
 ' --- Codegen Diagnostics ---
 Public Static MSG_CG_OPEN_FAIL = "verbose codegen error: cannot open output file\n",

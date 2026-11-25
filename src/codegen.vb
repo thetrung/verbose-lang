@@ -38,6 +38,11 @@ Structure CgFuncInfo
   Dim retTy, bodyRetTy As TypeInfo
 End Structure
 
+Structure CgOpInfo
+  Dim opTok, isPublic, isPrivate, modId, paramStart, paramCount As Integer
+  Dim retTy As TypeInfo
+End Structure
+
 Structure CgLocalSym
   Dim namePos, nameLen, slotReg, isIndirect, staticPlusOne, isVolatile As Integer, ty As TypeInfo
 End Structure
@@ -79,10 +84,12 @@ End Sub
 Private Static cg_enums() As CgEnumInfo, cg_enumMems() As CgEnumMem
 Private Static cg_structs() As CgStructInfo, cg_fields() As CgFieldInfo
 Private Static cg_globals() As CgGlobalInfo, cg_funcs() As CgFuncInfo
+Private Static cg_ops() As CgOpInfo
 Private Static cg_params() As CgParamInfo, cg_locals() As CgLocalSym
 Private Static cg_strs() As CgStrConst, cg_staticLocals() As CgStaticLocal
 Private Static cg_withPtrs(16), cg_withVols(16) As Integer, cg_withTys(16) As TypeInfo
-Private Static cg_enumCount, cg_enumMemCount, cg_structCount, cg_fieldCount, cg_globalCount, cg_funcCount, cg_paramCount, cg_localCount, cg_strCount, cg_staticLocalCount, cg_withDepth As Integer = 0
+Private Static cg_loopBreakLbls(64), cg_loopContLbls(64) As Integer
+Private Static cg_enumCount, cg_enumMemCount, cg_structCount, cg_fieldCount, cg_globalCount, cg_funcCount, cg_opCount, cg_paramCount, cg_localCount, cg_strCount, cg_staticLocalCount, cg_withDepth, cg_loopDepth As Integer = 0
 
 Private Function CgNextReg() As Integer
   Dim r As Integer = cg_reg
@@ -219,6 +226,203 @@ Private Function CgFindLocal(pos, slen As Integer) As Integer
   End While
   Return -1
 End Function
+
+Private Function CgNormKind(k As Integer) As Integer
+  If k = TyEnum Then
+    Return TyInt
+  End If
+  Return k
+End Function
+
+Private Function CgTypesMatch(t1 As TypeInfo, t2 As TypeInfo) As Boolean
+  If t1.arrLen <> t2.arrLen Then
+    Return False
+  End If
+  Dim k1 As Integer = CgNormKind(t1.kind)
+  Dim k2 As Integer = CgNormKind(t2.kind)
+  If k1 <> k2 Then
+    Return False
+  End If
+  If k1 = TyStruct Then
+    Return t1.typeIdx = t2.typeIdx
+  End If
+  Return True
+End Function
+
+Private Function CgIsIntLitNode(id As Integer) As Boolean
+  If id < 0 Then
+    Return False
+  End If
+  Dim k As Integer = g_nodes(id).kind
+  If k = NdIntLit Then
+    Return True
+  End If
+  If (k = NdNeg) And (g_nodes(id).left >= 0) Then
+    Return g_nodes(g_nodes(id).left).kind = NdIntLit
+  End If
+  Return False
+End Function
+
+Private Function CgIsFloatLitNode(id As Integer) As Boolean
+  If id < 0 Then
+    Return False
+  End If
+  Dim k As Integer = g_nodes(id).kind
+  If k = NdFloatLit Then
+    Return True
+  End If
+  If (k = NdNeg) And (g_nodes(id).left >= 0) Then
+    Return g_nodes(g_nodes(id).left).kind = NdFloatLit
+  End If
+  Return False
+End Function
+
+Private Function CgOpParamMatchesLit(paramTy As TypeInfo, argTy As TypeInfo, argNode As Integer) As Boolean
+  If CgTypesMatch(paramTy, argTy) Then
+    Return True
+  End If
+  If (paramTy.arrLen = 0) And ((paramTy.kind = TySingle) Or (paramTy.kind = TyDouble)) And CgIsFloatLitNode(argNode) Then
+    Return True
+  End If
+  Dim pk As Integer = CgNormKind(paramTy.kind)
+  If (paramTy.arrLen = 0) And ((pk = TyByte) Or (pk = TyShort) Or (pk = TyInt) Or (pk = TyLong)) And CgIsIntLitNode(argNode) Then
+    Return True
+  End If
+  Return False
+End Function
+
+Private Function CgFindUnaryOp(opTok As Integer, t As TypeInfo) As Integer
+  For i = 0 To cg_opCount - 1 Do
+    If (cg_ops(i).isPrivate = 1) And (cg_ops(i).modId = cg_curModId) And (cg_ops(i).opTok = opTok) And (cg_ops(i).paramCount = 1) Then
+      If CgTypesMatch(cg_params(cg_ops(i).paramStart).ty, t) Then
+        Return i
+      End If
+    End If
+  End For
+  For i = 0 To cg_opCount - 1 Do
+    If (cg_ops(i).isPrivate = 0) And (cg_ops(i).opTok = opTok) And (cg_ops(i).paramCount = 1) Then
+      If CgTypesMatch(cg_params(cg_ops(i).paramStart).ty, t) Then
+        Return i
+      End If
+    End If
+  End For
+  Return -1
+End Function
+
+Private Function CgFindBinOp(opTok As Integer, t1 As TypeInfo, e1 As Integer, t2 As TypeInfo, e2 As Integer) As Integer
+  For i = 0 To cg_opCount - 1 Do
+    If (cg_ops(i).isPrivate = 1) And (cg_ops(i).modId = cg_curModId) And (cg_ops(i).opTok = opTok) And (cg_ops(i).paramCount = 2) Then
+      Dim p0 As TypeInfo = cg_params(cg_ops(i).paramStart).ty
+      Dim p1 As TypeInfo = cg_params(cg_ops(i).paramStart + 1).ty
+      If CgTypesMatch(p0, t1) And CgTypesMatch(p1, t2) Then
+        Return i
+      End If
+    End If
+  End For
+  For i = 0 To cg_opCount - 1 Do
+    If (cg_ops(i).isPrivate = 0) And (cg_ops(i).opTok = opTok) And (cg_ops(i).paramCount = 2) Then
+      Dim p0 As TypeInfo = cg_params(cg_ops(i).paramStart).ty
+      Dim p1 As TypeInfo = cg_params(cg_ops(i).paramStart + 1).ty
+      If CgTypesMatch(p0, t1) And CgTypesMatch(p1, t2) Then
+        Return i
+      End If
+    End If
+  End For
+  For i = 0 To cg_opCount - 1 Do
+    If (cg_ops(i).isPrivate = 1) And (cg_ops(i).modId = cg_curModId) And (cg_ops(i).opTok = opTok) And (cg_ops(i).paramCount = 2) Then
+      Dim p0 As TypeInfo = cg_params(cg_ops(i).paramStart).ty
+      Dim p1 As TypeInfo = cg_params(cg_ops(i).paramStart + 1).ty
+      If CgOpParamMatchesLit(p0, t1, e1) And CgOpParamMatchesLit(p1, t2, e2) Then
+        Return i
+      End If
+    End If
+  End For
+  For i = 0 To cg_opCount - 1 Do
+    If (cg_ops(i).isPrivate = 0) And (cg_ops(i).opTok = opTok) And (cg_ops(i).paramCount = 2) Then
+      Dim p0 As TypeInfo = cg_params(cg_ops(i).paramStart).ty
+      Dim p1 As TypeInfo = cg_params(cg_ops(i).paramStart + 1).ty
+      If CgOpParamMatchesLit(p0, t1, e1) And CgOpParamMatchesLit(p1, t2, e2) Then
+        Return i
+      End If
+    End If
+  End For
+  Return -1
+End Function
+
+Private Function CgHasBoolStructOp(opTok As Integer) As Boolean
+  For i = 0 To cg_opCount - 1 Do
+    If (cg_ops(i).opTok = opTok) And (cg_ops(i).paramCount = 2) Then
+      Dim p0 As TypeInfo = cg_params(cg_ops(i).paramStart).ty
+      If (p0.arrLen = 0) And (p0.kind = TyBoolean) Then
+        Return True
+      End If
+    End If
+  End For
+  Return False
+End Function
+
+Private Sub CgEmitOpName(opTok, arity As Integer)
+  Match opTok With
+    Case TkPlus Then fprintf(cg_out, "add")
+    Case TkMinus Then
+      If arity = 1 Then
+        fprintf(cg_out, "neg")
+      Else
+        fprintf(cg_out, "sub")
+      End If
+    Case TkStar Then fprintf(cg_out, "mul")
+    Case TkSlash Then fprintf(cg_out, "div")
+    Case TkMod Then fprintf(cg_out, "mod")
+    Case TkAmp Then fprintf(cg_out, "amp")
+    Case TkEq Then fprintf(cg_out, "eq")
+    Case TkNeq Then fprintf(cg_out, "neq")
+    Case TkLt Then fprintf(cg_out, "lt")
+    Case TkGt Then fprintf(cg_out, "gt")
+    Case TkLe Then fprintf(cg_out, "le")
+    Case TkGe Then fprintf(cg_out, "ge")
+    Case TkAnd Then fprintf(cg_out, "and")
+    Case TkOr Then fprintf(cg_out, "or")
+    Case TkXor Then fprintf(cg_out, "xor")
+    Case TkShl Then fprintf(cg_out, "shl")
+    Case TkShr Then fprintf(cg_out, "shr")
+    Case TkNot Then fprintf(cg_out, "not")
+    Case _ Then fprintf(cg_out, "op%d", opTok)
+  End Match
+End Sub
+
+Private Sub CgEmitTypeTag(ty As TypeInfo)
+  Match ty.kind With
+    Case TyInt, TyEnum Then fprintf(cg_out, "i32")
+    Case TyByte Then fprintf(cg_out, "i8")
+    Case TyShort Then fprintf(cg_out, "i16")
+    Case TyLong Then fprintf(cg_out, "i64")
+    Case TySingle Then fprintf(cg_out, "f32")
+    Case TyDouble Then fprintf(cg_out, "f64")
+    Case TyBoolean Then fprintf(cg_out, "bool")
+    Case TyPointer, TyTask Then fprintf(cg_out, "ptr")
+    Case TyArena Then fprintf(cg_out, "arena")
+    Case TyStruct Then
+      If ty.typeIdx >= 0 Then
+        CgEmitSlice(cg_structs(ty.typeIdx).namePos, cg_structs(ty.typeIdx).nameLen)
+      Else
+        CgEmitSlice(ty.namePos, ty.nameLen)
+      End If
+    Case _ Then fprintf(cg_out, "unk")
+  End Match
+End Sub
+
+Private Sub CgEmitOpSymName(opIdx As Integer)
+  Dim oi As CgOpInfo = cg_ops(opIdx)
+  If (oi.isPrivate = 1) And (oi.modId > 0) Then
+    fprintf(cg_out, "__mod%d_", oi.modId)
+  End If
+  fprintf(cg_out, "__vb_op_")
+  CgEmitOpName(oi.opTok, oi.paramCount)
+  For pi = 0 To oi.paramCount - 1 Do
+    fprintf(cg_out, "_")
+    CgEmitTypeTag(cg_params(oi.paramStart + pi).ty)
+  End For
+End Sub
 
 Private Function CgResolveTypeEx(rawKind, rawInnerKind, arrLen, nPos, nLen As Integer) As TypeInfo
   Dim res As TypeInfo With (
@@ -1699,6 +1903,12 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
   If k = NdNeg Then
     Dim t As TypeInfo
     Dim v As Integer = CgEmitExpr(g_nodes(id).left, ByRef t)
+    If (t.arrLen = 0) And (t.kind = TyStruct) Then
+      Dim uoi As Integer = CgFindUnaryOp(TkMinus, t)
+      If uoi >= 0 Then
+        Return CgEmitOpCall1(uoi, v, t, ByRef outTy)
+      End If
+    End If
     Dim r As Integer = CgNextReg()
     If CgIsFloat(t.kind) Then
       fprintf(cg_out, "  %%r%d = fneg ", r)
@@ -1716,6 +1926,12 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
   If k = NdNot Then
     Dim t As TypeInfo
     Dim v As Integer = CgEmitExpr(g_nodes(id).left, ByRef t)
+    If (t.arrLen = 0) And (t.kind = TyStruct) Then
+      Dim uoi As Integer = CgFindUnaryOp(TkNot, t)
+      If uoi >= 0 Then
+        Return CgEmitOpCall1(uoi, v, t, ByRef outTy)
+      End If
+    End If
     Dim r As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = xor ", r)
     CgEmitLlvmType(t)
@@ -1731,7 +1947,7 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     Dim v1 As Integer = CgEmitExpr(g_nodes(id).left, ByRef t1)
     ' Short-circuit boolean And / Or using stack-free trampoline phi blocks.
     ' Integer operands keep bitwise `and` / `or` semantics below.
-    If ((op = TkAnd) Or (op = TkOr)) And (t1.kind = TyBoolean) And (t1.arrLen = 0) Then
+    If ((op = TkAnd) Or (op = TkOr)) And (t1.kind = TyBoolean) And (t1.arrLen = 0) And (Not CgHasBoolStructOp(op)) Then
       Dim scLbl As Integer = CgNextLbl()
       If op = TkAnd Then
         fprintf(cg_out, "  br i1 %%r%d, label %%sc_rhs_%d, label %%sc_short_%d\n", v1, scLbl, scLbl)
@@ -1764,6 +1980,12 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
       Return scRes
     End If
     Dim v2 As Integer = CgEmitExpr(g_nodes(id).right, ByRef t2)
+    If ((t1.arrLen = 0) And (t1.kind = TyStruct)) Or ((t2.arrLen = 0) And (t2.kind = TyStruct)) Then
+      Dim boi As Integer = CgFindBinOp(op, t1, g_nodes(id).left, t2, g_nodes(id).right)
+      If boi >= 0 Then
+        Return CgEmitOpCall2(boi, v1, t1, v2, t2, ByRef outTy)
+      End If
+    End If
     Dim s1 As Boolean = ((t1.arrLen = 0) And (t1.kind = TyPointer)) Or ((t1.arrLen <> 0) And (t1.kind = TyByte))
     Dim s2 As Boolean = ((t2.arrLen = 0) And (t2.kind = TyPointer)) Or ((t2.arrLen <> 0) And (t2.kind = TyByte))
     If (op = TkAmp) Or ((op = TkPlus) And s1 And s2) Then
@@ -2735,6 +2957,89 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
   Return resReg
 End Function
 
+Private Function CgEmitOpCall1(opIdx As Integer, v1 As Integer, t1 As TypeInfo, ByRef outTy As TypeInfo) As Integer
+  Dim oi As CgOpInfo = cg_ops(opIdx)
+  Dim p0 As CgParamInfo = cg_params(oi.paramStart)
+  Dim a0Reg As Integer = v1
+  Dim a0IsPtr As Integer = 0
+  If (p0.ty.arrLen <> 0) Or (p0.ty.kind = TyStruct) Or (p0.ty.kind = TyArena) Then
+    a0IsPtr = 1
+  Else
+    a0Reg = CgCoerceScalar(v1, t1, p0.ty)
+  End If
+  Dim resReg As Integer = CgNextReg()
+  fprintf(cg_out, "  %%r%d = call ", resReg)
+  CgEmitLlvmType(oi.retTy)
+  fprintf(cg_out, " @")
+  CgEmitOpSymName(opIdx)
+  fprintf(cg_out, "(")
+  If a0IsPtr = 1 Then
+    fprintf(cg_out, "ptr %%r%d)\n", a0Reg)
+  Else
+    CgEmitLlvmType(p0.ty)
+    fprintf(cg_out, " %%r%d)\n", a0Reg)
+  End If
+  outTy = oi.retTy
+  If CgIsAggregate(oi.retTy) Then
+    Dim tmp As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = alloca ", tmp)
+    CgEmitLlvmType(oi.retTy)
+    fprintf(cg_out, ", align 8\n")
+    fprintf(cg_out, "  store ")
+    CgEmitLlvmType(oi.retTy)
+    fprintf(cg_out, " %%r%d, ptr %%r%d, align 8\n", resReg, tmp)
+    Return tmp
+  End If
+  Return resReg
+End Function
+
+Private Function CgEmitOpCall2(opIdx As Integer, v1 As Integer, t1 As TypeInfo, v2 As Integer, t2 As TypeInfo, ByRef outTy As TypeInfo) As Integer
+  Dim oi As CgOpInfo = cg_ops(opIdx)
+  Dim p0 As CgParamInfo = cg_params(oi.paramStart)
+  Dim p1 As CgParamInfo = cg_params(oi.paramStart + 1)
+  Dim a0Reg = v1, a1Reg = v2, a0IsPtr = 0, a1IsPtr = 0 As Integer
+  If (p0.ty.arrLen <> 0) Or (p0.ty.kind = TyStruct) Or (p0.ty.kind = TyArena) Then
+    a0IsPtr = 1
+  Else
+    a0Reg = CgCoerceScalar(v1, t1, p0.ty)
+  End If
+  If (p1.ty.arrLen <> 0) Or (p1.ty.kind = TyStruct) Or (p1.ty.kind = TyArena) Then
+    a1IsPtr = 1
+  Else
+    a1Reg = CgCoerceScalar(v2, t2, p1.ty)
+  End If
+  Dim resReg As Integer = CgNextReg()
+  fprintf(cg_out, "  %%r%d = call ", resReg)
+  CgEmitLlvmType(oi.retTy)
+  fprintf(cg_out, " @")
+  CgEmitOpSymName(opIdx)
+  fprintf(cg_out, "(")
+  If a0IsPtr = 1 Then
+    fprintf(cg_out, "ptr %%r%d, ", a0Reg)
+  Else
+    CgEmitLlvmType(p0.ty)
+    fprintf(cg_out, " %%r%d, ", a0Reg)
+  End If
+  If a1IsPtr = 1 Then
+    fprintf(cg_out, "ptr %%r%d)\n", a1Reg)
+  Else
+    CgEmitLlvmType(p1.ty)
+    fprintf(cg_out, " %%r%d)\n", a1Reg)
+  End If
+  outTy = oi.retTy
+  If CgIsAggregate(oi.retTy) Then
+    Dim tmp As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = alloca ", tmp)
+    CgEmitLlvmType(oi.retTy)
+    fprintf(cg_out, ", align 8\n")
+    fprintf(cg_out, "  store ")
+    CgEmitLlvmType(oi.retTy)
+    fprintf(cg_out, " %%r%d, ptr %%r%d, align 8\n", resReg, tmp)
+    Return tmp
+  End If
+  Return resReg
+End Function
+
 Private Function CgBlockTerminates(startIdx As Integer, cnt As Integer) As Boolean
   For i = 0 To cnt - 1 Do
     Dim sid As Integer = g_kids(startIdx + i)
@@ -2772,6 +3077,22 @@ Private Sub CgEmitStmt(id As Integer)
     CgEmitSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
     fprintf(cg_out, "\n")
     cg_blockEnded = 1
+    Return
+  End If
+
+  If k = NdBreak Then
+    If cg_loopDepth > 0 Then
+      fprintf(cg_out, "  br label %%L%d\n", cg_loopBreakLbls(cg_loopDepth - 1))
+      cg_blockEnded = 1
+    End If
+    Return
+  End If
+
+  If k = NdContinue Then
+    If cg_loopDepth > 0 Then
+      fprintf(cg_out, "  br label %%L%d\n", cg_loopContLbls(cg_loopDepth - 1))
+      cg_blockEnded = 1
+    End If
     Return
   End If
 
@@ -3035,11 +3356,15 @@ Private Sub CgEmitStmt(id As Integer)
     fprintf(cg_out, "L%d:\n", lBody)
     cg_blockEnded = 0
     Dim saved As Integer = cg_localCount
+    cg_loopBreakLbls(cg_loopDepth) = lEnd
+    cg_loopContLbls(cg_loopDepth) = lCond
+    cg_loopDepth = cg_loopDepth + 1
     Dim i As Integer = 0
     While i < g_nodes(id).childCount Do
       CgEmitStmt(g_kids(g_nodes(id).firstChild + i))
       i = i + 1
     End While
+    cg_loopDepth = cg_loopDepth - 1
     cg_localCount = saved
     If cg_blockEnded = 0 Then
       fprintf(cg_out, "  br label %%L%d\n", lCond)
@@ -3093,9 +3418,13 @@ Private Sub CgEmitStmt(id As Integer)
     fprintf(cg_out, "L%d:\n", lBody)
     cg_blockEnded = 0
     Dim savedBody As Integer = cg_localCount
+    cg_loopBreakLbls(cg_loopDepth) = lEnd
+    cg_loopContLbls(cg_loopDepth) = lInc
+    cg_loopDepth = cg_loopDepth + 1
     For i = 0 To g_nodes(id).childCount - 1 Do
       CgEmitStmt(g_kids(g_nodes(id).firstChild + i))
     End For
+    cg_loopDepth = cg_loopDepth - 1
     cg_localCount = savedBody
     If cg_blockEnded = 0 Then
       fprintf(cg_out, "  br label %%L%d\n", lInc)
@@ -3281,6 +3610,7 @@ Private Sub CgEmitAsyncFunc(fnNodeId As Integer, fnIdx As Integer)
   cg_reg = 1
   cg_localCount = 0
   cg_blockEnded = 0
+  cg_loopDepth = 0
   cg_curRetTy = fi.bodyRetTy
   cg_curModId = fi.modId
 
@@ -3482,6 +3812,7 @@ Private Sub CgEmitFunc(fnNodeId As Integer, fnIdx As Integer)
   cg_reg = 1
   cg_localCount = 0
   cg_blockEnded = 0
+  cg_loopDepth = 0
   cg_curRetTy = fi.retTy
   cg_curModId = fi.modId
 
@@ -3566,10 +3897,91 @@ Private Sub CgEmitFunc(fnNodeId As Integer, fnIdx As Integer)
   fprintf(cg_out, "}\n\n")
 End Sub
 
+Private Sub CgEmitOpDef(opNodeId As Integer, opIdx As Integer)
+  Dim oi As CgOpInfo = cg_ops(opIdx)
+  cg_reg = 1
+  cg_localCount = 0
+  cg_blockEnded = 0
+  cg_loopDepth = 0
+  cg_curRetTy = oi.retTy
+  cg_curModId = oi.modId
+
+  If oi.isPublic = 1 Then
+    fprintf(cg_out, "define ")
+  Else
+    fprintf(cg_out, "define internal ")
+  End If
+  CgEmitLlvmType(oi.retTy)
+  fprintf(cg_out, " @")
+  CgEmitOpSymName(opIdx)
+  fprintf(cg_out, "(")
+  For i = 0 To oi.paramCount - 1 Do
+    If i > 0 Then
+      fprintf(cg_out, ", ")
+    End If
+    CgEmitParamLlvmType(cg_params(oi.paramStart + i))
+    fprintf(cg_out, " %%p%d", i)
+  End For
+  fprintf(cg_out, ") {\nentry:\n")
+
+  For j = 0 To oi.paramCount - 1 Do
+    Dim p As CgParamInfo = cg_params(oi.paramStart + j)
+    Dim directPtr As Boolean = (p.isByRef = 1) Or (p.ty.arrLen < 0)
+    If directPtr Then
+      cg_locals(cg_localCount) = CgLocalSym With (
+        namePos = p.namePos,
+        nameLen = p.nameLen,
+        slotReg = -(j + 1),
+        isIndirect = 0,
+        ty = p.ty
+      )
+      cg_localCount = cg_localCount + 1
+    Else
+      Dim slot As Integer = CgNextReg()
+      fprintf(cg_out, "  %%r%d = alloca ", slot)
+      CgEmitLlvmType(p.ty)
+      fprintf(cg_out, ", align 8\n")
+      If CgIsAggregate(p.ty) Then
+        Dim sz As Integer = CgTypeSize(p.ty)
+        fprintf(cg_out, "  call void @llvm.memcpy.p0.p0.i64(ptr align 8 %%r%d, ptr align 8 %%p%d, i64 %d, i1 false)\n", slot, j, sz)
+      Else
+        Dim align As Integer = CgTypeAlign(p.ty)
+        fprintf(cg_out, "  store ")
+        CgEmitLlvmType(p.ty)
+        fprintf(cg_out, " %%p%d, ptr %%r%d, align %d\n", j, slot, align)
+      End If
+      cg_locals(cg_localCount) = CgLocalSym With (
+        namePos = p.namePos,
+        nameLen = p.nameLen,
+        slotReg = slot,
+        isIndirect = 0,
+        ty = p.ty
+      )
+      cg_localCount = cg_localCount + 1
+    End If
+  End For
+
+  Dim bStart As Integer = g_nodes(opNodeId).firstChild
+  Dim bCount As Integer = g_nodes(opNodeId).childCount
+  For k = 0 To bCount - 1 Do
+    CgEmitStmt(g_kids(bStart + k))
+  End For
+
+  If cg_blockEnded = 0 Then
+    fprintf(cg_out, "  ret ")
+    CgEmitLlvmType(oi.retTy)
+    fprintf(cg_out, " ")
+    CgEmitZeroVal(oi.retTy)
+    fprintf(cg_out, "\n")
+  End If
+  fprintf(cg_out, "}\n\n")
+End Sub
+
 Private Sub CgEmitTestFn(tdNodeId As Integer, testIdx As Integer)
   cg_reg = 1
   cg_localCount = 0
   cg_blockEnded = 0
+  cg_loopDepth = 0
   cg_curModId = g_nodes(tdNodeId).modId
   cg_curRetTy = TypeInfo With ( kind = TyNothing, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
   cg_inTestFn = 1
@@ -3664,13 +4076,14 @@ Private Function CgHasExtern(name As Pointer, nLen As Integer) As Boolean
 End Function
 
 Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, outPath As Pointer) As Integer
-  cg_enums = ArenaAlloc(ByRef arena, CgEnumInfo, 64)
-  cg_enumMems = ArenaAlloc(ByRef arena, CgEnumMem, 512)
-  cg_structs = ArenaAlloc(ByRef arena, CgStructInfo, 128)
-  cg_fields = ArenaAlloc(ByRef arena, CgFieldInfo, 1024)
-  cg_globals = ArenaAlloc(ByRef arena, CgGlobalInfo, 512)
-  cg_funcs = ArenaAlloc(ByRef arena, CgFuncInfo, 512)
-  cg_params = ArenaAlloc(ByRef arena, CgParamInfo, 2048)
+  cg_enums = ArenaAlloc(ByRef arena, CgEnumInfo, 128)
+  cg_enumMems = ArenaAlloc(ByRef arena, CgEnumMem, 1024)
+  cg_structs = ArenaAlloc(ByRef arena, CgStructInfo, 256)
+  cg_fields = ArenaAlloc(ByRef arena, CgFieldInfo, 2048)
+  cg_globals = ArenaAlloc(ByRef arena, CgGlobalInfo, 1024)
+  cg_funcs = ArenaAlloc(ByRef arena, CgFuncInfo, 1024)
+  cg_ops = ArenaAlloc(ByRef arena, CgOpInfo, 256)
+  cg_params = ArenaAlloc(ByRef arena, CgParamInfo, 4096)
   cg_locals = ArenaAlloc(ByRef arena, CgLocalSym, 512)
   cg_strs = ArenaAlloc(ByRef arena, CgStrConst, 4096)
   cg_staticLocals = ArenaAlloc(ByRef arena, CgStaticLocal, 512)
@@ -3681,11 +4094,13 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   cg_fieldCount = 0
   cg_globalCount = 0
   cg_funcCount = 0
+  cg_opCount = 0
   cg_paramCount = 0
   cg_localCount = 0
   cg_strCount = 0
   cg_staticLocalCount = 0
   cg_withDepth = 0
+  cg_loopDepth = 0
   cg_lbl = 1
   cg_usesArena = 0
   cg_usesAssert = 0
@@ -3877,6 +4292,39 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
         cg_funcCount = cg_funcCount + 1
       End If
     End If
+    If dk = NdOpDef Then
+      Dim ops As Integer = cg_paramCount
+      Dim opc As Integer = g_nodes(d).extraCount
+      For j = 0 To opc - 1 Do
+        Dim pn As Integer = g_kids(g_nodes(d).extraStart + j)
+        cg_params(cg_paramCount) = CgParamInfo With (
+          isByRef = g_nodes(pn).op,
+          namePos = g_nodes(pn).intVal,
+          nameLen = g_nodes(pn).lenVal,
+          ty = CgResolveTypeEx(g_nodes(pn).tyKind, g_nodes(pn).tyInnerKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen)
+        )
+        cg_paramCount = cg_paramCount + 1
+      End For
+      Dim opPub = 0, opPriv = 0 As Integer
+      If g_nodes(d).op = 1 Then
+        opPub = 1
+      End If
+      If g_nodes(d).op = 2 Then
+        opPriv = 1
+      End If
+      Dim opRetTy As TypeInfo = CgResolveTypeEx(g_nodes(d).tyKind, g_nodes(d).tyInnerKind, 0, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen)
+      g_nodes(d).third = cg_opCount
+      cg_ops(cg_opCount) = CgOpInfo With (
+        opTok = g_nodes(d).intVal,
+        isPublic = opPub,
+        isPrivate = opPriv,
+        modId = g_nodes(d).modId,
+        paramStart = ops,
+        paramCount = opc,
+        retTy = opRetTy
+      )
+      cg_opCount = cg_opCount + 1
+    End If
   End For
 
   ' Collect all strings and detect Arena usage
@@ -4064,11 +4512,14 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   End If
   CgEmitAssertRuntime()
 
-  ' Emit all function bodies
+  ' Emit all function and operator bodies
   For i = 0 To defCount - 1 Do
     Dim d As Integer = g_kids(defStart + i)
     If g_nodes(d).kind = NdFuncDef Then
       CgEmitFunc(d, g_nodes(d).third)
+    End If
+    If g_nodes(d).kind = NdOpDef Then
+      CgEmitOpDef(d, g_nodes(d).third)
     End If
   End For
 

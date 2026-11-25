@@ -234,8 +234,8 @@ Private Function CliCountTests(progRoot As Integer) As Integer
 End Function
 
 Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, showTa, skipTa, emitOnly, emitObj, noRun, targetId As Integer, outPath As Pointer, extraInputs() As Pointer, extraInputCount As Integer, clangFlags() As Pointer, clangFlagCount As Integer) As Integer
-  ' 32 MiB deterministic Arena for all source pools, tokens, AST nodes, and symbol tables
-  Dim arena As Arena = ArenaCreate(33554432)
+  ' 64 MiB deterministic Arena for all source pools, tokens, AST nodes, and symbol tables
+  Dim arena As Arena = ArenaCreate(67108864)
   Dim tokCount As Integer = LexerLoadEntry(ByRef arena, inPath)
   If tokCount < 0 Then
     ArenaDestroy(ByRef arena)

@@ -80,6 +80,9 @@ Public Enum NodeKind
   NdMatchArm = 61
   NdWith = 62
   NdWithTarget = 63
+  NdBreak = 64
+  NdContinue = 65
+  NdOpDef = 66
 End Enum
 
 Public Structure AstNode
@@ -92,10 +95,10 @@ Public Static g_nodes() As AstNode, g_kids() As Integer
 Public Static g_nodeCount, g_nodeCap, g_kidCount, g_kidCap As Integer
 
 Public Sub AstInit(ByRef arena As Arena)
-  g_nodeCap = 65536
+  g_nodeCap = 131072
   g_nodeCount = 0
   g_nodes = ArenaAlloc(ByRef arena, AstNode, g_nodeCap)
-  g_kidCap = 131072
+  g_kidCap = 262144
   g_kidCount = 0
   g_kids = ArenaAlloc(ByRef arena, Integer, g_kidCap)
 End Sub

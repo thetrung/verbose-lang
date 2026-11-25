@@ -764,7 +764,7 @@ End Function
 Private Sub PParseVarDeclGroup(ndKind, vis, isVolatile, defModId As Integer, outBuf() As Integer, ByRef outCnt As Integer)
   Dim moreClauses As Boolean = True
   While moreClauses Do
-    Dim nPos(32), nLen(32), aLen(32), iInit(32) As Integer
+    Dim nPos(64), nLen(64), aLen(64), iInit(64) As Integer
     Dim itemCnt = 0 As Integer, moreItems = True As Boolean
     While moreItems Do
       nPos(itemCnt) = g_tokens(p_pos).pos
@@ -995,6 +995,18 @@ Public Function ParseStmt() As Integer
     g_nodes(id).intVal = lPos
     g_nodes(id).lenVal = lLen
     Return id
+  End If
+
+  ' Break
+  If k = TkBreak Then
+    PAdvance()
+    Return NewNode(NdBreak)
+  End If
+
+  ' Continue
+  If k = TkContinue Then
+    PAdvance()
+    Return NewNode(NdContinue)
   End If
 
   ' Await expr (statement form for Async Sub / Task)
@@ -1426,6 +1438,13 @@ Private Sub PParseParamList(allowEllipsis As Integer, paramBuf() As Integer, ByR
   End If
 End Sub
 
+Private Function PIsOverloadableOp(k As Integer) As Boolean
+  Match k With
+    Case TkPlus, TkMinus, TkStar, TkSlash, TkMod, TkAmp, TkEq, TkNeq, TkLt, TkGt, TkLe, TkGe, TkAnd, TkOr, TkXor, TkShl, TkShr, TkNot Then Return True
+    Case _ Then Return False
+  End Match
+End Function
+
 Private Sub PParseDefInto(defBuf() As Integer, ByRef defCount As Integer)
   Dim defModId As Integer = g_tokens(p_pos).modId
   Dim vis As Integer = 0
@@ -1668,6 +1687,50 @@ Private Sub PParseDefInto(defBuf() As Integer, ByRef defCount As Integer)
     Return
   End If
 
+  ' [Public | Private] Operator <op>(params) As RetType ... End Operator
+  If k = TkOperator Then
+    PAdvance()
+    Dim opTok As Integer = PPeekKind()
+    If Not PIsOverloadableOp(opTok) Then
+      Printf(MSG_PARSE_EXPECT, TkPlus, opTok, g_tokens(p_pos).line)
+      p_errors = p_errors + 1
+    End If
+    PAdvance()
+    PExpect(TkLParen)
+    Dim opParamBuf(32) As Integer
+    Dim opParamCount As Integer = 0
+    Dim opDummyVar As Integer = 0
+    PParseParamList(0, opParamBuf, ByRef opParamCount, ByRef opDummyVar)
+    PExpect(TkRParen)
+    PExpect(TkAs)
+    Dim opRetKind = TyNothing, opRetInner = TyNothing, opRetNPos = 0, opRetNLen = 0 As Integer
+    PParseTypeSpec(ByRef opRetKind, ByRef opRetInner, ByRef opRetNPos, ByRef opRetNLen)
+    Dim opBodyStart = 0, opBodyCount = 0 As Integer
+    PParseBlock(0, ByRef opBodyStart, ByRef opBodyCount)
+    PExpect(TkEnd)
+    PExpect(TkOperator)
+    Dim opId As Integer = NewNode(NdOpDef)
+    With g_nodes(opId)
+      .op = vis
+      .intVal = opTok
+      .modId = defModId
+      .tyKind = opRetKind
+      .tyInnerKind = opRetInner
+      .tyNamePos = opRetNPos
+      .tyNameLen = opRetNLen
+      .firstChild = opBodyStart
+      .childCount = opBodyCount
+      .extraStart = g_kidCount
+      .extraCount = opParamCount
+    End With
+    For oi = 0 To opParamCount - 1 Do
+      PushKid(opParamBuf(oi))
+    End For
+    defBuf(defCount) = opId
+    defCount = defCount + 1
+    Return
+  End If
+
   ' [Async] Function / Sub definition
   Dim isAsync As Integer = 0
   If k = TkAsync Then
@@ -1739,7 +1802,7 @@ Public Function ParseProgram() As Integer
   p_pos = 0
   p_errors = 0
   p_withDepth = 0
-  Dim defBuf(1024) As Integer
+  Dim defBuf(2048) As Integer
   Dim defCount As Integer = 0
   PSkipNewlines()
   While PPeekKind() <> TkEof Do

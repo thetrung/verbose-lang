@@ -105,6 +105,9 @@ Public Enum TokenKind
   TkTask = 98
   TkInterpExprEnd = 100
   TkInterpEnd = 101
+  TkBreak = 102
+  TkContinue = 103
+  TkOperator = 104
 End Enum
 
 Public Structure Token

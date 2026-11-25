@@ -40,13 +40,19 @@ Structure TaLabelInfo
   Dim namePos, nameLen As Integer
 End Structure
 
+Structure TaOpInfo
+  Dim opTok, isPrivate, modId, paramStart, paramCount As Integer
+  Dim retTy As TypeInfo
+End Structure
+
 Private Static ta_enums() As TaEnumInfo, ta_enumMems() As TaEnumMem
 Private Static ta_structs() As TaStructInfo, ta_fields() As TaFieldInfo
 Private Static ta_globals() As TaGlobalInfo, ta_funcs() As TaFuncInfo
+Private Static ta_ops() As TaOpInfo
 Private Static ta_params() As TaParamInfo, ta_locals() As TaLocalSym
 Private Static ta_labels(128) As TaLabelInfo
 Private Static ta_withTys(16) As TypeInfo
-Private Static ta_enumCount, ta_enumMemCount, ta_structCount, ta_fieldCount, ta_globalCount, ta_funcCount, ta_paramCount, ta_localCount, ta_labelCount, ta_withDepth, ta_curModId, ta_errCount As Integer = 0
+Private Static ta_enumCount, ta_enumMemCount, ta_structCount, ta_fieldCount, ta_globalCount, ta_funcCount, ta_opCount, ta_paramCount, ta_localCount, ta_labelCount, ta_withDepth, ta_loopDepth, ta_curModId, ta_errCount As Integer = 0
 Private Static ta_curRetTy As TypeInfo
 
 Private Sub TaPrintSlice(pos, slen As Integer)
@@ -433,6 +439,100 @@ Private Function TaIsFloatLitNode(id As Integer) As Boolean
   If (k = NdNeg) And (g_nodes(id).left >= 0) Then
     Return g_nodes(g_nodes(id).left).kind = NdFloatLit
   End If
+  Return False
+End Function
+
+Private Function TaOpParamMatchesLit(paramTy As TypeInfo, argTy As TypeInfo, argNode As Integer) As Boolean
+  If TaTypesEqual(paramTy, argTy) Then
+    Return True
+  End If
+  If TaIsFloatType(paramTy) And TaIsFloatLitNode(argNode) Then
+    Return True
+  End If
+  If TaIsIntType(paramTy) And TaIsIntLitNode(argNode) Then
+    Return True
+  End If
+  Return False
+End Function
+
+Private Function TaFindUnaryOp(opTok As Integer, t As TypeInfo) As Integer
+  For i = 0 To ta_opCount - 1 Do
+    If (ta_ops(i).isPrivate = 1) And (ta_ops(i).modId = ta_curModId) And (ta_ops(i).opTok = opTok) And (ta_ops(i).paramCount = 1) Then
+      If TaTypesEqual(ta_params(ta_ops(i).paramStart).ty, t) Then
+        Return i
+      End If
+    End If
+  End For
+  For i = 0 To ta_opCount - 1 Do
+    If (ta_ops(i).isPrivate = 0) And (ta_ops(i).opTok = opTok) And (ta_ops(i).paramCount = 1) Then
+      If TaTypesEqual(ta_params(ta_ops(i).paramStart).ty, t) Then
+        Return i
+      End If
+    End If
+  End For
+  Return -1
+End Function
+
+Private Function TaFindBinOp(opTok As Integer, t1 As TypeInfo, e1 As Integer, t2 As TypeInfo, e2 As Integer) As Integer
+  ' Pass 1: exact match (private in current module first, then public)
+  For i = 0 To ta_opCount - 1 Do
+    If (ta_ops(i).isPrivate = 1) And (ta_ops(i).modId = ta_curModId) And (ta_ops(i).opTok = opTok) And (ta_ops(i).paramCount = 2) Then
+      Dim p0 As TypeInfo = ta_params(ta_ops(i).paramStart).ty
+      Dim p1 As TypeInfo = ta_params(ta_ops(i).paramStart + 1).ty
+      If TaTypesEqual(p0, t1) And TaTypesEqual(p1, t2) Then
+        Return i
+      End If
+    End If
+  End For
+  For i = 0 To ta_opCount - 1 Do
+    If (ta_ops(i).isPrivate = 0) And (ta_ops(i).opTok = opTok) And (ta_ops(i).paramCount = 2) Then
+      Dim p0 As TypeInfo = ta_params(ta_ops(i).paramStart).ty
+      Dim p1 As TypeInfo = ta_params(ta_ops(i).paramStart + 1).ty
+      If TaTypesEqual(p0, t1) And TaTypesEqual(p1, t2) Then
+        Return i
+      End If
+    End If
+  End For
+  ' Pass 2: contextual numeric literal match (e.g. Vec3 * 2.0 -> Operator *(Vec3, Single))
+  For i = 0 To ta_opCount - 1 Do
+    If (ta_ops(i).isPrivate = 1) And (ta_ops(i).modId = ta_curModId) And (ta_ops(i).opTok = opTok) And (ta_ops(i).paramCount = 2) Then
+      Dim p0 As TypeInfo = ta_params(ta_ops(i).paramStart).ty
+      Dim p1 As TypeInfo = ta_params(ta_ops(i).paramStart + 1).ty
+      If TaOpParamMatchesLit(p0, t1, e1) And TaOpParamMatchesLit(p1, t2, e2) Then
+        Return i
+      End If
+    End If
+  End For
+  For i = 0 To ta_opCount - 1 Do
+    If (ta_ops(i).isPrivate = 0) And (ta_ops(i).opTok = opTok) And (ta_ops(i).paramCount = 2) Then
+      Dim p0 As TypeInfo = ta_params(ta_ops(i).paramStart).ty
+      Dim p1 As TypeInfo = ta_params(ta_ops(i).paramStart + 1).ty
+      If TaOpParamMatchesLit(p0, t1, e1) And TaOpParamMatchesLit(p1, t2, e2) Then
+        Return i
+      End If
+    End If
+  End For
+  Return -1
+End Function
+
+Private Function TaHasDupOp(opTok, isPriv, modId, ps, pc As Integer) As Boolean
+  For i = 0 To ta_opCount - 1 Do
+    Dim sameScope As Boolean = (ta_ops(i).isPrivate = 0) And (isPriv = 0)
+    If (ta_ops(i).isPrivate = 1) And (isPriv = 1) And (ta_ops(i).modId = modId) Then
+      sameScope = True
+    End If
+    If sameScope And (ta_ops(i).opTok = opTok) And (ta_ops(i).paramCount = pc) Then
+      Dim allEq As Boolean = True
+      For pi = 0 To pc - 1 Do
+        If Not TaTypesEqual(ta_params(ta_ops(i).paramStart + pi).ty, ta_params(ps + pi).ty) Then
+          allEq = False
+        End If
+      End For
+      If allEq Then
+        Return True
+      End If
+    End If
+  End For
   Return False
 End Function
 
@@ -1125,6 +1225,12 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
 
   If k = NdNot Then
     Dim t As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
+    If (t.arrLen = 0) And (t.kind = TyStruct) Then
+      Dim uoi As Integer = TaFindUnaryOp(TkNot, t)
+      If uoi >= 0 Then
+        Return ta_ops(uoi).retTy
+      End If
+    End If
     If ((t.arrLen = 0) And (t.kind = TyBoolean)) Or TaIsIntType(t) Then
       Return t
     End If
@@ -1135,6 +1241,12 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
 
   If k = NdNeg Then
     Dim t As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
+    If (t.arrLen = 0) And (t.kind = TyStruct) Then
+      Dim uoi As Integer = TaFindUnaryOp(TkMinus, t)
+      If uoi >= 0 Then
+        Return ta_ops(uoi).retTy
+      End If
+    End If
     If TaIsIntType(t) Or TaIsFloatType(t) Then
       Return t
     End If
@@ -1149,6 +1261,16 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
     Dim op As Integer = g_nodes(id).op
     Dim t1 As TypeInfo = TaTypeOfExpr(e1)
     Dim t2 As TypeInfo = TaTypeOfExpr(e2)
+    Dim hasStructOp As Boolean = ((t1.arrLen = 0) And (t1.kind = TyStruct)) Or ((t2.arrLen = 0) And (t2.kind = TyStruct))
+    If hasStructOp Then
+      Dim boi As Integer = TaFindBinOp(op, t1, e1, t2, e2)
+      If boi >= 0 Then
+        Return ta_ops(boi).retTy
+      End If
+      Printf(MSG_TA_OP_NO_OVERLOAD)
+      ta_errCount = ta_errCount + 1
+      Return t1
+    End If
     If op = TkAmp Then
       If TaIsStrLike(t1) And TaIsStrLike(t2) Then
         Return TaMakePrim(TyPointer)
@@ -1602,6 +1724,22 @@ Private Sub TaCheckStmt(id As Integer)
     Return
   End If
 
+  If k = NdBreak Then
+    If ta_loopDepth <= 0 Then
+      Printf(MSG_TA_BREAK_LOOP)
+      ta_errCount = ta_errCount + 1
+    End If
+    Return
+  End If
+
+  If k = NdContinue Then
+    If ta_loopDepth <= 0 Then
+      Printf(MSG_TA_CONTINUE_LOOP)
+      ta_errCount = ta_errCount + 1
+    End If
+    Return
+  End If
+
   If k = NdDim Then
     Dim nPos As Integer = g_nodes(id).intVal
     Dim nLen As Integer = g_nodes(id).lenVal
@@ -1846,11 +1984,13 @@ Private Sub TaCheckStmt(id As Integer)
       ta_errCount = ta_errCount + 1
     End If
     Dim savedLocals As Integer = ta_localCount
+    ta_loopDepth = ta_loopDepth + 1
     Dim i As Integer = 0
     While i < g_nodes(id).childCount Do
       TaCheckStmt(g_kids(g_nodes(id).firstChild + i))
       i = i + 1
     End While
+    ta_loopDepth = ta_loopDepth - 1
     ta_localCount = savedLocals
     Return
   End If
@@ -1865,9 +2005,11 @@ Private Sub TaCheckStmt(id As Integer)
     Dim savedLocals As Integer = ta_localCount
     ta_locals(ta_localCount) = TaLocalSym With ( namePos = g_nodes(id).intVal, nameLen = g_nodes(id).lenVal, ty = TaMakePrim(TyInt) )
     ta_localCount = ta_localCount + 1
+    ta_loopDepth = ta_loopDepth + 1
     For i = 0 To g_nodes(id).childCount - 1 Do
       TaCheckStmt(g_kids(g_nodes(id).firstChild + i))
     End For
+    ta_loopDepth = ta_loopDepth - 1
     ta_localCount = savedLocals
     Return
   End If
@@ -1932,13 +2074,14 @@ Private Sub TaCheckStmt(id As Integer)
 End Sub
 
 Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Integer
-  ta_enums = ArenaAlloc(ByRef arena, TaEnumInfo, 64)
-  ta_enumMems = ArenaAlloc(ByRef arena, TaEnumMem, 512)
-  ta_structs = ArenaAlloc(ByRef arena, TaStructInfo, 128)
-  ta_fields = ArenaAlloc(ByRef arena, TaFieldInfo, 1024)
-  ta_globals = ArenaAlloc(ByRef arena, TaGlobalInfo, 512)
-  ta_funcs = ArenaAlloc(ByRef arena, TaFuncInfo, 512)
-  ta_params = ArenaAlloc(ByRef arena, TaParamInfo, 2048)
+  ta_enums = ArenaAlloc(ByRef arena, TaEnumInfo, 128)
+  ta_enumMems = ArenaAlloc(ByRef arena, TaEnumMem, 1024)
+  ta_structs = ArenaAlloc(ByRef arena, TaStructInfo, 256)
+  ta_fields = ArenaAlloc(ByRef arena, TaFieldInfo, 2048)
+  ta_globals = ArenaAlloc(ByRef arena, TaGlobalInfo, 1024)
+  ta_funcs = ArenaAlloc(ByRef arena, TaFuncInfo, 1024)
+  ta_ops = ArenaAlloc(ByRef arena, TaOpInfo, 256)
+  ta_params = ArenaAlloc(ByRef arena, TaParamInfo, 4096)
   ta_locals = ArenaAlloc(ByRef arena, TaLocalSym, 512)
 
   ta_enumCount = 0
@@ -1947,9 +2090,11 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
   ta_fieldCount = 0
   ta_globalCount = 0
   ta_funcCount = 0
+  ta_opCount = 0
   ta_paramCount = 0
   ta_localCount = 0
   ta_withDepth = 0
+  ta_loopDepth = 0
   ta_errCount = 0
 
   Dim defStart As Integer = g_nodes(progRoot).firstChild
@@ -2102,11 +2247,73 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       )
       ta_funcCount = ta_funcCount + 1
     End If
+    If dk = NdOpDef Then
+      Dim ops As Integer = ta_paramCount
+      Dim opc As Integer = g_nodes(d).extraCount
+      Dim opTok As Integer = g_nodes(d).intVal
+      Dim hasStructParam As Boolean = False
+      For j = 0 To opc - 1 Do
+        Dim pn As Integer = g_kids(g_nodes(d).extraStart + j)
+        If g_nodes(pn).op = 1 Then
+          Printf(MSG_TA_OP_BYREF)
+          ta_errCount = ta_errCount + 1
+        End If
+        Dim pty As TypeInfo = TaResolveTypeEx(g_nodes(pn).tyKind, g_nodes(pn).tyInnerKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen)
+        If (pty.arrLen = 0) And (pty.kind = TyStruct) Then
+          hasStructParam = True
+        End If
+        ta_params(ta_paramCount) = TaParamInfo With ( isByRef = g_nodes(pn).op, ty = pty )
+        ta_paramCount = ta_paramCount + 1
+      End For
+      Dim arityOk As Boolean = False
+      If (opTok = TkNot) And (opc = 1) Then
+        arityOk = True
+      Else
+        If (opTok = TkMinus) And ((opc = 1) Or (opc = 2)) Then
+          arityOk = True
+        Else
+          If (opTok <> TkNot) And (opc = 2) Then
+            arityOk = True
+          End If
+        End If
+      End If
+      If Not arityOk Then
+        Printf(MSG_TA_OP_ARITY)
+        ta_errCount = ta_errCount + 1
+      End If
+      If Not hasStructParam Then
+        Printf(MSG_TA_OP_STRUCT)
+        ta_errCount = ta_errCount + 1
+      End If
+      Dim opRetTy As TypeInfo = TaResolveTypeEx(g_nodes(d).tyKind, g_nodes(d).tyInnerKind, 0, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen)
+      If opRetTy.kind = TyNothing Then
+        Printf(MSG_TA_OP_RET)
+        ta_errCount = ta_errCount + 1
+      End If
+      Dim opPriv As Integer = 0
+      If g_nodes(d).op = 2 Then
+        opPriv = 1
+      End If
+      If TaHasDupOp(opTok, opPriv, g_nodes(d).modId, ops, opc) Then
+        Printf(MSG_TA_OP_DUP)
+        ta_errCount = ta_errCount + 1
+      End If
+      ta_ops(ta_opCount) = TaOpInfo With (
+        opTok = opTok,
+        isPrivate = opPriv,
+        modId = g_nodes(d).modId,
+        paramStart = ops,
+        paramCount = opc,
+        retTy = opRetTy
+      )
+      ta_opCount = ta_opCount + 1
+    End If
   End For
 
   ' Pass 2: Validate Global initializers, ExternDecl types, and Function bodies
   Dim gi As Integer = 0
   Dim fi As Integer = 0
+  Dim oi2 As Integer = 0
   For i = 0 To defCount - 1 Do
     Dim d As Integer = g_kids(defStart + i)
     Dim dk As Integer = g_nodes(d).kind
@@ -2170,6 +2377,7 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       TaValidateType(ta_curRetTy)
       ta_localCount = 0
       ta_labelCount = 0
+      ta_loopDepth = 0
       Dim j As Integer = 0
       While j < g_nodes(d).extraCount Do
         Dim pn As Integer = g_kids(g_nodes(d).extraStart + j)
@@ -2187,10 +2395,30 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       End While
       fi = fi + 1
     End If
+    If dk = NdOpDef Then
+      ta_curRetTy = ta_ops(oi2).retTy
+      TaValidateType(ta_curRetTy)
+      ta_localCount = 0
+      ta_labelCount = 0
+      ta_loopDepth = 0
+      For j = 0 To g_nodes(d).extraCount - 1 Do
+        Dim pn As Integer = g_kids(g_nodes(d).extraStart + j)
+        Dim pty As TypeInfo = ta_params(ta_ops(oi2).paramStart + j).ty
+        TaValidateType(pty)
+        ta_locals(ta_localCount) = TaLocalSym With ( namePos = g_nodes(pn).intVal, nameLen = g_nodes(pn).lenVal, ty = pty )
+        ta_localCount = ta_localCount + 1
+      End For
+      TaCollectLabels(g_nodes(d).firstChild, g_nodes(d).childCount)
+      For j = 0 To g_nodes(d).childCount - 1 Do
+        TaCheckStmt(g_kids(g_nodes(d).firstChild + j))
+      End For
+      oi2 = oi2 + 1
+    End If
     If dk = NdTestDef Then
       ta_curRetTy = TaMakePrim(TyNothing)
       ta_localCount = 0
       ta_labelCount = 0
+      ta_loopDepth = 0
       TaCollectLabels(g_nodes(d).firstChild, g_nodes(d).childCount)
       For j = 0 To g_nodes(d).childCount - 1 Do
         TaCheckStmt(g_kids(g_nodes(d).firstChild + j))

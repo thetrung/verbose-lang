@@ -67,6 +67,7 @@ Private Sub PrOp(op As Integer)
     Case TkGt Then Printf(">")
     Case TkLe Then Printf("<=")
     Case TkGe Then Printf(">=")
+    Case TkNot Then Printf("Not")
     Case _ Then Printf("op(%d)", op)
   End Match
 End Sub
@@ -373,6 +374,14 @@ Private Sub PrStmt(id, depth As Integer)
     Printf("\n")
     Return
   End If
+  If k = NdBreak Then
+    Printf("Break\n")
+    Return
+  End If
+  If k = NdContinue Then
+    Printf("Continue\n")
+    Return
+  End If
   If k = NdAssert Then
     Printf("Assert ")
     PrExpr(g_nodes(id).left)
@@ -626,6 +635,34 @@ Public Sub PrintProgramAst(progRoot As Integer)
       Else
         Printf("End Function\n\n")
       End If
+    End If
+    If dk = NdOpDef Then
+      If g_nodes(d).op = 1 Then
+        Printf("Public ")
+      Else
+        If g_nodes(d).op = 2 Then
+          Printf("Private ")
+        End If
+      End If
+      Printf("Operator ")
+      PrOp(g_nodes(d).intVal)
+      Printf("(")
+      For j = 0 To g_nodes(d).extraCount - 1 Do
+        If j > 0 Then
+          Printf(", ")
+        End If
+        Dim pn As Integer = g_kids(g_nodes(d).extraStart + j)
+        PrSlice(g_nodes(pn).intVal, g_nodes(pn).lenVal)
+        Printf(" As ")
+        PrTypeEx(g_nodes(pn).tyKind, g_nodes(pn).tyInnerKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen)
+      End For
+      Printf(") As ")
+      PrTypeEx(g_nodes(d).tyKind, g_nodes(d).tyInnerKind, 0, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen)
+      Printf("\n")
+      For j = 0 To g_nodes(d).childCount - 1 Do
+        PrStmt(g_kids(g_nodes(d).firstChild + j), 1)
+      End For
+      Printf("End Operator\n\n")
     End If
     If dk = NdTestDef Then
       Printf("Test \"")

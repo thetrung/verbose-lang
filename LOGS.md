@@ -13,6 +13,12 @@ Historical log of finished tasks and completed roadmap milestones for **VerBose-
 
 ---
 
+## Completed Tasks (`v0.7.0`)
+
+- [x] **`Break` / `Continue` Loop Control & `Structure` Operator Overloading**: Added `Break` and `Continue` loop control statements (`TkBreak`/`TkContinue`, `NdBreak`/`NdContinue`, loop-depth validation in `type_analyzer.vb`, innermost `While`/`For` label stacks in `codegen.vb` with proper `For` counter increment on `Continue`) and `[Public|Private] Operator <op>(params) As RetType ... End Operator` overloading over `Structure` types (`TkOperator`, `NdOpDef`, binary `+ - * / Mod & = <> < > <= >= And Or Xor Shl Shr` + unary `-` / `Not`, mixed struct/scalar overloads, contextual numeric literal matching, type-mangled LLVM symbols `@__vb_op_<op>_<ty>...`, duplicate/arity/ByRef/struct-operand validation in TA, and `--ast` printing). Expanded compiler Arena (32 → 64 MiB) and source/token/AST pools (2×) for larger multi-module projects. Added `tests/test_break_continue.vb` (7/7) and `tests/test_operators.vb` (5/5) — **25/25** suites (**181/181** `Test` blocks), Stage 3 byte-for-byte fixpoint, refreshed `verbose.ll`, and updated Arch `PKGBUILD`/`.SRCINFO`.
+
+---
+
 ## Completed Tasks (`v0.6.1`)
 
 - [x] **Short-Circuit Boolean `And`/`Or`, Rvalue Member/Index Access & Multi-Line Call Arguments**: Upgraded `src/codegen.vb` to short-circuit `Boolean` `And`/`Or` via stack-free LLVM trampoline `phi` blocks (skipping RHS side effects/traps while preserving bitwise integer `And`/`Or`) and to support chained rvalue member access and indexing (`GetMousePosition().x`, `MakeShip().tf.pos.y`, `MakeShip().tags(2)`, `(Vec2 With (...)).y`, `MakeLabel()(0)`, `(Await job).tf.pos.y`) via `CgIsLValueNode`; upgraded `src/parser.vb` to allow multi-line function and struct-constructor call arguments plus arbitrary chained `.field` / `(idx)` postfix sequences; added `tests/test_expressions.vb` (3/3 passing; **23/23** suites, **169/169** `Test` blocks, Stage 3 byte-for-byte fixpoint verified); added **Lesson Learned** section to `README.md` and cleaned up remaining `prototype.vb` CI/test references.

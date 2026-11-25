@@ -148,6 +148,9 @@ Private Function LxClassifyKeyword(pos, slen As Integer) As Integer
     Case SliceEqualsStr(pos, slen, "Case", 4) Then Return TkCase
     Case SliceEqualsStr(pos, slen, "Match", 5) Then Return TkMatch
     Case SliceEqualsStr(pos, slen, "When", 4) Then Return TkWhen
+    Case SliceEqualsStr(pos, slen, "Break", 5) Then Return TkBreak
+    Case SliceEqualsStr(pos, slen, "Continue", 8) Then Return TkContinue
+    Case SliceEqualsStr(pos, slen, "Operator", 8) Then Return TkOperator
     Case SliceEqualsStr(pos, slen, "And", 3) Then Return TkAnd
     Case SliceEqualsStr(pos, slen, "Or", 2) Then Return TkOr
     Case SliceEqualsStr(pos, slen, "Not", 3) Then Return TkNot
@@ -687,10 +690,10 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
 End Function
 
 Public Function LexerLoadEntry(ByRef arena As Arena, entryPath As Pointer) As Integer
-  g_srcPoolCap = 1048576
+  g_srcPoolCap = 2097152
   g_srcPoolLen = 0
   g_srcPool = ArenaAllocBytes(ByRef arena, g_srcPoolCap)
-  g_tokCap = 131072
+  g_tokCap = 262144
   g_tokCount = 0
   g_tokens = ArenaAlloc(ByRef arena, Token, g_tokCap)
   lx_loadedCount = 0
