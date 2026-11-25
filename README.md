@@ -19,7 +19,9 @@ See **[FEATURES.md](FEATURES.md)** for the complete feature catalog.
 ## Quick Taste (All Current Features)
 
 ```vb
-' Multi-file modules: Include "math_utils.vb"
+' Multi-file modules & pure-VerBose stdlib (explicit bounds-checked spans)
+Include "std/span.vb"
+
 ' Native C FFI (supports variadic ..., ByRef out-pointers, and ByVal C structs)
 Declare Function sqrt(x As Double) As Double
 
@@ -33,13 +35,17 @@ Public Structure Vec2
   Dim x, y As Single
 End Structure
 
-' Operator overloading over Structure (supports mixed struct/scalar & unary ops)
+' Operator overloading over Structure (binary, mixed struct/scalar, and unary)
 Public Operator +(a, b As Vec2) As Vec2
   Return Vec2(a.x + b.x, a.y + b.y)
 End Operator
 
 Public Operator *(v As Vec2, s As Single) As Vec2
   Return Vec2(v.x * s, v.y * s)
+End Operator
+
+Public Operator -(v As Vec2) As Vec2
+  Return Vec2(-v.x, -v.y)
 End Operator
 
 Public Structure Entity
@@ -52,7 +58,7 @@ End Structure
 ' Module-level Static global (Public / Private / Default visibility)
 Private Static g_ticks As Long = 0
 
-' Function-local persistent Static + value/ByRef parameters
+' Function-local persistent Static + value/ByRef parameters + With + Match
 Private Sub StepEntity(ByRef e As Entity, dt As Single)
   Static calls As Integer = 0
   calls = calls + 1
@@ -83,6 +89,11 @@ Private Function SumSlice(nums() As Integer, count As Integer) As Integer
   Return total
 End Function
 
+' Structured Concurrency (OS pthread on Linux/macOS/Windows; deferred thunk on arm-m)
+Private Async Function SquareAsync(n As Integer) As Integer
+  Return n * n
+End Function
+
 Public Function main() As Integer
   ' Named With ( ... ) initializer + nested struct + fixed VB () array + unqualified Enum
   Dim hero As Entity With (
@@ -94,8 +105,13 @@ Public Function main() As Integer
   StepEntity(ByRef hero, 0.5)
   StepEntity(ByRef hero, 0.5)
 
-  ' Authentic brace-free VB () array literals & Len()
+  ' Structured Async / Await + rvalue member access & unary struct operator
+  Dim job As Task(Integer) = SquareAsync(9)
+  Dim negX As Single = (-hero.pos).x
+
+  ' Authentic brace-free VB () array literals (fixed & inferred length) + Len()
   Dim fixed(4) As Integer = (10, 20, 30, 40)
+  Dim inferred() As Integer = (1, 2, 3)
   Dim mask As Integer = (1 Shl 4) Or (8 Shr 1) Xor (Not 0)
   Dim root As Double = sqrt(16.0)
 
@@ -106,7 +122,10 @@ Public Function main() As Integer
   pts(0) = Vec2(3.0, 4.0)
   pts(1) = hero.pos
 
-  ' Volatile variable and MMIO primitive demonstration
+  ' Raw pointer primitives + Volatile & MMIO primitives
+  Dim cell As Integer = 10
+  PtrWrite(AddressOf(cell), Integer, 99)
+  Dim cellVal As Integer = PtrRead(AddressOf(cell), Integer)
   Volatile Dim ready As Integer = 1
   VolatileStore(AddressOf(ready), Integer, 2)
 
@@ -115,17 +134,26 @@ Public Function main() As Integer
   ArenaDestroy(ByRef scratch)
   Dim dead As Pointer = ArenaAllocBytes(ByRef scratch, 16)
 
-  ' Explicit Heap allocator, built-in primitive casts & SizeOf
+  ' Explicit Heap + std/span.vb bounds-checked views + built-in primitive casts
   Dim buf() As Integer = HeapAlloc(Integer, 3)
-  buf(0) = 5
-  buf(1) = 15
-  buf(2) = 25
+  Dim sp As IntSpan = IntSpanFrom(buf, 3)
+  Assert IntSpanSet(sp, 0, 5) And IntSpanSet(sp, 1, 15) And IntSpanSet(sp, 2, 25)
+  Dim subSp As IntSpan = IntSpanSub(sp, 1, 2)
+  Dim oobVal As Integer = 0
+  Assert Not IntSpanGet(subSp, 5, ByRef oobVal), "Span rejects out-of-bounds cleanly"
   Dim heapSum As Integer = SumSlice(buf, 3)
-  Dim avg As Single = Single(heapSum) / 3.0
+  Dim avg As Single = Single(heapSum) / Single(Len(inferred))
+  Dim sq As Integer = Await job
+
+  ' String type alias, native concat (&), and VB.NET-style string interpolation ($"...")
+  Dim banner As String = "VerBose" & " v0.7.4"
+  Dim summary As String = $"{banner}: hero#{hero.id} sq={sq} sub0={IntSpanAt(subSp, 0)} avg={Integer(avg)}"
+  Printf("%s\n", summary)
+  HeapFree(summary)
   HeapFree(buf)
 
-  Printf("hero#%d state=%d pos=(%.2f,%.2f) ticks=%ld\n", hero.id, hero.state, hero.pos.x, hero.pos.y, g_ticks)
-  Printf("fixedLen=%d heapSum=%d avg=%.1f sqrt=%.1f sizeof(Entity)=%d\n", Len(fixed), heapSum, avg, root, SizeOf(Entity))
+  Printf("state=%d pos=(%.2f,%.2f) negX=%.2f ticks=%ld\n", hero.state, hero.pos.x, hero.pos.y, negX, g_ticks)
+  Printf("fixedLen=%d heapSum=%d cell=%d sqrt=%.1f sizeof(Entity)=%d\n", Len(fixed), heapSum, cellVal, root, SizeOf(Entity))
   Printf("arenaUsed=%ld afterDestroyNull=%d mask=%d ready=%d\n", used, IsNull(dead), mask, VolatileLoad(AddressOf(ready), Integer))
   Return 0
 End Function
