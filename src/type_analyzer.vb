@@ -1457,6 +1457,45 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
     Return TaMakePrim(TyInt)
   End If
 
+  If k = NdCast Then
+    Dim srcTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
+    Dim dstKind As Integer = g_nodes(id).tyKind
+    Dim dstTy As TypeInfo = TaMakePrim(dstKind)
+    Dim srcNum As Boolean = TaIsIntType(srcTy) Or TaIsFloatType(srcTy)
+    Dim srcBool As Boolean = (srcTy.arrLen = 0) And (srcTy.kind = TyBoolean)
+    Dim srcPtr As Boolean = ((srcTy.arrLen = 0) And (srcTy.kind = TyPointer)) Or (srcTy.arrLen <> 0)
+    Dim dstNum As Boolean = TaIsIntType(dstTy) Or TaIsFloatType(dstTy)
+    Dim ok As Boolean = False
+    If dstNum And (srcNum Or srcBool) Then
+      ok = True
+    End If
+    If TaIsIntType(dstTy) And srcPtr Then
+      ok = True
+    End If
+    If (dstKind = TyBoolean) And (srcNum Or srcBool Or srcPtr) Then
+      ok = True
+    End If
+    If (dstKind = TyPointer) And (srcPtr Or TaIsIntType(srcTy)) Then
+      ok = True
+    End If
+    If Not ok Then
+      Dim tname As String = "primitive"
+      Match dstKind With
+        Case TyByte Then tname = "Byte"
+        Case TyShort Then tname = "Short"
+        Case TyInt Then tname = "Integer"
+        Case TyLong Then tname = "Long"
+        Case TySingle Then tname = "Single"
+        Case TyDouble Then tname = "Double"
+        Case TyBoolean Then tname = "Boolean"
+        Case TyPointer Then tname = "Pointer"
+      End Match
+      Printf("Semantic Type Error: Cannot convert expression to %s\n", tname)
+      ta_errCount = ta_errCount + 1
+    End If
+    Return dstTy
+  End If
+
   If k = NdHeapAlloc Then
     Dim elemTy As TypeInfo = TaResolveType(g_nodes(id).tyKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
     TaValidateType(elemTy)

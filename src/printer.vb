@@ -230,6 +230,13 @@ Private Sub PrExpr(id As Integer)
     Printf(")")
     Return
   End If
+  If k = NdCast Then
+    PrType(g_nodes(id).tyKind, 0, 0, 0)
+    Printf("(")
+    PrExpr(g_nodes(id).left)
+    Printf(")")
+    Return
+  End If
   If k = NdAwait Then
     Printf("(Await ")
     PrExpr(g_nodes(id).left)

@@ -15,6 +15,12 @@ Historical log of finished tasks and completed roadmap milestones for **VerBose-
 
 ---
 
+## Completed Tasks (`v0.7.1`)
+
+- [x] **Built-in Primitive Type Conversions (`Single(x)`, `Integer(x)`, etc.)**: Added `NdCast` explicit conversion expressions for all built-in scalar and pointer types (`Byte(x)`, `Short(x)`, `Integer(x)`, `Long(x)`, `Single(x)`, `Double(x)`, `Boolean(x)`, `Pointer(x)`, `String(x)`), supporting int↔float (`sitofp`/`fptosi`), safe float→`Byte`/`Short` lowering via `i32` (`fptosi -> i32 -> trunc` avoiding LLVM poison for values > 127 like RGB bytes), `Single`↔`Double`, integer widening/truncation, `Boolean`↔numeric/pointer, `Enum`→numeric, and `Pointer`↔integer (`ptrtoint`/`inttoptr`), with Type Analyzer validation, `--ast` printing, and `tests/test_casts.vb` (3/3 passing — **26/26** suites, **184/184** `Test` blocks, Stage 3 byte-for-byte fixpoint verified, refreshed `verbose.ll`, and updated Arch `PKGBUILD`/`.SRCINFO`).
+
+---
+
 ## Completed Tasks (`v0.7.0`)
 
 - [x] **`Break` / `Continue` Loop Control & `Structure` Operator Overloading**: Added `Break` and `Continue` loop control statements (`TkBreak`/`TkContinue`, `NdBreak`/`NdContinue`, loop-depth validation in `type_analyzer.vb`, innermost `While`/`For` label stacks in `codegen.vb` with proper `For` counter increment on `Continue`) and `[Public|Private] Operator <op>(params) As RetType ... End Operator` overloading over `Structure` types (`TkOperator`, `NdOpDef`, binary `+ - * / Mod & = <> < > <= >= And Or Xor Shl Shr` + unary `-` / `Not`, mixed struct/scalar overloads, contextual numeric literal matching, type-mangled LLVM symbols `@__vb_op_<op>_<ty>...`, duplicate/arity/ByRef/struct-operand validation in TA, and `--ast` printing). Expanded compiler Arena (32 → 64 MiB) and source/token/AST pools (2×) for larger multi-module projects. Added `tests/test_break_continue.vb` (7/7) and `tests/test_operators.vb` (5/5) — **25/25** suites (**181/181** `Test` blocks), Stage 3 byte-for-byte fixpoint, refreshed `verbose.ll`, and updated Arch `PKGBUILD`/`.SRCINFO`.

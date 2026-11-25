@@ -1317,6 +1317,15 @@ Private Function CgCoerceScalar(valReg As Integer, fromTy As TypeInfo, toTy As T
     Return r
   End If
   If CgIsFloat(fromTy.kind) And (toBits > 0) Then
+    If toBits < 32 Then
+      Dim tmp As Integer = CgNextReg()
+      fprintf(cg_out, "  %%r%d = fptosi ", tmp)
+      CgEmitLlvmType(fromTy)
+      fprintf(cg_out, " %%r%d to i32\n", valReg)
+      Dim r As Integer = CgNextReg()
+      fprintf(cg_out, "  %%r%d = trunc i32 %%r%d to i%d\n", r, tmp, toBits)
+      Return r
+    End If
     Dim r As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = fptosi ", r)
     CgEmitLlvmType(fromTy)
@@ -2179,6 +2188,68 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     fprintf(cg_out, "  %%r%d = add i32 0, %d\n", r, CgTypeSize(ty))
     outTy = TypeInfo With ( kind = TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
+  End If
+
+  If k = NdCast Then
+    Dim srcTy As TypeInfo
+    Dim srcReg As Integer = CgEmitExpr(g_nodes(id).left, ByRef srcTy)
+    Dim dstKind As Integer = g_nodes(id).tyKind
+    Dim dstTy As TypeInfo With ( kind = dstKind, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+    outTy = dstTy
+
+    If (srcTy.arrLen = 0) And (srcTy.kind = dstKind) Then
+      Return srcReg
+    End If
+
+    If dstKind = TyBoolean Then
+      Dim r As Integer = CgNextReg()
+      If CgIsFloat(srcTy.kind) Then
+        fprintf(cg_out, "  %%r%d = fcmp one ", r)
+        CgEmitLlvmType(srcTy)
+        fprintf(cg_out, " %%r%d, 0.0\n", srcReg)
+        Return r
+      End If
+      If (srcTy.kind = TyPointer) Or (srcTy.arrLen <> 0) Then
+        fprintf(cg_out, "  %%r%d = icmp ne ptr %%r%d, null\n", r, srcReg)
+        Return r
+      End If
+      Dim sb As Integer = CgIntBits(srcTy.kind)
+      If sb > 0 Then
+        fprintf(cg_out, "  %%r%d = icmp ne i%d %%r%d, 0\n", r, sb, srcReg)
+        Return r
+      End If
+      Return srcReg
+    End If
+
+    If (srcTy.arrLen = 0) And (srcTy.kind = TyBoolean) Then
+      Dim r As Integer = CgNextReg()
+      If CgIsFloat(dstKind) Then
+        fprintf(cg_out, "  %%r%d = uitofp i1 %%r%d to ", r, srcReg)
+        CgEmitLlvmType(dstTy)
+        fprintf(cg_out, "\n")
+        Return r
+      End If
+      Dim tb As Integer = CgIntBits(dstKind)
+      If tb > 0 Then
+        fprintf(cg_out, "  %%r%d = zext i1 %%r%d to i%d\n", r, srcReg, tb)
+        Return r
+      End If
+      Return srcReg
+    End If
+
+    If (srcTy.kind = TyPointer) Or (srcTy.arrLen <> 0) Then
+      If dstKind = TyPointer Then
+        Return srcReg
+      End If
+      Dim tb As Integer = CgIntBits(dstKind)
+      If tb > 0 Then
+        Dim r As Integer = CgNextReg()
+        fprintf(cg_out, "  %%r%d = ptrtoint ptr %%r%d to i%d\n", r, srcReg, tb)
+        Return r
+      End If
+    End If
+
+    Return CgCoerceScalar(srcReg, srcTy, dstTy)
   End If
 
   If k = NdStructInit Then

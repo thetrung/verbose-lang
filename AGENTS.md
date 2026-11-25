@@ -6,12 +6,12 @@ See also: [Wiki Tutorial](https://github.com/thetrung/verbose-lang/wiki/Tutorial
 
 ## Project Identity
 
-- **VerBose-Lang** (`v0.7.0`): brace-free, case-sensitive, Visual Basic–inspired systems language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**).
+- **VerBose-Lang** (`v0.7.1`): brace-free, case-sensitive, Visual Basic–inspired systems language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**).
 - **Zero external toolchain deps**: `clang` + `curl` only (no OCaml, no Python). The archival OCaml Stage 0 compiler lives on the `stage0` git branch.
 - **Targets** (`--target` / `VERBOSE_TARGET`): `linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`, and freestanding 32-bit `arm-m` (`thumbv7em-unknown-none-eabi`).
 - **Companion ecosystem repos** (sibling dirs in `../` when checked out): `verbose-raylib`, `verbose.nvim`, `verbose-pkg` (`vpm`), `verbose-tui`, `verbose-openSKP`, `verbose-viewSKP`.
 
-## Architecture & Compiler Internals (`src/`, 9 modules, ~11.5k LOC)
+## Architecture & Compiler Internals (`src/`, 9 modules, ~11.7k LOC)
 
 Every compilation allocates a single **64 MiB deterministic `Arena`** in `RunSingleTarget` (`src/verbose.vb`) for source pools, tokens, AST nodes, and symbol tables:
 
@@ -32,7 +32,7 @@ All pure VerBose, zero-GC, Arena-backed:
 - `std/io.vb` — `IoBuf`, `IoReadFile`, `IoWriteFile`, `IoWriteText`, `IoAppendText`, `IoFileExists`, `IoFileSize`, `IoRemoveFile`, `IoPrint`, `IoPrintLn`, `IoReadLine`.
 
 ### Tests (`tests/`)
-- 25 native pure-VerBose `Test`/`Assert` suites (`tests/test_*.vb`, 181 `Test` blocks) + `tests/bootstrap_suite.vb` + `tests/harness.vb` + `tests/raylib/` (Raylib 5.x bindings, demos & headless C shim).
+- 26 native pure-VerBose `Test`/`Assert` suites (`tests/test_*.vb`, 184 `Test` blocks) + `tests/bootstrap_suite.vb` + `tests/harness.vb` + `tests/raylib/` (Raylib 5.x bindings, demos & headless C shim).
 
 ## Build, Bootstrap & Test Commands
 
@@ -41,7 +41,7 @@ make bootstrap                            # Cold-bootstrap ./verbose from checke
 make build                                # Stage 1 -> 2 -> 3 fixpoint (diff verbose2.ll verbose3.ll) + bootstrap_suite.vb
 make bootstrap-ir                         # Regenerate checked-in target-neutral verbose.ll from ./verbose
 make pkg-arch                             # Build Arch Linux .pkg.tar.zst + pacman repo DB in packaging/arch/
-make test                                 # Run all 25 pure-VerBose suites (./verbose test)
+make test                                 # Run all 26 pure-VerBose suites (./verbose test)
 make test-all                             # Full fixpoint build + all tests
 ./verbose test tests/test_<name>.vb       # Run a single suite
 ./verbose --ast file.vb                   # Dump parsed AST
@@ -53,7 +53,7 @@ make test-all                             # Full fixpoint build + all tests
 ## VerBose Language Quick Memory (Writing `.vb` Correctly)
 
 - **Syntax**: Case-sensitive PascalCase keywords (`Dim`, `Integer`, `End If`, `True`, `False`); comments `'`; no `{}` or `[]` anywhere except `{expr}` inside `$"..."` (escape literal braces as `{{`/`}}`).
-- **Types**: `Byte`/`Short`/`Integer`/`Long`, `Single`/`Double`, `Boolean`, `Pointer`/`String` (alias), `Arena`, `Task`/`Task(T)`, `Nothing`. Uninitialized locals auto zero-initialize.
+- **Types & Casts**: `Byte`/`Short`/`Integer`/`Long`, `Single`/`Double`, `Boolean`, `Pointer`/`String` (alias), `Arena`, `Task`/`Task(T)`, `Nothing`. Uninitialized locals auto zero-initialize. Explicit conversions are built in: `Byte(x)`, `Short(x)`, `Integer(x)`, `Long(x)`, `Single(x)`, `Double(x)`, `Boolean(x)`, `Pointer(x)`, `String(x)` (use `Single(i)` / `Integer(f)` when mixing ints & floats).
 - **Declarations & Params**: Grouped same-type & mixed-type `Dim`/`Static`/fields/params allowed (`Dim a, b As Integer = 0`, `Dim x = 1, y = 2 As Integer`). Pass-by-value is default (**no `ByVal` keyword**). `ByRef` is required at **both** callee and caller (and propagates across grouped params before `As`).
 - **Control Flow**: `Do` is **mandatory** on `While cond Do` and `For i = a To b Do` (inclusive bounds, step `+1`, `i` auto-declared `Integer`). `Break` and `Continue` target the innermost `While` or `For` loop (`Continue` increments `For` counters). No `ElseIf` — use `Match With` as an `ElseIf` ladder.
 - **Operators & Overloading**: `And`/`Or` short-circuit on `Boolean` and are bitwise on integers (`Shr` is logical right shift `lshr`). `Not`, `And`, `Or`, `Xor` bind looser than comparisons — parenthesize bitwise ops in comparisons (`(m And 4) = 4`) and compound boolean clauses. No implicit int/float mixing in binary ops. `Structure` types support `[Public|Private] Operator <op>(params) As RetType ... End Operator` for binary (`+`, `-`, `*`, `/`, `Mod`, `&`, `=`, `<>`, `<`, `>`, `<=`, `>=`, `And`, `Or`, `Xor`, `Shl`, `Shr`) and unary (`-`, `Not`) operators (with mixed struct/scalar overloads and contextual numeric literal matching).

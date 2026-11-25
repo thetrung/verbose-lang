@@ -306,6 +306,30 @@ Private Function PParsePrimary() As Integer
     Return id
   End If
 
+  Dim castTy As Integer = 0
+  Match k With
+    Case TkByte Then castTy = TyByte
+    Case TkShort Then castTy = TyShort
+    Case TkInteger Then castTy = TyInt
+    Case TkLong Then castTy = TyLong
+    Case TkSingle Then castTy = TySingle
+    Case TkDouble Then castTy = TyDouble
+    Case TkBoolean Then castTy = TyBoolean
+    Case TkPointer, TkString Then castTy = TyPointer
+  End Match
+  If castTy <> 0 Then
+    PAdvance()
+    PExpect(TkLParen)
+    PSkipNewlines()
+    Dim inner As Integer = ParseExpr()
+    PSkipNewlines()
+    PExpect(TkRParen)
+    Dim id As Integer = NewNode(NdCast)
+    g_nodes(id).tyKind = castTy
+    g_nodes(id).left = inner
+    Return id
+  End If
+
   If k = TkArenaAlloc Then
     PAdvance()
     PExpect(TkLParen)

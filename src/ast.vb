@@ -83,6 +83,7 @@ Public Enum NodeKind
   NdBreak = 64
   NdContinue = 65
   NdOpDef = 66
+  NdCast = 67
 End Enum
 
 Public Structure AstNode
