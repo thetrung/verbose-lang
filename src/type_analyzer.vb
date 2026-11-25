@@ -53,7 +53,134 @@ Private Static ta_params() As TaParamInfo, ta_locals() As TaLocalSym
 Private Static ta_labels(128) As TaLabelInfo
 Private Static ta_withTys(16) As TypeInfo
 Private Static ta_enumCount, ta_enumMemCount, ta_structCount, ta_fieldCount, ta_globalCount, ta_funcCount, ta_opCount, ta_paramCount, ta_localCount, ta_labelCount, ta_withDepth, ta_loopDepth, ta_curModId, ta_errCount As Integer = 0
+Private Static ta_ptrSize = 8, ta_curFrameReported = 0 As Integer
+Private Static ta_maxStackBytes = 65536, ta_curFrameBytes = 0 As Long
 Private Static ta_curRetTy As TypeInfo
+
+Public Sub TaSetTarget(targetId As Integer)
+  If targetId = TgtArmM Then
+    ta_ptrSize = 4
+    ta_maxStackBytes = 4096
+  Else
+    ta_ptrSize = 8
+    ta_maxStackBytes = 65536
+  End If
+End Sub
+
+Public Sub TaSetMaxStack(bytes As Long)
+  If bytes >= 0 Then
+    ta_maxStackBytes = bytes
+  End If
+End Sub
+
+Private Function TaTypeAlign(ty As TypeInfo) As Integer
+  If ty.arrLen < 0 Then
+    Return ta_ptrSize
+  End If
+  Match ty.kind With
+    Case TyByte, TyBoolean Then Return 1
+    Case TyShort Then Return 2
+    Case TyInt, TySingle, TyEnum Then Return 4
+    Case TyLong, TyDouble Then Return 8
+    Case TyPointer, TyTask Then Return ta_ptrSize
+    Case TyArena Then Return 8
+    Case TyStruct Then
+      If (ty.typeIdx < 0) Or (ty.typeIdx >= ta_structCount) Then
+        Return 8
+      End If
+      Dim maxAl As Integer = 1
+      Dim fst As Integer = ta_structs(ty.typeIdx).fieldStart
+      Dim fcnt As Integer = ta_structs(ty.typeIdx).fieldCount
+      For i = 0 To fcnt - 1 Do
+        Dim fal As Integer = TaTypeAlign(ta_fields(fst + i).ty)
+        If fal > maxAl Then
+          maxAl = fal
+        End If
+      End For
+      Return maxAl
+    Case _ Then Return 4
+  End Match
+End Function
+
+Private Function TaTypeSize(ty As TypeInfo) As Long
+  If ty.arrLen < 0 Then
+    Return Long(ta_ptrSize)
+  End If
+  Dim elemSz As Long = 4
+  Match ty.kind With
+    Case TyNothing Then elemSz = 0
+    Case TyByte, TyBoolean Then elemSz = 1
+    Case TyShort Then elemSz = 2
+    Case TyInt, TySingle, TyEnum Then elemSz = 4
+    Case TyLong, TyDouble Then elemSz = 8
+    Case TyPointer, TyTask Then elemSz = Long(ta_ptrSize)
+    Case TyArena Then elemSz = Long(ta_ptrSize) + 24
+    Case TyStruct Then
+      If (ty.typeIdx < 0) Or (ty.typeIdx >= ta_structCount) Then
+        elemSz = 8
+      Else
+        Dim off As Long = 0
+        Dim maxAl As Long = 1
+        Dim fst As Integer = ta_structs(ty.typeIdx).fieldStart
+        Dim fcnt As Integer = ta_structs(ty.typeIdx).fieldCount
+        For i = 0 To fcnt - 1 Do
+          Dim fty As TypeInfo = ta_fields(fst + i).ty
+          Dim fal As Long = Long(TaTypeAlign(fty))
+          If fal > maxAl Then
+            maxAl = fal
+          End If
+          Dim rem As Long = off Mod fal
+          If rem <> 0 Then
+            off = off + (fal - rem)
+          End If
+          off = off + TaTypeSize(fty)
+        End For
+        Dim remEnd As Long = off Mod maxAl
+        If remEnd <> 0 Then
+          off = off + (maxAl - remEnd)
+        End If
+        If off = 0 Then
+          off = 1
+        End If
+        elemSz = off
+      End If
+    Case _ Then elemSz = 4
+  End Match
+  If ty.arrLen > 0 Then
+    Return elemSz * Long(ty.arrLen)
+  End If
+  Return elemSz
+End Function
+
+Private Sub TaAccountStackLocal(nPos, nLen As Integer, ty As TypeInfo)
+  Dim sz As Long = TaTypeSize(ty)
+  Dim alignedSz As Long = sz
+  Dim rem As Long = alignedSz Mod 8
+  If rem <> 0 Then
+    alignedSz = alignedSz + (8 - rem)
+  End If
+  ta_curFrameBytes = ta_curFrameBytes + alignedSz
+  If (ta_maxStackBytes > 0) And (sz > ta_maxStackBytes) Then
+    Printf("Semantic Type Error: Local variable '")
+    TaPrintSlice(nPos, nLen)
+    Printf("' requires %lld bytes on the stack, exceeding max stack limit (%lld bytes); use HeapAlloc, ArenaAlloc, or Static instead\n", sz, ta_maxStackBytes)
+    ta_errCount = ta_errCount + 1
+    ta_curFrameReported = 1
+  End If
+End Sub
+
+Private Sub TaCheckFrameBudget(kindLabel As Pointer, namePos, nameLen As Integer)
+  If (ta_maxStackBytes > 0) And (ta_curFrameBytes > ta_maxStackBytes) And (ta_curFrameReported = 0) Then
+    If nameLen > 0 Then
+      Printf("Semantic Type Error: %s '", kindLabel)
+      TaPrintSlice(namePos, nameLen)
+      Printf("' stack frame requires %lld bytes, exceeding max stack limit (%lld bytes); move large locals to HeapAlloc, ArenaAlloc, or Static (or pass --max-stack)\n", ta_curFrameBytes, ta_maxStackBytes)
+    Else
+      Printf("Semantic Type Error: %s stack frame requires %lld bytes, exceeding max stack limit (%lld bytes); move large locals to HeapAlloc, ArenaAlloc, or Static (or pass --max-stack)\n", kindLabel, ta_curFrameBytes, ta_maxStackBytes)
+    End If
+    ta_errCount = ta_errCount + 1
+  End If
+End Sub
 
 Private Sub TaPrintSlice(pos, slen As Integer)
   For i = 0 To slen - 1 Do
@@ -1839,6 +1966,7 @@ Private Sub TaCheckStmt(id As Integer)
         End If
       End If
     End If
+    TaAccountStackLocal(nPos, nLen, ty)
     ta_locals(ta_localCount) = TaLocalSym With ( namePos = nPos, nameLen = nLen, ty = ty )
     ta_localCount = ta_localCount + 1
     Return
@@ -2417,11 +2545,17 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       ta_localCount = 0
       ta_labelCount = 0
       ta_loopDepth = 0
+      ta_curFrameBytes = 0
+      ta_curFrameReported = 0
       Dim j As Integer = 0
       While j < g_nodes(d).extraCount Do
         Dim pn As Integer = g_kids(g_nodes(d).extraStart + j)
-        Dim pty As TypeInfo = ta_params(ta_funcs(fi).paramStart + j).ty
+        Dim pInfo As TaParamInfo = ta_params(ta_funcs(fi).paramStart + j)
+        Dim pty As TypeInfo = pInfo.ty
         TaValidateType(pty)
+        If (pInfo.isByRef = 0) And (pty.arrLen >= 0) Then
+          TaAccountStackLocal(g_nodes(pn).intVal, g_nodes(pn).lenVal, pty)
+        End If
         ta_locals(ta_localCount) = TaLocalSym With ( namePos = g_nodes(pn).intVal, nameLen = g_nodes(pn).lenVal, ty = pty )
         ta_localCount = ta_localCount + 1
         j = j + 1
@@ -2432,6 +2566,7 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
         TaCheckStmt(g_kids(g_nodes(d).firstChild + j))
         j = j + 1
       End While
+      TaCheckFrameBudget("Function", ta_funcs(fi).namePos, ta_funcs(fi).nameLen)
       fi = fi + 1
     End If
     If dk = NdOpDef Then
@@ -2440,10 +2575,16 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       ta_localCount = 0
       ta_labelCount = 0
       ta_loopDepth = 0
+      ta_curFrameBytes = 0
+      ta_curFrameReported = 0
       For j = 0 To g_nodes(d).extraCount - 1 Do
         Dim pn As Integer = g_kids(g_nodes(d).extraStart + j)
-        Dim pty As TypeInfo = ta_params(ta_ops(oi2).paramStart + j).ty
+        Dim pInfo As TaParamInfo = ta_params(ta_ops(oi2).paramStart + j)
+        Dim pty As TypeInfo = pInfo.ty
         TaValidateType(pty)
+        If (pInfo.isByRef = 0) And (pty.arrLen >= 0) Then
+          TaAccountStackLocal(g_nodes(pn).intVal, g_nodes(pn).lenVal, pty)
+        End If
         ta_locals(ta_localCount) = TaLocalSym With ( namePos = g_nodes(pn).intVal, nameLen = g_nodes(pn).lenVal, ty = pty )
         ta_localCount = ta_localCount + 1
       End For
@@ -2451,6 +2592,7 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       For j = 0 To g_nodes(d).childCount - 1 Do
         TaCheckStmt(g_kids(g_nodes(d).firstChild + j))
       End For
+      TaCheckFrameBudget("Operator", 0, 0)
       oi2 = oi2 + 1
     End If
     If dk = NdTestDef Then
@@ -2458,10 +2600,13 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       ta_localCount = 0
       ta_labelCount = 0
       ta_loopDepth = 0
+      ta_curFrameBytes = 0
+      ta_curFrameReported = 0
       TaCollectLabels(g_nodes(d).firstChild, g_nodes(d).childCount)
       For j = 0 To g_nodes(d).childCount - 1 Do
         TaCheckStmt(g_kids(g_nodes(d).firstChild + j))
       End For
+      TaCheckFrameBudget("Test", 0, 0)
     End If
   End For
 

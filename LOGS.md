@@ -15,6 +15,12 @@ Historical log of finished tasks and completed roadmap milestones for **VerBose-
 
 ---
 
+## Completed Tasks (`v0.7.3`)
+
+- [x] **Strict Compile-Time Stack-Frame Limit Enforcement (`--max-stack`)**: Added exact target-aware type sizing (`TaTypeAlign` / `TaTypeSize` in 64-bit `Long`) and per-function/operator/test stack frame accounting in `src/type_analyzer.vb` (`TaSetTarget`, `TaSetMaxStack`, `TaAccountStackLocal`, `TaCheckFrameBudget`), enforcing hard compile-time errors (no silent `malloc` auto-spill!) when any `Dim` local or cumulative stack frame exceeds **`64 KB`** on hosted 64-bit targets or **`4 KB`** on bare-metal `arm-m` (nudging explicitly to `HeapAlloc`, `ArenaAlloc`, or `Static`, with explicit `--max-stack <bytes>` CLI override). Upgraded `tests/harness.vb` `FileHas` buffer from stack `Dim` to `Static`, added `tests/test_stack_limit.vb` (5/5 passing — **28/28** suites, **191/191** `Test` blocks, Stage 3 byte-for-byte fixpoint verified, refreshed `verbose.ll`, and updated Arch `PKGBUILD`/`.SRCINFO`).
+
+---
+
 ## Completed Tasks (`v0.7.2`)
 
 - [x] **Entry-Block `alloca` Hoisting & 64-Parameter Capacity**: Upgraded `src/codegen.vb` (`CgBeginFuncBody` / `CgEndFuncBody` / `CgEmitHoistedAlloca`) to hoist every static `alloca` across all functions, operators, `Async` bodies, and `Test` blocks into the LLVM `entry:` block — eliminating dynamic per-iteration stack growth in long-running `While`/`For` loops (fixing stack overflow crashes in GUI/render loops like `verbose-viewSKP`) and unlocking LLVM `mem2reg` SSA register promotion for loop locals. Expanded parser/codegen parameter and call-argument buffers from `32 → 64`. Added `tests/test_loop_alloca.vb` (2/2 passing — **27/27** suites, **186/186** `Test` blocks, Stage 3 byte-for-byte fixpoint verified, refreshed `verbose.ll`, and updated Arch `PKGBUILD`/`.SRCINFO`).

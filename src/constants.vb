@@ -1,7 +1,7 @@
 ' VerBose Self-Hosting Compiler (verbose) - Shared Diagnostics, Messages & LLVM IR Templates
 
 ' --- Compiler Version & CLI Driver Messages ---
-Public Static MSG_CLI_VERSION As Pointer = "verbose 0.7.2 (VerBose-Lang Self-Hosted Compiler)\n"
+Public Static MSG_CLI_VERSION As Pointer = "verbose 0.7.3 (VerBose-Lang Self-Hosted Compiler)\n"
 Public Static MSG_CLI_USAGE As Pointer = "Usage: verbose <filename>.vb [options]\n" &
   "       verbose test [file.vb | dir] [options]\n" &
   "  test         Run built-in Test/Assert blocks in a .vb file or directory (default: tests)\n" &
@@ -10,6 +10,7 @@ Public Static MSG_CLI_USAGE As Pointer = "Usage: verbose <filename>.vb [options]
   "  --ir         Show generated LLVM-IR\n" &
   "  --ta         Verbose type-analyzer pass (runs automatically before codegen)\n" &
   "  --no-ta      Skip semantic type-analyzer pass\n" &
+  "  --max-stack <N> Max stack frame bytes per function (default: 65536 hosted, 4096 arm-m; 0 disables)\n" &
   "  --emit-only  Emit .ll only (skip clang & execution)\n" &
   "  -c, --emit-obj Compile to object file (.o) via clang -c (skip linking & run)\n" &
   "  --target <t> Target: linux-x86_64, linux-arm64, macos-arm64, windows-x86_64, arm-m\n" &
@@ -31,6 +32,7 @@ Public Static MSG_CLI_PARSE_ABORT = "verbose: aborting due to %d parse error(s)\
   MSG_CLI_ERR_I_ARG = "Error: -I requires a directory argument\n",
   MSG_CLI_ERR_TARGET_ARG = "Error: --target requires a target name (linux-x86_64, linux-arm64, macos-arm64, windows-x86_64, arm-m)\n",
   MSG_CLI_ERR_UNKNOWN_TARGET = "Error: unknown target '%s' (supported: linux-x86_64, linux-arm64, macos-arm64, windows-x86_64, arm-m)\n",
+  MSG_CLI_ERR_STACK_ARG = "Error: --max-stack requires a non-negative integer byte limit\n",
   MSG_CLI_ERR_UNKNOWN_OPT = "Unknown option: %s\n",
   MSG_CLI_ERR_UNEXPECTED_ARG = "Unexpected argument: %s\n",
   MSG_CLI_TEST_NO_BLOCKS = "verbose test error: no Test blocks found in '%s'\n",

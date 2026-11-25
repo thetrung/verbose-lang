@@ -1,7 +1,7 @@
 TARGET ?= prototype
 PREFIX ?= /usr/local
 DESTDIR ?=
-VERSION ?= 0.7.2
+VERSION ?= 0.7.3
 BOOTSTRAP ?=
 
 UNAME_S := $(shell uname -s 2>/dev/null || echo Linux)

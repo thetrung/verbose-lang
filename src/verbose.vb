@@ -21,6 +21,24 @@ Declare Function getenv(name As Pointer) As Pointer
 Declare Function strstr(haystack, needle As Pointer) As Pointer
 
 Private Static cli_hostTarget As Integer = -1
+Private Static cli_maxStackOverride As Long = -1
+
+Private Function CliParseNonNegLong(s As Pointer) As Long
+  If IsNull(s) Or (s(0) = 0) Then
+    Return -1
+  End If
+  Dim val As Long = 0
+  Dim idx As Integer = 0
+  While s(idx) <> 0 Do
+    Dim ch As Integer = Integer(s(idx)) And 255
+    If (ch < 48) Or (ch > 57) Then
+      Return -1
+    End If
+    val = val * 10 + Long(ch - 48)
+    idx = idx + 1
+  End While
+  Return val
+End Function
 
 Private Sub PrintUsage()
   Printf(MSG_CLI_USAGE)
@@ -256,6 +274,10 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
   End If
 
   If skipTa = 0 Then
+    TaSetTarget(targetId)
+    If cli_maxStackOverride >= 0 Then
+      TaSetMaxStack(cli_maxStackOverride)
+    End If
     Dim taErrs As Integer = AnalyzeProgram(ByRef arena, progRoot)
     If taErrs > 0 Then
       ArenaDestroy(ByRef arena)
@@ -566,6 +588,26 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
       Case "--ir" Then showIr = 1
       Case "--ta" Then showTa = 1
       Case "--no-ta" Then skipTa = 1
+      Case "--max-stack" Then
+        If (i + 1) >= argc Then
+          Printf(MSG_CLI_ERR_STACK_ARG)
+          PrintUsage()
+          Return 1
+        End If
+        i = i + 1
+        Dim parsedStack As Long = CliParseNonNegLong(argv(i))
+        If parsedStack < 0 Then
+          Printf(MSG_CLI_ERR_STACK_ARG)
+          Return 1
+        End If
+        cli_maxStackOverride = parsedStack
+      Case _ When strncmp(arg, "--max-stack=", 12) = 0 Then
+        Dim parsedStack As Long = CliParseNonNegLong(PtrAdd(arg, 12))
+        If parsedStack < 0 Then
+          Printf(MSG_CLI_ERR_STACK_ARG)
+          Return 1
+        End If
+        cli_maxStackOverride = parsedStack
       Case "--emit-only" Then emitOnly = 1
       Case "-c", "--emit-obj" Then emitObj = 1
       Case "--no-run" Then noRun = 1

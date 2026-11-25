@@ -137,7 +137,7 @@ Public Function FileHas(path, needle As Pointer) As Boolean
   If IsNull(fp) Then
     Return False
   End If
-  Dim buf(65536) As Byte
+  Static buf(65536) As Byte
   Dim n As Long = fread(buf, 1, 65535, fp)
   fclose(fp)
   Dim ni As Integer = n
