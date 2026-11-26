@@ -28,6 +28,59 @@ Public Structure PtrSpan
 End Structure
 
 ' =============================================================================
+' Generic Span(Of T): Zero-overhead monomorphized bounds-checked view
+' =============================================================================
+
+Public Structure Span(Of T)
+  Dim data As Pointer
+  Dim length As Long
+End Structure
+
+Public Function SpanFrom(Of T)(buf As Pointer, length As Long) As Span(Of T)
+  If IsNull(buf) Or (length <= 0) Then
+    Return Span(Of T) With ( data = 0, length = 0 )
+  End If
+  Return Span(Of T) With ( data = buf, length = length )
+End Function
+
+Public Function SpanInBounds(Of T)(s As Span(Of T), idx As Long) As Boolean
+  Return (Not IsNull(s.data)) And (idx >= 0) And (idx < s.length)
+End Function
+
+Public Function SpanGet(Of T)(s As Span(Of T), idx As Long, ByRef outVal As T) As Boolean
+  If Not SpanInBounds(Of T)(s, idx) Then
+    Return False
+  End If
+  outVal = PtrRead(PtrAdd(s.data, idx * Long(SizeOf(T))), T)
+  Return True
+End Function
+
+Public Function SpanSet(Of T)(s As Span(Of T), idx As Long, val As T) As Boolean
+  If Not SpanInBounds(Of T)(s, idx) Then
+    Return False
+  End If
+  PtrWrite(PtrAdd(s.data, idx * Long(SizeOf(T))), T, val)
+  Return True
+End Function
+
+Public Function SpanAt(Of T)(s As Span(Of T), idx As Long) As T
+  Assert SpanInBounds(Of T)(s, idx), "Span index out of bounds"
+  Return PtrRead(PtrAdd(s.data, idx * Long(SizeOf(T))), T)
+End Function
+
+Public Function SpanSub(Of T)(s As Span(Of T), start, count As Long) As Span(Of T)
+  If IsNull(s.data) Or (start < 0) Or (count <= 0) Or (start >= s.length) Then
+    Return Span(Of T) With ( data = 0, length = 0 )
+  End If
+  Dim avail As Long = s.length - start
+  Dim take As Long = count
+  If take > avail Then
+    take = avail
+  End If
+  Return Span(Of T) With ( data = PtrAdd(s.data, start * Long(SizeOf(T))), length = take )
+End Function
+
+' =============================================================================
 ' ByteSpan
 ' =============================================================================
 

@@ -10,7 +10,7 @@ A Human-Readable Language inspired by Visual Basic, compiled directly to LLVM-IR
 
 ## Overview
 
-Verbose-Lang pairs Visual Basic's brace-free readability with C-speed, zero-GC systems programming directly on LLVM IR. It compiles natively for Linux (x86-64, arm64), macOS (arm64), Windows (x86-64), and bare-metal 32-bit ARM-M, providing deterministic memory (`Static`, `Heap`, `Arena`), hardware MMIO (`Volatile`, `At`), native C FFI, built-in explicit scalar/pointer conversions (`Single(x)`, `Integer(x)`, etc.), strict compile-time stack-frame & constant array-bounds checks (`--max-stack`, opt-in `--bounds-check`, `std/span.vb`), structured `Async`/`Await` concurrency, a pure-VerBose standard library (`std/`), and built-in `Test`/`Assert` suites. The compiler (`./verbose`) is 100% self-hosted in VerBose-Lang itself with zero OCaml or Python dependencies.
+Verbose-Lang pairs Visual Basic's brace-free readability with C-speed, zero-GC systems programming directly on LLVM IR. It compiles natively for Linux (x86-64, arm64), macOS (arm64), Windows (x86-64), and bare-metal 32-bit ARM-M, providing deterministic memory (`Static`, `Heap`, `Arena`), zero-overhead monomorphized generics (`(Of T, ...)` on `Structure`, `Function`, `Sub`, `Async`, and `Operator`), hardware MMIO (`Volatile`, `At`), native C FFI, built-in explicit scalar/pointer conversions (`Single(x)`, `Integer(x)`, etc.), strict compile-time stack-frame & constant array-bounds checks (`--max-stack`, opt-in `--bounds-check`, `std/span.vb`), structured `Async`/`Await` concurrency, a pure-VerBose standard library (`std/`), and built-in `Test`/`Assert` suites. The compiler (`./verbose`) is 100% self-hosted in VerBose-Lang itself with zero OCaml or Python dependencies.
 
 See **[FEATURES.md](FEATURES.md)** for the complete feature catalog.
 
@@ -276,7 +276,7 @@ Official companion repositories built for VerBose-Lang `v0.7.x`:
 - **[verbose-pkg](https://github.com/thetrung/verbose-pkg)** — Serverless Cargo-inspired package manager (`vpm v0.2.0`), written natively in VerBose-Lang with multithreaded `Async`/`Await` parallel `install`/`build`/`test`, `vpm run` argument forwarding, and git/path/`.vpkg.tar.gz` bundles.
 - **[verbose-tui](https://github.com/thetrung/verbose-tui)** — **100% pure VerBose-Lang** Ratatui-inspired zero-GC double-buffered 24-bit TrueColor TUI framework using direct POSIX `termios`/`ioctl`/`poll` FFI (zero `ncurses`, zero custom C shims) and Unicode widgets.
 - **[verbose-openSKP](https://github.com/thetrung/verbose-openSKP)** — VerBose-Lang + C ABI wrapper around vendored MIT OpenSKP for loading SketchUp `.skp` scenes (meshes, instanced hierarchy, materials, layers, scenes/pages) directly into flat RAM arrays.
-- **[verbose-viewSKP](https://github.com/thetrung/verbose-viewSKP)** — **100% pure VerBose-Lang** ZBrush-style multithreaded CPU Pixol + 2.5D Toon/Ink, Cook-Torrance GGX PBR, and 2-Level CPU BVH RayTracing `.skp` studio with 60 FPS GPU 3D preview, progressive partial rendering, draggable 3D lights, and object outliner (`verbose-openSKP` + `verbose-raylib` via `vpm`).
+- **[verbose-viewSKP](https://github.com/thetrung/verbose-viewSKP)** — **100% pure VerBose-Lang** ZBrush-style multithreaded CPU Pixol + 2.5D Toon/Ink, Cook-Torrance GGX PBR, and 2-Level CPU BVH RayTracing `.skp` studio with 60 FPS GPU BBox / CPU monochrome line preview (`[F5]`), adjustable 2.5D Depth-of-Field focus blur (`[F6]`), progressive partial rendering (`[F7]`), draggable 3D lights, and object outliner (`verbose-openSKP` + `verbose-raylib` via `vpm`).
 
 ---
 

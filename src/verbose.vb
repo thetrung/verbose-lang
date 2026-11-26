@@ -4,6 +4,7 @@
 
 Include "constants.vb"
 Include "printer.vb"
+Include "generics.vb"
 Include "type_analyzer.vb"
 Include "codegen.vb"
 
@@ -272,6 +273,12 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
   If showAst = 1 Then
     Printf(MSG_CLI_AST_HEADER)
     PrintProgramAst(progRoot)
+  End If
+
+  Dim gmErrs As Integer = MonomorphizeProgram(ByRef arena, progRoot)
+  If gmErrs > 0 Then
+    ArenaDestroy(ByRef arena)
+    Return 1
   End If
 
   If skipTa = 0 Then

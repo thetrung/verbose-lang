@@ -84,12 +84,14 @@ Public Enum NodeKind
   NdContinue = 65
   NdOpDef = 66
   NdCast = 67
+  NdTypeRef = 68
 End Enum
 
 Public Structure AstNode
   Dim kind, op, intVal, lenVal As Integer
   Dim left, right, third, firstChild, childCount, extraStart, extraCount As Integer
   Dim tyKind, tyArrLen, tyNamePos, tyNameLen, tyInnerKind, modId, flags As Integer
+  Dim genStart, genCount, tyArgStart, tyArgCount As Integer
 End Structure
 
 Public Static g_nodes() As AstNode, g_kids() As Integer
@@ -121,7 +123,11 @@ Public Function NewNode(kind As Integer) As Integer
     tyKind = TyNothing,
     tyArrLen = 0,
     tyNamePos = 0,
-    tyNameLen = 0
+    tyNameLen = 0,
+    genStart = 0,
+    genCount = 0,
+    tyArgStart = 0,
+    tyArgCount = 0
   )
   g_nodeCount = g_nodeCount + 1
   Return id

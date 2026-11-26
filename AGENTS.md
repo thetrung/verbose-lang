@@ -2,16 +2,16 @@
 
 Project memory & engineering guide for AI agents working in `verbose-lang`.
 For mutable status and roadmap, check [STATE.md](STATE.md) and [TODO.md](TODO.md) first.
-See also: [Wiki Tutorial](https://github.com/thetrung/verbose-lang/wiki/Tutorial), [FEATURES.md](FEATURES.md), [FLAGS.md](FLAGS.md), [LAYOUT.md](LAYOUT.md), [TEST.md](TEST.md), [LOGS.md](LOGS.md).
+See also: [Wiki Tutorial](https://github.com/thetrung/verbose-lang/wiki/Tutorial), [CACHE.md](CACHE.md), [FEATURES.md](FEATURES.md), [FLAGS.md](FLAGS.md), [LAYOUT.md](LAYOUT.md), [TEST.md](TEST.md), [LOGS.md](LOGS.md).
 
 ## Project Identity
 
-- **VerBose-Lang** (`v0.7.4`): brace-free, case-sensitive, Visual Basic–inspired systems language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**).
+- **VerBose-Lang** (`v0.8.0`): brace-free, case-sensitive, Visual Basic–inspired systems language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**).
 - **Zero external toolchain deps**: `clang` + `curl` only (no OCaml, no Python). The archival OCaml Stage 0 compiler lives on the `stage0` git branch.
 - **Targets** (`--target` / `VERBOSE_TARGET`): `linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`, and freestanding 32-bit `arm-m` (`thumbv7em-unknown-none-eabi`).
 - **Companion ecosystem repos** (sibling dirs in `../` when checked out): `verbose-raylib`, `verbose.nvim`, `verbose-pkg` (`vpm`), `verbose-tui`, `verbose-openSKP`, `verbose-viewSKP`.
 
-## Architecture & Compiler Internals (`src/`, 9 modules, 12,040 LOC)
+## Architecture & Compiler Internals (`src/`, 10 modules, 14,583 LOC)
 
 Every compilation allocates a single **64 MiB deterministic `Arena`** in `RunSingleTarget` (`src/verbose.vb`) for source pools, tokens, AST nodes, and symbol tables:
 
@@ -20,20 +20,21 @@ Every compilation allocates a single **64 MiB deterministic `Arena`** in `RunSin
 | `src/verbose.vb` | CLI driver, host auto-detection (`VERBOSE_TARGET`, `OS=Windows_NT`, `uname -sm`), `--bounds-check` / `--max-stack` wiring, `verbose test` runner (`test_*.vb` / `*_test.vb`), `clang -O2` invocation, auto-links `-lpthread` only when `CgUsesAsync() = 1` on Linux/Windows. |
 | `src/constants.vb` | Version string (`MSG_CLI_VERSION`), diagnostics, `TargetKind`, LLVM datalayouts/triples, inline IR runtime templates (`@__vb_arena_*`, `@__vb_assert_fail`, `@__vb_bounds_fail`, `@__vb_str_eq`, `@__vb_str_concat`, test harness). |
 | `src/token.vb`, `src/lexer.vb` | `g_srcPool` (2 MiB byte pool), `g_tokens` (262,144 cap), `$"..."` interpolation scanner, cross-platform (`/` & `\`, `<drive>:`) `Include` loader (max 64 files, 32 `-I` dirs; search: current file dir → `-I` → CWD `.`; diamond include-once + circular-include detection; per-file `modId`). |
-| `src/ast.vb`, `src/parser.vb`, `src/printer.vb` | Flat AST pools `g_nodes` (131,072) & `g_kids` (262,144), 64-param/arg capacity, `--ast` pretty-printer. Built-in primitive casts (`NdCast`), `Break`/`Continue` (`NdBreak`/`NdContinue`), `Operator` defs (`NdOpDef`), `Select Case` desugars into `NdMatch`, `With` blocks emit `NdWithTarget`, compile-time literal folding (`PFoldStrLit`) on `&` and `+`. |
-| `src/type_analyzer.vb` | Two-pass semantic checker (1a enums/struct headers → 1b struct fields → 1c globals/funcs/operators/externs → 2 bodies & const global inits). Enforces `Private` module isolation, target-aware stack-frame budgets (`--max-stack`: `64 KB` hosted / `4 KB` `arm-m`, zero silent `malloc`), zero-cost compile-time constant fixed-array OOB errors (`TaTryEvalConstInt`), primitive cast legality, loop-depth `Break`/`Continue` validation, `Structure` operator overload resolution/uniqueness, unqualified enum fallback + ambiguity errors, `ByRef` lvalue rules, `Static` const initializers, `At` MMIO rules, `Label`/`GoTo`, `Async`/`Await`. |
+| `src/ast.vb`, `src/parser.vb`, `src/printer.vb` | Flat AST pools `g_nodes` (131,072) & `g_kids` (262,144), 64-param/arg capacity, `--ast` pretty-printer. VB-style `(Of T, ...)` generic parameters & arguments (`NdTypeRef`), built-in primitive casts (`NdCast`), `Break`/`Continue` (`NdBreak`/`NdContinue`), `Operator` defs (`NdOpDef`), `Select Case` desugars into `NdMatch`, `With` blocks emit `NdWithTarget`, compile-time literal folding (`PFoldStrLit`) on `&` and `+`. |
+| `src/generics.vb` | Pre-TA zero-overhead AST monomorphization pass instantiating generic `Structure`, `Function`, `Sub`, `Async`, and `Operator` templates (`(Of T, ...)`) into concrete AST definitions (`Base__Of_<A1>_And_<A2>_End`), with specialization caching, recursion/depth guards, `T(x)` cast/constructor rewriting, structural call-site type inference, and cross-module `Private` isolation. |
+| `src/type_analyzer.vb` | Two-pass semantic checker (1a enums/struct headers → 1b struct fields → 1c globals/funcs/operators/externs → 2 bodies & const global inits). Enforces `Private` module isolation (with `ta_altModId` for cross-module generic type args), target-aware stack-frame budgets (`--max-stack`: `64 KB` hosted / `4 KB` `arm-m`, zero silent `malloc`), zero-cost compile-time constant fixed-array OOB errors (`TaTryEvalConstInt`), primitive cast legality, loop-depth `Break`/`Continue` validation, `Structure` operator overload resolution/uniqueness, unqualified enum fallback + ambiguity errors, `ByRef` lvalue rules, `Static` const initializers, `At` MMIO rules, `Label`/`GoTo`, `Async`/`Await`. |
 | `src/codegen.vb` | Direct LLVM IR emitter (opaque `ptr`). Hoists all static `alloca`s to LLVM `entry:` blocks (`CgBeginFuncBody`/`CgEndFuncBody`/`CgEmitHoistedAlloca`) for constant O(1) loop stack & `mem2reg` promotion. Supports explicit opt-in `--bounds-check` (`icmp ult i64` + `@__vb_bounds_fail` / `llvm.trap`). Mangles `Private` symbols from included modules (`modId > 0`) as `@__mod<id>_<name>` and `Operator` overloads as `@__vb_op_<op>_<ty>...`. Tracks innermost `While`/`For` label stacks for `Break`/`Continue`. Aliases `popen`/`pclose` → `_popen`/`_pclose` on Windows. Target-native C ABI struct lowering (`CgClassifyCStruct`: SysV x86-64, AAPCS64 HFA/packed/indirect, Win64, ARM AAPCS), C variadic promotions (`Single→Double`, `Boolean→zext i32`, `Byte/Short→sext i32`), short-circuit boolean `And`/`Or` via phi trampolines, freestanding `arm-m` (`cg_ptrSize = 4`, suppresses unused libc/`pthread` externs, lowers `Async` to synchronous deferred thunks). |
 
-### Standard Library (`std/`, 5 modules, ~1.9k LOC)
+### Standard Library (`std/`, 5 modules, ~2.1k LOC)
 All pure VerBose, zero-GC, Arena-backed:
 - `std/strings.vb` — `Str*`, `StrView`, `StrBuilder` (zero libc deps, bare-metal safe).
 - `std/math.vb` — `MATH_*`, `Math*` integer/long/double/trig/exp/ln/pow/sqrt (**100% pure VerBose, zero `-lm`**).
-- `std/collections.vb` — `IntVec`, `PtrVec`, `IntRing`, `IntMap`.
+- `std/collections.vb` — Generic `Vec(Of T)`, `Ring(Of T)` + concrete `IntVec`, `PtrVec`, `IntRing`, `IntMap`.
 - `std/io.vb` — `IoBuf`, `IoReadFile`, `IoWriteFile`, `IoWriteText`, `IoAppendText`, `IoFileExists`, `IoFileSize`, `IoRemoveFile`, `IoPrint`, `IoPrintLn`, `IoReadLine`.
-- `std/span.vb` — `ByteSpan`, `IntSpan`, `LongSpan`, `SingleSpan`, `PtrSpan` (`*SpanFrom`, `*SpanInBounds`, `*SpanGet`, `*SpanSet`, `*SpanAt`, `*SpanSub` — explicit length-carried bounds-checked views, zero libc, bare-metal safe).
+- `std/span.vb` — Generic `Span(Of T)` + concrete `ByteSpan`, `IntSpan`, `LongSpan`, `SingleSpan`, `PtrSpan` (`*SpanFrom`, `*SpanInBounds`, `*SpanGet`, `*SpanSet`, `*SpanAt`, `*SpanSub` — explicit length-carried bounds-checked views, zero libc, bare-metal safe).
 
 ### Tests (`tests/`)
-- 29 native pure-VerBose `Test`/`Assert` suites (`tests/test_*.vb`, 194 `Test` blocks) + `tests/bootstrap_suite.vb` + `tests/harness.vb` + `tests/raylib/` (Raylib 5.x bindings, demos & headless C shim).
+- 30 native pure-VerBose `Test`/`Assert` suites (`tests/test_*.vb`, 200 `Test` blocks) + `tests/bootstrap_suite.vb` + `tests/harness.vb` + `tests/raylib/` (Raylib 5.x bindings, demos & headless C shim).
 
 ## Build, Bootstrap & Test Commands
 

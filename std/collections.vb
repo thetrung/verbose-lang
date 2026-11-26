@@ -457,3 +457,121 @@ End Function
 Public Function IntMapLen(ByRef m As IntMap) As Integer
   Return m.count
 End Function
+
+' =============================================================================
+' Generic Vec(Of T): Arena-backed dynamic-length typed vector
+' =============================================================================
+
+Public Structure Vec(Of T)
+  Dim data As Pointer
+  Dim length, cap As Integer
+End Structure
+
+Public Function VecNew(Of T)(ByRef a As Arena, cap As Integer) As Vec(Of T)
+  Dim empty As Vec(Of T)
+  If cap <= 0 Then
+    Return empty
+  End If
+  Dim buf() As T = ArenaAlloc(ByRef a, T, cap)
+  If IsNull(buf) Then
+    Return empty
+  End If
+  Return Vec(Of T) With ( data = buf, length = 0, cap = cap )
+End Function
+
+Public Function VecPush(Of T)(ByRef v As Vec(Of T), val As T) As Boolean
+  If IsNull(v.data) Or (v.length >= v.cap) Then
+    Return False
+  End If
+  Dim arr() As T = v.data
+  arr(v.length) = val
+  v.length = v.length + 1
+  Return True
+End Function
+
+Public Function VecPop(Of T)(ByRef v As Vec(Of T), ByRef outVal As T) As Boolean
+  If IsNull(v.data) Or (v.length <= 0) Then
+    Return False
+  End If
+  v.length = v.length - 1
+  Dim arr() As T = v.data
+  outVal = arr(v.length)
+  Return True
+End Function
+
+Public Function VecGet(Of T)(ByRef v As Vec(Of T), idx As Integer) As T
+  Dim zero As T
+  If IsNull(v.data) Or (idx < 0) Or (idx >= v.length) Then
+    Return zero
+  End If
+  Dim arr() As T = v.data
+  Return arr(idx)
+End Function
+
+Public Function VecSet(Of T)(ByRef v As Vec(Of T), idx As Integer, val As T) As Boolean
+  If IsNull(v.data) Or (idx < 0) Or (idx >= v.length) Then
+    Return False
+  End If
+  Dim arr() As T = v.data
+  arr(idx) = val
+  Return True
+End Function
+
+Public Sub VecClear(Of T)(ByRef v As Vec(Of T))
+  v.length = 0
+End Sub
+
+' =============================================================================
+' Generic Ring(Of T): Arena-backed circular FIFO ring buffer
+' =============================================================================
+
+Public Structure Ring(Of T)
+  Dim data As Pointer
+  Dim head, tail, count, cap As Integer
+End Structure
+
+Public Function RingNew(Of T)(ByRef a As Arena, cap As Integer) As Ring(Of T)
+  Dim empty As Ring(Of T)
+  If cap <= 0 Then
+    Return empty
+  End If
+  Dim buf() As T = ArenaAlloc(ByRef a, T, cap)
+  If IsNull(buf) Then
+    Return empty
+  End If
+  Return Ring(Of T) With ( data = buf, head = 0, tail = 0, count = 0, cap = cap )
+End Function
+
+Public Function RingPush(Of T)(ByRef r As Ring(Of T), val As T) As Boolean
+  If IsNull(r.data) Or (r.count >= r.cap) Then
+    Return False
+  End If
+  Dim arr() As T = r.data
+  arr(r.tail) = val
+  r.tail = (r.tail + 1) Mod r.cap
+  r.count = r.count + 1
+  Return True
+End Function
+
+Public Function RingPop(Of T)(ByRef r As Ring(Of T), ByRef outVal As T) As Boolean
+  If IsNull(r.data) Or (r.count <= 0) Then
+    Return False
+  End If
+  Dim arr() As T = r.data
+  outVal = arr(r.head)
+  r.head = (r.head + 1) Mod r.cap
+  r.count = r.count - 1
+  Return True
+End Function
+
+Public Function RingLen(Of T)(ByRef r As Ring(Of T)) As Integer
+  Return r.count
+End Function
+
+Public Function RingIsEmpty(Of T)(ByRef r As Ring(Of T)) As Boolean
+  Return r.count = 0
+End Function
+
+Public Function RingIsFull(Of T)(ByRef r As Ring(Of T)) As Boolean
+  Return r.count >= r.cap
+End Function

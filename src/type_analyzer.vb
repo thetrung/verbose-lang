@@ -53,7 +53,7 @@ Private Static ta_params() As TaParamInfo, ta_locals() As TaLocalSym
 Private Static ta_labels(128) As TaLabelInfo
 Private Static ta_withTys(16) As TypeInfo
 Private Static ta_enumCount, ta_enumMemCount, ta_structCount, ta_fieldCount, ta_globalCount, ta_funcCount, ta_opCount, ta_paramCount, ta_localCount, ta_labelCount, ta_withDepth, ta_loopDepth, ta_curModId, ta_errCount As Integer = 0
-Private Static ta_ptrSize = 8, ta_curFrameReported = 0 As Integer
+Private Static ta_altModId = -1, ta_ptrSize = 8, ta_curFrameReported = 0 As Integer
 Private Static ta_maxStackBytes = 65536, ta_curFrameBytes = 0 As Long
 Private Static ta_curRetTy As TypeInfo
 
@@ -229,7 +229,7 @@ End Function
 
 Private Function TaFindEnum(pos, slen As Integer) As Integer
   For i = 0 To ta_enumCount - 1 Do
-    If (ta_enums(i).isPrivate = 1) And (ta_enums(i).modId = ta_curModId) And SlicesEqual(ta_enums(i).namePos, ta_enums(i).nameLen, pos, slen) Then
+    If (ta_enums(i).isPrivate = 1) And ((ta_enums(i).modId = ta_curModId) Or ((ta_altModId >= 0) And (ta_enums(i).modId = ta_altModId))) And SlicesEqual(ta_enums(i).namePos, ta_enums(i).nameLen, pos, slen) Then
       Return i
     End If
   End For
@@ -277,7 +277,7 @@ End Function
 
 Private Function TaFindStruct(pos, slen As Integer) As Integer
   For i = 0 To ta_structCount - 1 Do
-    If (ta_structs(i).isPrivate = 1) And (ta_structs(i).modId = ta_curModId) And SlicesEqual(ta_structs(i).namePos, ta_structs(i).nameLen, pos, slen) Then
+    If (ta_structs(i).isPrivate = 1) And ((ta_structs(i).modId = ta_curModId) Or ((ta_altModId >= 0) And (ta_structs(i).modId = ta_altModId))) And SlicesEqual(ta_structs(i).namePos, ta_structs(i).nameLen, pos, slen) Then
       Return i
     End If
   End For
@@ -2288,12 +2288,12 @@ End Sub
 Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Integer
   ta_enums = ArenaAlloc(ByRef arena, TaEnumInfo, 128)
   ta_enumMems = ArenaAlloc(ByRef arena, TaEnumMem, 1024)
-  ta_structs = ArenaAlloc(ByRef arena, TaStructInfo, 256)
-  ta_fields = ArenaAlloc(ByRef arena, TaFieldInfo, 2048)
+  ta_structs = ArenaAlloc(ByRef arena, TaStructInfo, 512)
+  ta_fields = ArenaAlloc(ByRef arena, TaFieldInfo, 4096)
   ta_globals = ArenaAlloc(ByRef arena, TaGlobalInfo, 1024)
-  ta_funcs = ArenaAlloc(ByRef arena, TaFuncInfo, 1024)
-  ta_ops = ArenaAlloc(ByRef arena, TaOpInfo, 256)
-  ta_params = ArenaAlloc(ByRef arena, TaParamInfo, 4096)
+  ta_funcs = ArenaAlloc(ByRef arena, TaFuncInfo, 2048)
+  ta_ops = ArenaAlloc(ByRef arena, TaOpInfo, 512)
+  ta_params = ArenaAlloc(ByRef arena, TaParamInfo, 8192)
   ta_locals = ArenaAlloc(ByRef arena, TaLocalSym, 512)
 
   ta_enumCount = 0
@@ -2363,6 +2363,7 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
     Dim d As Integer = g_kids(defStart + i)
     If g_nodes(d).kind = NdStructDef Then
       ta_curModId = g_nodes(d).modId
+      ta_altModId = g_nodes(d).third
       Dim fs As Integer = ta_fieldCount
       Dim fc As Integer = g_nodes(d).childCount
       Dim j As Integer = 0
@@ -2383,12 +2384,14 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       si = si + 1
     End If
   End For
+  ta_altModId = -1
 
   ' Pass 1c: Register Globals, Functions, and ExternDecls
   For i = 0 To defCount - 1 Do
     Dim d As Integer = g_kids(defStart + i)
     Dim dk As Integer = g_nodes(d).kind
     ta_curModId = g_nodes(d).modId
+    ta_altModId = g_nodes(d).third
     If dk = NdGlobalVar Then
       Dim isPriv As Integer = 0
       If g_nodes(d).op = 2 Then
@@ -2530,6 +2533,7 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
     Dim d As Integer = g_kids(defStart + i)
     Dim dk As Integer = g_nodes(d).kind
     ta_curModId = g_nodes(d).modId
+    ta_altModId = g_nodes(d).third
     If dk = NdGlobalVar Then
       Dim gty As TypeInfo = ta_globals(gi).ty
       TaValidateType(gty)

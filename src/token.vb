@@ -108,6 +108,7 @@ Public Enum TokenKind
   TkBreak = 102
   TkContinue = 103
   TkOperator = 104
+  TkOf = 105
 End Enum
 
 Public Structure Token

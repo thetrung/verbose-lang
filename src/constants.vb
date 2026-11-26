@@ -1,7 +1,7 @@
 ' VerBose Self-Hosting Compiler (verbose) - Shared Diagnostics, Messages & LLVM IR Templates
 
 ' --- Compiler Version & CLI Driver Messages ---
-Public Static MSG_CLI_VERSION As Pointer = "verbose 0.7.4 (VerBose-Lang Self-Hosted Compiler)\n"
+Public Static MSG_CLI_VERSION As Pointer = "verbose 0.8.0 (VerBose-Lang Self-Hosted Compiler)\n"
 Public Static MSG_CLI_USAGE As Pointer = "Usage: verbose <filename>.vb [options]\n" &
   "       verbose test [file.vb | dir] [options]\n" &
   "  test         Run built-in Test/Assert blocks in a .vb file or directory (default: tests)\n" &
@@ -99,6 +99,11 @@ Public Static MSG_TA_BREAK_LOOP = "Semantic Type Error: 'Break' can only be used
   MSG_TA_OP_RET = "Semantic Type Error: Operator overload must specify a non-Nothing return type\n",
   MSG_TA_OP_DUP = "Semantic Type Error: Duplicate operator overload definition\n",
   MSG_TA_OP_NO_OVERLOAD = "Semantic Type Error: No matching Operator overload for Structure operand(s)\n" As Pointer
+
+' --- Generics / Monomorphizer Diagnostics ---
+Public Static MSG_GM_MAX_DEPTH = "Generic Error: Maximum generic instantiation depth exceeded (possible infinite recursive instantiation)\n",
+  MSG_GM_MAX_SPECS = "Generic Error: Maximum generic specialization limit exceeded\n",
+  MSG_GM_NESTED_TASK = "Generic Error: Nested Task(Task(...)) is not supported\n" As Pointer
 
 ' --- Codegen Diagnostics ---
 Public Static MSG_CG_OPEN_FAIL = "verbose codegen error: cannot open output file\n",

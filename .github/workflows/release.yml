@@ -150,6 +150,7 @@ jobs:
           ./verbose.exe test tests/test_std_math.vb
           ./verbose.exe test tests/test_std_strings.vb
           ./verbose.exe test tests/test_expressions.vb
+          ./verbose.exe test tests/test_generics.vb
           make dist
 
       - name: Upload Windows x86-64 binary

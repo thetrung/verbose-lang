@@ -15,7 +15,37 @@ Private Sub PrSlice(pos, slen As Integer)
   End For
 End Sub
 
-Private Sub PrTypeEx(tk, innerKind, arrLen, nPos, nLen As Integer)
+Private Sub PrGenParams(gStart, gCount As Integer)
+  If gCount <= 0 Then
+    Return
+  End If
+  Printf("(Of ")
+  For i = 0 To gCount - 1 Do
+    If i > 0 Then
+      Printf(", ")
+    End If
+    Dim tp As Integer = g_kids(gStart + i)
+    PrSlice(g_nodes(tp).tyNamePos, g_nodes(tp).tyNameLen)
+  End For
+  Printf(")")
+End Sub
+
+Private Sub PrGenArgs(taStart, taCount As Integer)
+  If taCount <= 0 Then
+    Return
+  End If
+  Printf("(Of ")
+  For i = 0 To taCount - 1 Do
+    If i > 0 Then
+      Printf(", ")
+    End If
+    Dim tr As Integer = g_kids(taStart + i)
+    PrTypeGen(g_nodes(tr).tyKind, g_nodes(tr).tyInnerKind, 0, g_nodes(tr).tyNamePos, g_nodes(tr).tyNameLen, g_nodes(tr).tyArgStart, g_nodes(tr).tyArgCount)
+  End For
+  Printf(")")
+End Sub
+
+Private Sub PrTypeGen(tk, innerKind, arrLen, nPos, nLen, taStart, taCount As Integer)
   Match tk With
     Case TyNothing Then Printf("Nothing")
     Case TyInt Then Printf("Integer")
@@ -32,16 +62,22 @@ Private Sub PrTypeEx(tk, innerKind, arrLen, nPos, nLen As Integer)
         Printf("Task")
       Else
         Printf("Task(")
-        PrTypeEx(innerKind, TyNothing, 0, nPos, nLen)
+        PrTypeGen(innerKind, TyNothing, 0, nPos, nLen, taStart, taCount)
         Printf(")")
       End If
-    Case TyStruct, TyEnum Then PrSlice(nPos, nLen)
+    Case TyStruct, TyEnum Then
+      PrSlice(nPos, nLen)
+      PrGenArgs(taStart, taCount)
     Case _ Then Printf("Unknown")
   End Match
   Match With
     Case arrLen > 0 Then Printf("(%d)", arrLen)
     Case arrLen = -1 Then Printf("()")
   End Match
+End Sub
+
+Private Sub PrTypeEx(tk, innerKind, arrLen, nPos, nLen As Integer)
+  PrTypeGen(tk, innerKind, arrLen, nPos, nLen, 0, 0)
 End Sub
 
 Private Sub PrType(tk, arrLen, nPos, nLen As Integer)
@@ -116,6 +152,7 @@ Private Sub PrExpr(id As Integer)
   End If
   If k = NdVar Then
     PrSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
+    PrGenArgs(g_nodes(id).tyArgStart, g_nodes(id).tyArgCount)
     Return
   End If
   If k = NdWithTarget Then
@@ -158,13 +195,13 @@ Private Sub PrExpr(id As Integer)
   End If
   If k = NdSizeOf Then
     Printf("SizeOf(")
-    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    PrTypeGen(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen, g_nodes(id).tyArgStart, g_nodes(id).tyArgCount)
     Printf(")")
     Return
   End If
   If k = NdHeapAlloc Then
     Printf("HeapAlloc(")
-    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    PrTypeGen(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen, g_nodes(id).tyArgStart, g_nodes(id).tyArgCount)
     Printf(", ")
     PrExpr(g_nodes(id).left)
     Printf(")")
@@ -174,7 +211,7 @@ Private Sub PrExpr(id As Integer)
     Printf("HeapRealloc(")
     PrExpr(g_nodes(id).left)
     Printf(", ")
-    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    PrTypeGen(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen, g_nodes(id).tyArgStart, g_nodes(id).tyArgCount)
     Printf(", ")
     PrExpr(g_nodes(id).right)
     Printf(")")
@@ -184,7 +221,7 @@ Private Sub PrExpr(id As Integer)
     Printf("VolatileLoad(")
     PrExpr(g_nodes(id).left)
     Printf(", ")
-    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    PrTypeGen(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen, g_nodes(id).tyArgStart, g_nodes(id).tyArgCount)
     Printf(")")
     Return
   End If
@@ -192,7 +229,7 @@ Private Sub PrExpr(id As Integer)
     Printf("VolatileStore(")
     PrExpr(g_nodes(id).left)
     Printf(", ")
-    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    PrTypeGen(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen, g_nodes(id).tyArgStart, g_nodes(id).tyArgCount)
     Printf(", ")
     PrExpr(g_nodes(id).right)
     Printf(")")
@@ -208,7 +245,7 @@ Private Sub PrExpr(id As Integer)
     Printf("PtrRead(")
     PrExpr(g_nodes(id).left)
     Printf(", ")
-    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    PrTypeGen(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen, g_nodes(id).tyArgStart, g_nodes(id).tyArgCount)
     Printf(")")
     Return
   End If
@@ -216,7 +253,7 @@ Private Sub PrExpr(id As Integer)
     Printf("PtrWrite(")
     PrExpr(g_nodes(id).left)
     Printf(", ")
-    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    PrTypeGen(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen, g_nodes(id).tyArgStart, g_nodes(id).tyArgCount)
     Printf(", ")
     PrExpr(g_nodes(id).right)
     Printf(")")
@@ -250,7 +287,7 @@ Private Sub PrExpr(id As Integer)
     End If
     PrExpr(g_nodes(id).left)
     Printf(", ")
-    PrType(g_nodes(id).tyKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    PrTypeGen(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen, g_nodes(id).tyArgStart, g_nodes(id).tyArgCount)
     Printf(", ")
     PrExpr(g_nodes(id).right)
     Printf(")")
@@ -258,6 +295,7 @@ Private Sub PrExpr(id As Integer)
   End If
   If k = NdStructInit Then
     PrSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
+    PrGenArgs(g_nodes(id).tyArgStart, g_nodes(id).tyArgCount)
     Printf(" With ( ")
     Dim i As Integer = 0
     While i < g_nodes(id).childCount Do
@@ -288,6 +326,7 @@ Private Sub PrExpr(id As Integer)
   End If
   If k = NdCall Then
     PrSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
+    PrGenArgs(g_nodes(id).tyArgStart, g_nodes(id).tyArgCount)
     Printf("(")
     For i = 0 To g_nodes(id).childCount - 1 Do
       If i > 0 Then
@@ -318,7 +357,7 @@ Private Sub PrStmt(id, depth As Integer)
     End If
     PrSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
     Printf(" As ")
-    PrTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, g_nodes(id).tyArrLen, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    PrTypeGen(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, g_nodes(id).tyArrLen, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen, g_nodes(id).tyArgStart, g_nodes(id).tyArgCount)
     If g_nodes(id).right >= 0 Then
       Printf(" At ")
       PrExpr(g_nodes(id).right)
@@ -519,6 +558,7 @@ Public Sub PrintProgramAst(progRoot As Integer)
     If dk = NdStructDef Then
       Printf("Structure ")
       PrSlice(g_nodes(d).intVal, g_nodes(d).lenVal)
+      PrGenParams(g_nodes(d).genStart, g_nodes(d).genCount)
       Printf("\n")
       Dim j As Integer = 0
       While j < g_nodes(d).childCount Do
@@ -526,7 +566,7 @@ Public Sub PrintProgramAst(progRoot As Integer)
         Printf("  Dim ")
         PrSlice(g_nodes(f).intVal, g_nodes(f).lenVal)
         Printf(" As ")
-        PrType(g_nodes(f).tyKind, g_nodes(f).tyArrLen, g_nodes(f).tyNamePos, g_nodes(f).tyNameLen)
+        PrTypeGen(g_nodes(f).tyKind, g_nodes(f).tyInnerKind, g_nodes(f).tyArrLen, g_nodes(f).tyNamePos, g_nodes(f).tyNameLen, g_nodes(f).tyArgStart, g_nodes(f).tyArgCount)
         Printf("\n")
         j = j + 1
       End While
@@ -546,7 +586,7 @@ Public Sub PrintProgramAst(progRoot As Integer)
       Printf("Static ")
       PrSlice(g_nodes(d).intVal, g_nodes(d).lenVal)
       Printf(" As ")
-      PrType(g_nodes(d).tyKind, g_nodes(d).tyArrLen, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen)
+      PrTypeGen(g_nodes(d).tyKind, g_nodes(d).tyInnerKind, g_nodes(d).tyArrLen, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen, g_nodes(d).tyArgStart, g_nodes(d).tyArgCount)
       If g_nodes(d).right >= 0 Then
         Printf(" At ")
         PrExpr(g_nodes(d).right)
@@ -577,7 +617,7 @@ Public Sub PrintProgramAst(progRoot As Integer)
         End If
         PrSlice(g_nodes(pn).intVal, g_nodes(pn).lenVal)
         Printf(" As ")
-        PrType(g_nodes(pn).tyKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen)
+        PrTypeGen(g_nodes(pn).tyKind, g_nodes(pn).tyInnerKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen, g_nodes(pn).tyArgStart, g_nodes(pn).tyArgCount)
         j = j + 1
       End While
       If g_nodes(d).op = 1 Then
@@ -590,7 +630,7 @@ Public Sub PrintProgramAst(progRoot As Integer)
       Printf(")")
       If g_nodes(d).tyKind <> TyNothing Then
         Printf(" As ")
-        PrType(g_nodes(d).tyKind, 0, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen)
+        PrTypeGen(g_nodes(d).tyKind, g_nodes(d).tyInnerKind, 0, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen, g_nodes(d).tyArgStart, g_nodes(d).tyArgCount)
       End If
       Printf("\n\n")
     End If
@@ -611,6 +651,7 @@ Public Sub PrintProgramAst(progRoot As Integer)
         Printf("Function ")
       End If
       PrSlice(g_nodes(d).intVal, g_nodes(d).lenVal)
+      PrGenParams(g_nodes(d).genStart, g_nodes(d).genCount)
       Printf("(")
       Dim j As Integer = 0
       While j < g_nodes(d).extraCount Do
@@ -623,13 +664,13 @@ Public Sub PrintProgramAst(progRoot As Integer)
         End If
         PrSlice(g_nodes(pn).intVal, g_nodes(pn).lenVal)
         Printf(" As ")
-        PrTypeEx(g_nodes(pn).tyKind, g_nodes(pn).tyInnerKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen)
+        PrTypeGen(g_nodes(pn).tyKind, g_nodes(pn).tyInnerKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen, g_nodes(pn).tyArgStart, g_nodes(pn).tyArgCount)
         j = j + 1
       End While
       Printf(")")
       If g_nodes(d).tyKind <> TyNothing Then
         Printf(" As ")
-        PrTypeEx(g_nodes(d).tyKind, g_nodes(d).tyInnerKind, 0, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen)
+        PrTypeGen(g_nodes(d).tyKind, g_nodes(d).tyInnerKind, 0, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen, g_nodes(d).tyArgStart, g_nodes(d).tyArgCount)
       End If
       Printf("\n")
       j = 0
@@ -653,6 +694,7 @@ Public Sub PrintProgramAst(progRoot As Integer)
       End If
       Printf("Operator ")
       PrOp(g_nodes(d).intVal)
+      PrGenParams(g_nodes(d).genStart, g_nodes(d).genCount)
       Printf("(")
       For j = 0 To g_nodes(d).extraCount - 1 Do
         If j > 0 Then
@@ -661,10 +703,10 @@ Public Sub PrintProgramAst(progRoot As Integer)
         Dim pn As Integer = g_kids(g_nodes(d).extraStart + j)
         PrSlice(g_nodes(pn).intVal, g_nodes(pn).lenVal)
         Printf(" As ")
-        PrTypeEx(g_nodes(pn).tyKind, g_nodes(pn).tyInnerKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen)
+        PrTypeGen(g_nodes(pn).tyKind, g_nodes(pn).tyInnerKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen, g_nodes(pn).tyArgStart, g_nodes(pn).tyArgCount)
       End For
       Printf(") As ")
-      PrTypeEx(g_nodes(d).tyKind, g_nodes(d).tyInnerKind, 0, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen)
+      PrTypeGen(g_nodes(d).tyKind, g_nodes(d).tyInnerKind, 0, g_nodes(d).tyNamePos, g_nodes(d).tyNameLen, g_nodes(d).tyArgStart, g_nodes(d).tyArgCount)
       Printf("\n")
       For j = 0 To g_nodes(d).childCount - 1 Do
         PrStmt(g_kids(g_nodes(d).firstChild + j), 1)
