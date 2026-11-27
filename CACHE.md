@@ -2,7 +2,7 @@
 
 ## Project Summary
 
-**VerBose-Lang** (`v0.8.0`) is a brace-free, case-sensitive, Visual Basic–inspired systems programming language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**). It targets Linux (`x86-64`, `arm64`), macOS (`arm64`), Windows (`x86-64`), and bare-metal 32-bit `arm-m`, shipping a 10-module self-hosted compiler (`src/`, including zero-overhead monomorphized generics in `src/generics.vb`) and a 5-module zero-GC, Arena-backed pure-VerBose standard library (`std/`).
+**VerBose-Lang** (`v0.8.0`) is a brace-free, case-sensitive, Visual Basic–inspired systems programming language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**). It targets Linux (`x86-64`, `arm64`), macOS (`arm64`), Windows (`x86-64`), and bare-metal 32-bit `arm-m`, shipping a 10-module self-hosted compiler (`src/`, including zero-overhead monomorphized generics in `src/generics.vb`) and a 6-module zero-GC, Arena-backed pure-VerBose standard library (`std/`).
 
 ---
 
@@ -132,6 +132,21 @@
 | `IoPrint(s As Pointer)` | Print null-terminated string `s` to stdout without newline. |
 | `IoPrintLn(s As Pointer)` | Print null-terminated string `s` followed by `\n` to stdout. |
 | `IoReadLine(ByRef a As Arena, fp As Pointer) As IoBuf` | Read one line from `FILE*` `fp` into an Arena-allocated `IoBuf`. |
+
+### `std/json.vb` — Strict RFC 8259 JSON DOM & Streaming Writer (zero libc, bare-metal safe)
+*Public types:* `JsonKind` (`JsonInvalid`, `JsonNull`, `JsonBool`, `JsonInt`, `JsonFloat`, `JsonString`, `JsonArray`, `JsonObject`), `JsonNode`, `JsonDoc`, `JsonWriter`
+
+| Function / Sub | Description |
+| :--- | :--- |
+| `JsonParse(ByRef a As Arena, src As Pointer) As JsonDoc` | Strictly parse RFC 8259 JSON text into a flat Arena-backed node pool (default 2048-node cap). |
+| `JsonParseWithCap(ByRef a As Arena, src As Pointer, maxNodes As Integer) As JsonDoc` | Parse JSON text with an explicit node-pool capacity. |
+| `JsonIsNull` / `JsonIsBool` / `JsonIsInt` / `JsonIsFloat` / `JsonIsNumber` / `JsonIsString` / `JsonIsArray` / `JsonIsObject` | Type predicates on `(ByRef doc As JsonDoc, id As Integer)`. |
+| `JsonAsBool` / `JsonAsInt` / `JsonAsLong` / `JsonAsDouble` / `JsonAsString` / `JsonStrLen` | Extract typed values (with `Int`↔`Double` coercion for numbers and byte length for strings). |
+| `JsonLen` / `JsonAt` / `JsonGet` / `JsonHas` / `JsonFirst` / `JsonNext` / `JsonKey` | Array indexing, object key lookup (last duplicate wins), and linked-sibling iteration. |
+| `JsonGetString` / `JsonGetInt` / `JsonGetLong` / `JsonGetDouble` / `JsonGetBool` | Typed object-field getters with explicit default fallback values. |
+| `JsonDocNew` / `JsonNewNull` / `JsonNewBool` / `JsonNewInt` / `JsonNewLong` / `JsonNewFloat` / `JsonNewString` / `JsonNewArray` / `JsonNewObject` | Programmatic Arena-backed DOM constructors. |
+| `JsonArrayPush` / `JsonObjectSet` / `JsonStringify` | Mutate DOM arrays/objects and serialize any node back to compact RFC 8259 JSON in an `Arena`. |
+| `JwNew` / `JwBeginObj` / `JwEndObj` / `JwBeginArr` / `JwEndArr` / `JwKey` / `JwNull` / `JwBool` / `JwInt` / `JwLong` / `JwDouble` / `JwString` / `JwStringBytes` / `JwRaw` / `JwField*` / `JwFinish` | Zero-DOM streaming JSON emitter with automatic comma management, control-byte escaping, non-finite float → `null`, and overflow protection. |
 
 ### `std/span.vb` — Explicit Bounds-Checked Spans (zero libc, bare-metal safe)
 *Public types:* `Span(Of T)`, `ByteSpan`, `IntSpan`, `LongSpan`, `SingleSpan`, `PtrSpan`

@@ -9,6 +9,7 @@ verbose-lang/
 ├── std/                        # Standard library modules (Arena-backed, zero-GC, pure VerBose)
 │   ├── collections.vb          # Generic Vec(Of T), Ring(Of T) + IntVec, PtrVec, IntRing, IntMap
 │   ├── io.vb                   # File I/O, buffered reading, text/binary operations (IoRead*, IoWrite*, IoPrint*)
+│   ├── json.vb                 # Strict RFC 8259 Arena-backed JSON DOM parser & streaming JsonWriter (zero libc)
 │   ├── math.vb                 # Pure-VerBose math routines & constants (trig, exp/ln, sqrt, pow, abs, gcd)
 │   ├── span.vb                 # Generic Span(Of T) + ByteSpan, IntSpan, LongSpan, SingleSpan, PtrSpan
 │   └── strings.vb              # String manipulation, StrView, and StrBuilder utilities (Str*, Sb*)
@@ -45,13 +46,14 @@ verbose-lang/
 - **`std/`**: Core standard library modules built for zero-GC deterministic memory:
   - `collections.vb`: Generic `Vec(Of T)` and `Ring(Of T)` plus concrete `IntVec`, `PtrVec`, `IntRing`, and open-addressing `IntMap` hash tables.
   - `io.vb`: File reading/writing (`IoReadFile`, `IoWriteFile`, `IoWriteText`, `IoAppendText`), line-by-line buffered reading (`IoReadLine`), file existence/size/deletion, and console output.
+  - `json.vb`: Strict RFC 8259 Arena-backed JSON DOM parser (`JsonParse`, `JsonGet`/`JsonAt`/`JsonFirst`/`JsonNext`, `JsonAs*`, `JsonStringify`) and streaming `JsonWriter` (`JwNew`, `JwBeginObj`/`JwBeginArr`, `JwField*`, `JwFinish`) with zero libc / bare-metal compatibility.
   - `math.vb`: 100% pure-VerBose mathematical functions (zero `-lm` dependency) including trigonometric series, Newton-Raphson `MathSqrt`, logarithms, powers, and rounding.
   - `span.vb`: Explicit length-carried, bounds-checked generic `Span(Of T)` plus concrete `ByteSpan`, `IntSpan`, `LongSpan`, `SingleSpan`, and `PtrSpan` with zero libc / bare-metal compatibility.
   - `strings.vb`: String operations (`StrLen`, `StrCmp`, `StrConcat`, `StrSubstr`, etc.), zero-copy `StrView`, and efficient `StrBuilder`.
 - **`tests/`**: Native pure-VerBose test suites and regression tests run natively via `./verbose test`:
   - `harness.vb`: Shared cross-platform test runner helpers and assertion macros.
   - `bootstrap_suite.vb`: Comprehensive compiler self-hosting feature verification suite.
-  - `test_*.vb`: 30 domain-specific test suites (`test_arena`, `test_arrays`, `test_assert`, `test_bounds`, `test_break_continue`, `test_byref`, `test_c_interop`, `test_casts`, `test_cli`, `test_compress`, `test_core`, `test_ergonomics`, `test_expressions`, `test_generics`, `test_interp`, `test_lang_ext`, `test_loop_alloca`, `test_match`, `test_modules`, `test_operators`, `test_raylib`, `test_stack_limit`, `test_static_heap`, `test_std_collections`, `test_std_io`, `test_std_math`, `test_std_strings`, `test_syntax`, `test_targets`, `test_type_analyzer`).
+  - `test_*.vb`: 31 domain-specific test suites (`test_arena`, `test_arrays`, `test_assert`, `test_bounds`, `test_break_continue`, `test_byref`, `test_c_interop`, `test_casts`, `test_cli`, `test_compress`, `test_core`, `test_ergonomics`, `test_expressions`, `test_generics`, `test_interp`, `test_lang_ext`, `test_loop_alloca`, `test_match`, `test_modules`, `test_operators`, `test_raylib`, `test_stack_limit`, `test_static_heap`, `test_std_collections`, `test_std_io`, `test_std_json`, `test_std_math`, `test_std_strings`, `test_syntax`, `test_targets`, `test_type_analyzer`).
   - `raylib/`: Raylib 5.x C FFI bindings (`raylib.vb`), 2D/3D graphical demos (`bouncing_ball.vb`, `camera3d_demo.vb`), `README.md`, and headless test shim (`raylib_headless_shim.c`).
 
 > **Stage 0 archive**: The original OCaml bootstrap compiler (`stage0/`) has been moved off `main` into the [`stage0`](../../tree/stage0) branch.
