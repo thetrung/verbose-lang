@@ -109,8 +109,10 @@ Public Enum TokenKind
   TkContinue = 103
   TkOperator = 104
   TkOf = 105
+  TkUnion = 106
 End Enum
 
 Public Structure Token
   Dim kind, pos, len, intVal, line, modId As Integer
+  Dim longVal As Long
 End Structure

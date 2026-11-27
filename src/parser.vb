@@ -262,6 +262,7 @@ Private Function PParsePrimary() As Integer
   If k = TkIntLit Then
     Dim id As Integer = NewNode(NdIntLit)
     g_nodes(id).intVal = g_tokens(p_pos).intVal
+    g_nodes(id).longVal = g_tokens(p_pos).longVal
     PAdvance()
     Return id
   End If
@@ -439,6 +440,7 @@ Private Function PParsePrimary() As Integer
     Else
       cntExpr = NewNode(NdIntLit)
       g_nodes(cntExpr).intVal = 1
+      g_nodes(cntExpr).longVal = 1
     End If
     PExpect(TkRParen)
     Dim id As Integer = NewNode(NdArenaAlloc)
@@ -468,6 +470,7 @@ Private Function PParsePrimary() As Integer
     Else
       cntExpr = NewNode(NdIntLit)
       g_nodes(cntExpr).intVal = 1
+      g_nodes(cntExpr).longVal = 1
     End If
     PExpect(TkRParen)
     Dim id As Integer = NewNode(NdHeapAlloc)
@@ -700,13 +703,54 @@ Private Function PParsePostfix() As Integer
     Else
       PAdvance()
       PSkipNewlines()
-      Dim idxE As Integer = ParseExpr()
-      PSkipNewlines()
-      PExpect(TkRParen)
-      Dim ia As Integer = NewNode(NdIndexAccess)
-      g_nodes(ia).left = cur
-      g_nodes(ia).right = idxE
-      cur = ia
+      If g_nodes(cur).kind = NdFieldAccess Then
+        Dim argBuf(64) As Integer
+        Dim argCnt As Integer = 0
+        If PPeekKind() <> TkRParen Then
+          Dim reading As Boolean = True
+          While reading Do
+            argBuf(argCnt) = ParseExpr()
+            argCnt = argCnt + 1
+            PSkipNewlines()
+            If PPeekKind() = TkComma Then
+              PAdvance()
+              PSkipNewlines()
+            Else
+              reading = False
+            End If
+          End While
+        End If
+        PExpect(TkRParen)
+        Dim baseNode As Integer = g_nodes(cur).left
+        Dim hasGenBase As Boolean = (baseNode >= 0) And (g_nodes(baseNode).tyArgCount > 0)
+        If (argCnt = 1) And (Not hasGenBase) Then
+          Dim ia As Integer = NewNode(NdIndexAccess)
+          g_nodes(ia).left = cur
+          g_nodes(ia).right = argBuf(0)
+          cur = ia
+        Else
+          Dim ui As Integer = NewNode(NdUnionInit)
+          With g_nodes(ui)
+            .left = baseNode
+            .intVal = g_nodes(cur).intVal
+            .lenVal = g_nodes(cur).lenVal
+            .firstChild = g_kidCount
+            .childCount = argCnt
+          End With
+          For ai = 0 To argCnt - 1 Do
+            PushKid(argBuf(ai))
+          End For
+          cur = ui
+        End If
+      Else
+        Dim idxE As Integer = ParseExpr()
+        PSkipNewlines()
+        PExpect(TkRParen)
+        Dim ia As Integer = NewNode(NdIndexAccess)
+        g_nodes(ia).left = cur
+        g_nodes(ia).right = idxE
+        cur = ia
+      End If
     End If
   End While
   Return cur
@@ -1691,6 +1735,67 @@ Private Sub PParseDefInto(defBuf() As Integer, ByRef defCount As Integer)
       i = i + 1
     End While
     defBuf(defCount) = sd
+    defCount = defCount + 1
+    Return
+  End If
+
+  ' Union Name[(Of T, ...)] ... Case Variant[(params)] ... End Union
+  If k = TkUnion Then
+    PAdvance()
+    Dim uPos As Integer = g_tokens(p_pos).pos
+    Dim uLen As Integer = g_tokens(p_pos).len
+    PExpect(TkIdent)
+    Dim uGStart = 0, uGCount = 0 As Integer
+    PParseGenericParams(ByRef uGStart, ByRef uGCount)
+    PSkipNewlines()
+    Dim vBuf(128) As Integer
+    Dim vCount As Integer = 0
+    While (PPeekKind() <> TkEnd) And (PPeekKind() <> TkEof) Do
+      PExpect(TkCase)
+      Dim vnPos As Integer = g_tokens(p_pos).pos
+      Dim vnLen As Integer = g_tokens(p_pos).len
+      PExpect(TkIdent)
+      Dim pBuf(32) As Integer
+      Dim pCnt As Integer = 0
+      Dim uDummyVar As Integer = 0
+      If PPeekKind() = TkLParen Then
+        PAdvance()
+        PParseParamList(0, pBuf, ByRef pCnt, ByRef uDummyVar)
+        PExpect(TkRParen)
+      End If
+      PSkipNewlines()
+      Dim vd As Integer = NewNode(NdUnionVariant)
+      With g_nodes(vd)
+        .intVal = vnPos
+        .lenVal = vnLen
+        .firstChild = g_kidCount
+        .childCount = pCnt
+      End With
+      For pi = 0 To pCnt - 1 Do
+        PushKid(pBuf(pi))
+      End For
+      If vCount < 128 Then
+        vBuf(vCount) = vd
+        vCount = vCount + 1
+      End If
+    End While
+    PExpect(TkEnd)
+    PExpect(TkUnion)
+    Dim ud As Integer = NewNode(NdUnionDef)
+    With g_nodes(ud)
+      .op = vis
+      .modId = defModId
+      .intVal = uPos
+      .lenVal = uLen
+      .firstChild = g_kidCount
+      .childCount = vCount
+      .genStart = uGStart
+      .genCount = uGCount
+    End With
+    For vi = 0 To vCount - 1 Do
+      PushKid(vBuf(vi))
+    End For
+    defBuf(defCount) = ud
     defCount = defCount + 1
     Return
   End If

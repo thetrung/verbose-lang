@@ -33,6 +33,22 @@ Structure GmOpSpec
   Dim tmplIdx, argStart, argCount, defNodeId As Integer
 End Structure
 
+Structure GmUnionTmpl
+  Dim nodeId, namePos, nameLen, genStart, genCount, isPrivate, modId As Integer
+End Structure
+
+Structure GmUnionSpec
+  Dim tmplIdx, argStart, argCount, mangledPos, mangledLen, defNodeId As Integer
+End Structure
+
+Structure GmConcreteUnion
+  Dim namePos, nameLen, varStart, varCount, isPrivate, modId, nodeId As Integer
+End Structure
+
+Structure GmVariantInfo
+  Dim namePos, nameLen, fieldStart, fieldCount As Integer
+End Structure
+
 Structure GmEnumInfo
   Dim namePos, nameLen, isPrivate, modId As Integer
 End Structure
@@ -66,18 +82,19 @@ Structure GmSubstEntry
   Dim namePos, nameLen As Integer, ty As GmType
 End Structure
 
-Private Static gm_structTmpls() As GmStructTmpl, gm_funcTmpls() As GmFuncTmpl, gm_opTmpls() As GmOpTmpl
-Private Static gm_structSpecs() As GmStructSpec, gm_funcSpecs() As GmFuncSpec, gm_opSpecs() As GmOpSpec
+Private Static gm_structTmpls() As GmStructTmpl, gm_funcTmpls() As GmFuncTmpl, gm_opTmpls() As GmOpTmpl, gm_unionTmpls() As GmUnionTmpl
+Private Static gm_structSpecs() As GmStructSpec, gm_funcSpecs() As GmFuncSpec, gm_opSpecs() As GmOpSpec, gm_unionSpecs() As GmUnionSpec
 Private Static gm_specArgs() As GmType
 Private Static gm_enums() As GmEnumInfo, gm_cStructs() As GmConcreteStruct, gm_cFields() As GmFieldInfo
+Private Static gm_cUnions() As GmConcreteUnion, gm_cVars() As GmVariantInfo
 Private Static gm_globals() As GmGlobalInfo, gm_cFuncs() As GmFuncInfo, gm_cOps() As GmOpInfo
 Private Static gm_locals() As GmLocalSym, gm_subst() As GmSubstEntry
 Private Static gm_withTys(64) As GmType
 Private Static gm_kidStack() As Integer, gm_newDefs() As Integer
 
-Private Static gm_structTmplCount, gm_funcTmplCount, gm_opTmplCount As Integer = 0
-Private Static gm_structSpecCount, gm_funcSpecCount, gm_opSpecCount, gm_specArgCount As Integer = 0
-Private Static gm_enumCount, gm_cStructCount, gm_cFieldCount, gm_globalCount, gm_cFuncCount, gm_cOpCount As Integer = 0
+Private Static gm_structTmplCount, gm_funcTmplCount, gm_opTmplCount, gm_unionTmplCount As Integer = 0
+Private Static gm_structSpecCount, gm_funcSpecCount, gm_opSpecCount, gm_unionSpecCount, gm_specArgCount As Integer = 0
+Private Static gm_enumCount, gm_cStructCount, gm_cFieldCount, gm_cUnionCount, gm_cVarCount, gm_globalCount, gm_cFuncCount, gm_cOpCount As Integer = 0
 Private Static gm_localBase, gm_localCount, gm_substBase, gm_substCount, gm_withBase, gm_withDepth As Integer = 0
 Private Static gm_kidSp, gm_newDefCount, gm_depth, gm_curModId, gm_errCount As Integer = 0
 Private Static gm_altModId As Integer = -1
@@ -102,14 +119,14 @@ Private Function GmTypesEqual(a As GmType, b As GmType) As Boolean
   If (a.kind <> b.kind) Or (a.arrLen <> b.arrLen) Then
     Return False
   End If
-  If (a.kind = TyStruct) Or (a.kind = TyEnum) Then
+  If (a.kind = TyStruct) Or (a.kind = TyEnum) Or (a.kind = TyUnion) Then
     Return SlicesEqual(a.namePos, a.nameLen, b.namePos, b.nameLen)
   End If
   If a.kind = TyTask Then
     If a.innerKind <> b.innerKind Then
       Return False
     End If
-    If (a.innerKind = TyStruct) Or (a.innerKind = TyEnum) Then
+    If (a.innerKind = TyStruct) Or (a.innerKind = TyEnum) Or (a.innerKind = TyUnion) Then
       Return SlicesEqual(a.namePos, a.nameLen, b.namePos, b.nameLen)
     End If
     Return True
@@ -189,7 +206,7 @@ Private Sub GmAppendTypeMangle(t As GmType)
     Case TyBoolean Then GmAppendStr("Boolean", 7)
     Case TyPointer Then GmAppendStr("Pointer", 7)
     Case TyArena Then GmAppendStr("Arena", 5)
-    Case TyStruct, TyEnum Then GmAppendSlice(t.namePos, t.nameLen)
+    Case TyStruct, TyEnum, TyUnion Then GmAppendSlice(t.namePos, t.nameLen)
     Case TyTask Then
       If t.innerKind = TyNothing Then
         GmAppendStr("Task", 4)
@@ -370,6 +387,94 @@ Private Function GmLookupVar(pos, slen As Integer, ByRef outTy As GmType) As Boo
   Return False
 End Function
 
+Private Function GmFindUnionTmpl(pos, slen As Integer) As Integer
+  For i = 0 To gm_unionTmplCount - 1 Do
+    If (gm_unionTmpls(i).isPrivate = 1) And ((gm_unionTmpls(i).modId = gm_curModId) Or ((gm_altModId >= 0) And (gm_unionTmpls(i).modId = gm_altModId))) And SlicesEqual(gm_unionTmpls(i).namePos, gm_unionTmpls(i).nameLen, pos, slen) Then
+      Return i
+    End If
+  End For
+  For i = 0 To gm_unionTmplCount - 1 Do
+    If (gm_unionTmpls(i).isPrivate = 0) And SlicesEqual(gm_unionTmpls(i).namePos, gm_unionTmpls(i).nameLen, pos, slen) Then
+      Return i
+    End If
+  End For
+  Return -1
+End Function
+
+Private Function GmHasPrivateUnionTmplOther(pos, slen As Integer) As Boolean
+  For i = 0 To gm_unionTmplCount - 1 Do
+    If (gm_unionTmpls(i).isPrivate = 1) And (gm_unionTmpls(i).modId <> gm_curModId) And SlicesEqual(gm_unionTmpls(i).namePos, gm_unionTmpls(i).nameLen, pos, slen) Then
+      Return True
+    End If
+  End For
+  Return False
+End Function
+
+Private Function GmFindConcreteUnion(pos, slen As Integer) As Integer
+  For i = 0 To gm_cUnionCount - 1 Do
+    If (gm_cUnions(i).isPrivate = 1) And ((gm_cUnions(i).modId = gm_curModId) Or ((gm_altModId >= 0) And (gm_cUnions(i).modId = gm_altModId))) And SlicesEqual(gm_cUnions(i).namePos, gm_cUnions(i).nameLen, pos, slen) Then
+      Return i
+    End If
+  End For
+  For i = 0 To gm_cUnionCount - 1 Do
+    If (gm_cUnions(i).isPrivate = 0) And SlicesEqual(gm_cUnions(i).namePos, gm_cUnions(i).nameLen, pos, slen) Then
+      Return i
+    End If
+  End For
+  Return -1
+End Function
+
+Private Function GmFindUnionVariant(uIdx, vPos, vLen As Integer) As Integer
+  Dim st = gm_cUnions(uIdx).varStart, cnt = gm_cUnions(uIdx).varCount As Integer
+  For i = 0 To cnt - 1 Do
+    If SlicesEqual(gm_cVars(st + i).namePos, gm_cVars(st + i).nameLen, vPos, vLen) Then
+      Return i
+    End If
+  End For
+  Return -1
+End Function
+
+Private Function GmFindUnqualUnionVariant(vPos, vLen As Integer, ByRef outUIdx, outVIdx As Integer) As Integer
+  Dim matches As Integer = 0
+  For i = 0 To gm_cUnionCount - 1 Do
+    If (gm_cUnions(i).isPrivate = 0) Or (gm_cUnions(i).modId = gm_curModId) Then
+      Dim vi As Integer = GmFindUnionVariant(i, vPos, vLen)
+      If vi >= 0 Then
+        outUIdx = i
+        outVIdx = vi
+        matches = matches + 1
+      End If
+    End If
+  End For
+  Return matches
+End Function
+
+Private Function GmFindUnionSpec(tmplIdx As Integer, argTys() As GmType, argCnt As Integer) As Integer
+  For i = 0 To gm_unionSpecCount - 1 Do
+    If (gm_unionSpecs(i).tmplIdx = tmplIdx) And (gm_unionSpecs(i).argCount = argCnt) Then
+      Dim ok As Boolean = True
+      For k = 0 To argCnt - 1 Do
+        If Not GmTypesEqual(gm_specArgs(gm_unionSpecs(i).argStart + k), argTys(k)) Then
+          ok = False
+        End If
+      End For
+      If ok Then
+        Return i
+      End If
+    End If
+  End For
+  Return -1
+End Function
+
+Private Function GmFindUnionSpecByName(pos, slen As Integer) As Integer
+  For i = 0 To gm_unionSpecCount - 1 Do
+    If SlicesEqual(gm_unionSpecs(i).mangledPos, gm_unionSpecs(i).mangledLen, pos, slen) Then
+      Return i
+    End If
+  End For
+  Return -1
+End Function
+
 Private Function GmFindStructSpec(tmplIdx As Integer, argTys() As GmType, argCnt As Integer) As Integer
   For i = 0 To gm_structSpecCount - 1 Do
     If (gm_structSpecs(i).tmplIdx = tmplIdx) And (gm_structSpecs(i).argCount = argCnt) Then
@@ -503,11 +608,22 @@ Private Function GmResolveTypeSpec(rawKind, rawInner, arrLen, nPos, nLen, taStar
         res.kind = TyEnum
         Return res
       End If
+      If GmFindConcreteUnion(nPos, nLen) >= 0 Then
+        res.kind = TyUnion
+        Return res
+      End If
       If (GmFindStructTmpl(nPos, nLen) >= 0) And (GmFindConcreteStruct(nPos, nLen) < 0) Then
         Printf("Generic Error: Generic structure '")
         GmPrintSlice(nPos, nLen)
         Printf("' requires type arguments (Of ...)\n")
         gm_errCount = gm_errCount + 1
+      Else
+        If (GmFindUnionTmpl(nPos, nLen) >= 0) And (GmFindConcreteUnion(nPos, nLen) < 0) Then
+          Printf("Generic Error: Generic union '")
+          GmPrintSlice(nPos, nLen)
+          Printf("' requires type arguments (Of ...)\n")
+          gm_errCount = gm_errCount + 1
+        End If
       End If
       Return res
     Else
@@ -517,32 +633,55 @@ Private Function GmResolveTypeSpec(rawKind, rawInner, arrLen, nPos, nLen, taStar
         argTys(i) = GmResolveTypeSpec(g_nodes(tr).tyKind, g_nodes(tr).tyInnerKind, 0, g_nodes(tr).tyNamePos, g_nodes(tr).tyNameLen, g_nodes(tr).tyArgStart, g_nodes(tr).tyArgCount)
       End For
       Dim tIdx As Integer = GmFindStructTmpl(nPos, nLen)
-      If tIdx < 0 Then
-        If GmHasPrivateStructTmplOther(nPos, nLen) Then
-          Printf("Generic Error: Cannot instantiate Private generic structure '")
+      If tIdx >= 0 Then
+        If gm_structTmpls(tIdx).genCount <> taCount Then
+          Printf("Generic Error: Structure '")
+          GmPrintSlice(nPos, nLen)
+          Printf("' expects %d type argument(s), got %d\n", gm_structTmpls(tIdx).genCount, taCount)
+          gm_errCount = gm_errCount + 1
+          Return res
+        End If
+        Dim mPos = 0, mLen = 0 As Integer
+        GmInstantiateStruct(tIdx, argTys, taCount, gm_curModId, ByRef mPos, ByRef mLen)
+        res.kind = TyStruct
+        res.innerKind = TyNothing
+        res.namePos = mPos
+        res.nameLen = mLen
+        Return res
+      End If
+      Dim utIdx As Integer = GmFindUnionTmpl(nPos, nLen)
+      If utIdx >= 0 Then
+        If gm_unionTmpls(utIdx).genCount <> taCount Then
+          Printf("Generic Error: Union '")
+          GmPrintSlice(nPos, nLen)
+          Printf("' expects %d type argument(s), got %d\n", gm_unionTmpls(utIdx).genCount, taCount)
+          gm_errCount = gm_errCount + 1
+          Return res
+        End If
+        Dim mPos = 0, mLen = 0 As Integer
+        GmInstantiateUnion(utIdx, argTys, taCount, gm_curModId, ByRef mPos, ByRef mLen)
+        res.kind = TyUnion
+        res.innerKind = TyNothing
+        res.namePos = mPos
+        res.nameLen = mLen
+        Return res
+      End If
+      If GmHasPrivateStructTmplOther(nPos, nLen) Then
+        Printf("Generic Error: Cannot instantiate Private generic structure '")
+        GmPrintSlice(nPos, nLen)
+        Printf("' from included module\n")
+      Else
+        If GmHasPrivateUnionTmplOther(nPos, nLen) Then
+          Printf("Generic Error: Cannot instantiate Private generic union '")
           GmPrintSlice(nPos, nLen)
           Printf("' from included module\n")
         Else
-          Printf("Generic Error: Unknown generic structure '")
+          Printf("Generic Error: Unknown generic structure or union '")
           GmPrintSlice(nPos, nLen)
           Printf("'\n")
         End If
-        gm_errCount = gm_errCount + 1
-        Return res
       End If
-      If gm_structTmpls(tIdx).genCount <> taCount Then
-        Printf("Generic Error: Structure '")
-        GmPrintSlice(nPos, nLen)
-        Printf("' expects %d type argument(s), got %d\n", gm_structTmpls(tIdx).genCount, taCount)
-        gm_errCount = gm_errCount + 1
-        Return res
-      End If
-      Dim mPos = 0, mLen = 0 As Integer
-      GmInstantiateStruct(tIdx, argTys, taCount, gm_curModId, ByRef mPos, ByRef mLen)
-      res.kind = TyStruct
-      res.innerKind = TyNothing
-      res.namePos = mPos
-      res.nameLen = mLen
+      gm_errCount = gm_errCount + 1
       Return res
     End If
   End If
@@ -560,8 +699,11 @@ Private Function GmApplyResolvedType(nodeId As Integer) As GmType
     .tyArgStart = 0
     .tyArgCount = 0
   End With
-  If g_nodes(nodeId).tyKind = TyEnum Then
+  If (g_nodes(nodeId).tyKind = TyEnum) Or (g_nodes(nodeId).tyKind = TyUnion) Then
     g_nodes(nodeId).tyKind = TyStruct
+  End If
+  If (g_nodes(nodeId).tyKind = TyTask) And ((g_nodes(nodeId).tyInnerKind = TyEnum) Or (g_nodes(nodeId).tyInnerKind = TyUnion)) Then
+    g_nodes(nodeId).tyInnerKind = TyStruct
   End If
   Return r
 End Function
@@ -626,7 +768,7 @@ Private Sub GmUnifyType(genStart, genCount, patKind, patInner, patNPos, patNLen,
     Return
   End If
 
-  ' Generic struct pattern: S(Of P1, P2, ...) matched against concrete monomorphized S__Of_A1_And_A2_End
+  ' Generic struct/union pattern: S(Of P1, P2, ...) matched against concrete monomorphized S__Of_A1_And_A2_End
   If actTy.kind = TyStruct Then
     Dim sSpecIdx As Integer = GmFindStructSpecByName(actTy.namePos, actTy.nameLen)
     Dim tIdx As Integer = GmFindStructTmpl(patNPos, patNLen)
@@ -634,6 +776,17 @@ Private Sub GmUnifyType(genStart, genCount, patKind, patInner, patNPos, patNLen,
       For i = 0 To patTaCount - 1 Do
         Dim tr As Integer = g_kids(patTaStart + i)
         Dim subAct As GmType = gm_specArgs(gm_structSpecs(sSpecIdx).argStart + i)
+        GmUnifyType(genStart, genCount, g_nodes(tr).tyKind, g_nodes(tr).tyInnerKind, g_nodes(tr).tyNamePos, g_nodes(tr).tyNameLen, g_nodes(tr).tyArgStart, g_nodes(tr).tyArgCount, 0, subAct, -1, bound, boundTy)
+      End For
+    End If
+  End If
+  If actTy.kind = TyUnion Then
+    Dim uSpecIdx As Integer = GmFindUnionSpecByName(actTy.namePos, actTy.nameLen)
+    Dim utIdx As Integer = GmFindUnionTmpl(patNPos, patNLen)
+    If (uSpecIdx >= 0) And (utIdx >= 0) And (gm_unionSpecs(uSpecIdx).tmplIdx = utIdx) And (gm_unionSpecs(uSpecIdx).argCount = patTaCount) Then
+      For i = 0 To patTaCount - 1 Do
+        Dim tr As Integer = g_kids(patTaStart + i)
+        Dim subAct As GmType = gm_specArgs(gm_unionSpecs(uSpecIdx).argStart + i)
         GmUnifyType(genStart, genCount, g_nodes(tr).tyKind, g_nodes(tr).tyInnerKind, g_nodes(tr).tyNamePos, g_nodes(tr).tyNameLen, g_nodes(tr).tyArgStart, g_nodes(tr).tyArgCount, 0, subAct, -1, bound, boundTy)
       End For
     End If
@@ -758,8 +911,14 @@ Private Sub GmInstantiateStruct(tmplIdx As Integer, argTys() As GmType, argCnt, 
       namePos = g_nodes(fnId).tyNamePos,
       nameLen = g_nodes(fnId).tyNameLen
     )
-    If (fty.kind = TyStruct) And (GmFindEnum(fty.namePos, fty.nameLen) >= 0) Then
-      fty.kind = TyEnum
+    If fty.kind = TyStruct Then
+      If GmFindEnum(fty.namePos, fty.nameLen) >= 0 Then
+        fty.kind = TyEnum
+      Else
+        If GmFindConcreteUnion(fty.namePos, fty.nameLen) >= 0 Then
+          fty.kind = TyUnion
+        End If
+      End If
     End If
     gm_cFields(gm_cFieldCount) = GmFieldInfo With ( namePos = g_nodes(fnId).intVal, nameLen = g_nodes(fnId).lenVal, ty = fty )
     gm_cFieldCount = gm_cFieldCount + 1
@@ -770,6 +929,159 @@ Private Sub GmInstantiateStruct(tmplIdx As Integer, argTys() As GmType, argCnt, 
   gm_cStructs(cStructIdx).fieldCount = fc
   gm_cStructs(cStructIdx).nodeId = newDef
   gm_structSpecs(specIdx).defNodeId = newDef
+
+  gm_newDefs(gm_newDefCount) = newDef
+  gm_newDefCount = gm_newDefCount + 1
+
+  gm_depth = gm_depth - 1
+  gm_curModId = savedMod
+  gm_altModId = savedAlt
+  gm_substCount = savedSubstCount
+  gm_substBase = savedSubstBase
+End Sub
+
+Private Sub GmInstantiateUnion(tmplIdx As Integer, argTys() As GmType, argCnt, callerModId As Integer, ByRef outPos, outLen As Integer)
+  Dim existing As Integer = GmFindUnionSpec(tmplIdx, argTys, argCnt)
+  If existing >= 0 Then
+    outPos = gm_unionSpecs(existing).mangledPos
+    outLen = gm_unionSpecs(existing).mangledLen
+    Return
+  End If
+  If gm_depth >= 32 Then
+    Printf(MSG_GM_MAX_DEPTH)
+    gm_errCount = gm_errCount + 1
+    outPos = gm_unionTmpls(tmplIdx).namePos
+    outLen = gm_unionTmpls(tmplIdx).nameLen
+    Return
+  End If
+  If gm_unionSpecCount >= 512 Then
+    Printf(MSG_GM_MAX_SPECS)
+    gm_errCount = gm_errCount + 1
+    outPos = gm_unionTmpls(tmplIdx).namePos
+    outLen = gm_unionTmpls(tmplIdx).nameLen
+    Return
+  End If
+
+  Dim tmpl As GmUnionTmpl = gm_unionTmpls(tmplIdx)
+  Dim mPos = 0, mLen = 0 As Integer
+  GmMangleName(tmpl.namePos, tmpl.nameLen, argTys, argCnt, ByRef mPos, ByRef mLen)
+  outPos = mPos
+  outLen = mLen
+
+  Dim aStart As Integer = gm_specArgCount
+  For i = 0 To argCnt - 1 Do
+    gm_specArgs(gm_specArgCount) = argTys(i)
+    gm_specArgCount = gm_specArgCount + 1
+  End For
+  Dim specIdx As Integer = gm_unionSpecCount
+  gm_unionSpecs(specIdx) = GmUnionSpec With (
+    tmplIdx = tmplIdx,
+    argStart = aStart,
+    argCount = argCnt,
+    mangledPos = mPos,
+    mangledLen = mLen,
+    defNodeId = -1
+  )
+  gm_unionSpecCount = gm_unionSpecCount + 1
+
+  Dim cUnionIdx As Integer = gm_cUnionCount
+  gm_cUnions(cUnionIdx) = GmConcreteUnion With (
+    namePos = mPos,
+    nameLen = mLen,
+    varStart = 0,
+    varCount = 0,
+    isPrivate = tmpl.isPrivate,
+    modId = tmpl.modId,
+    nodeId = -1
+  )
+  gm_cUnionCount = gm_cUnionCount + 1
+
+  Dim savedSubstBase = gm_substBase, savedSubstCount = gm_substCount As Integer
+  Dim savedMod = gm_curModId, savedAlt = gm_altModId As Integer
+  gm_substBase = gm_substCount
+  For i = 0 To argCnt - 1 Do
+    Dim tp As Integer = g_kids(tmpl.genStart + i)
+    gm_subst(gm_substCount) = GmSubstEntry With ( namePos = g_nodes(tp).tyNamePos, nameLen = g_nodes(tp).tyNameLen, ty = argTys(i) )
+    gm_substCount = gm_substCount + 1
+  End For
+  gm_curModId = tmpl.modId
+  gm_altModId = callerModId
+  gm_depth = gm_depth + 1
+
+  Dim srcDef As Integer = tmpl.nodeId
+  Dim vc As Integer = g_nodes(srcDef).childCount
+  Dim savedVSp As Integer = gm_kidSp
+  For vi = 0 To vc - 1 Do
+    Dim srcV As Integer = g_kids(g_nodes(srcDef).firstChild + vi)
+    Dim newV As Integer = GmCopyNode(srcV)
+    Dim fc As Integer = g_nodes(srcV).childCount
+    Dim savedFSp As Integer = gm_kidSp
+    For fi = 0 To fc - 1 Do
+      Dim srcF As Integer = g_kids(g_nodes(srcV).firstChild + fi)
+      Dim newF As Integer = GmCopyNode(srcF)
+      GmApplyResolvedType(newF)
+      gm_kidStack(gm_kidSp) = newF
+      gm_kidSp = gm_kidSp + 1
+    End For
+    g_nodes(newV).firstChild = g_kidCount
+    g_nodes(newV).childCount = fc
+    For fi = 0 To fc - 1 Do
+      PushKid(gm_kidStack(savedFSp + fi))
+    End For
+    gm_kidSp = savedFSp
+    gm_kidStack(gm_kidSp) = newV
+    gm_kidSp = gm_kidSp + 1
+  End For
+
+  Dim newDef As Integer = GmCopyNode(srcDef)
+  With g_nodes(newDef)
+    .intVal = mPos
+    .lenVal = mLen
+    .genStart = 0
+    .genCount = 0
+    .third = callerModId
+    .firstChild = g_kidCount
+    .childCount = vc
+  End With
+  For vi = 0 To vc - 1 Do
+    PushKid(gm_kidStack(savedVSp + vi))
+  End For
+  gm_kidSp = savedVSp
+
+  Dim vStart As Integer = gm_cVarCount
+  For vi = 0 To vc - 1 Do
+    Dim vnId As Integer = g_kids(g_nodes(newDef).firstChild + vi)
+    Dim fStart As Integer = gm_cFieldCount
+    Dim fc As Integer = g_nodes(vnId).childCount
+    For fi = 0 To fc - 1 Do
+      Dim fnId As Integer = g_kids(g_nodes(vnId).firstChild + fi)
+      Dim fty As GmType With (
+        kind = g_nodes(fnId).tyKind,
+        innerKind = g_nodes(fnId).tyInnerKind,
+        arrLen = g_nodes(fnId).tyArrLen,
+        namePos = g_nodes(fnId).tyNamePos,
+        nameLen = g_nodes(fnId).tyNameLen
+      )
+      If fty.kind = TyStruct Then
+        If GmFindEnum(fty.namePos, fty.nameLen) >= 0 Then
+          fty.kind = TyEnum
+        Else
+          If GmFindConcreteUnion(fty.namePos, fty.nameLen) >= 0 Then
+            fty.kind = TyUnion
+          End If
+        End If
+      End If
+      gm_cFields(gm_cFieldCount) = GmFieldInfo With ( namePos = g_nodes(fnId).intVal, nameLen = g_nodes(fnId).lenVal, ty = fty )
+      gm_cFieldCount = gm_cFieldCount + 1
+    End For
+    gm_cVars(gm_cVarCount) = GmVariantInfo With ( namePos = g_nodes(vnId).intVal, nameLen = g_nodes(vnId).lenVal, fieldStart = fStart, fieldCount = fc )
+    gm_cVarCount = gm_cVarCount + 1
+  End For
+
+  gm_cUnions(cUnionIdx).varStart = vStart
+  gm_cUnions(cUnionIdx).varCount = vc
+  gm_cUnions(cUnionIdx).nodeId = newDef
+  gm_unionSpecs(specIdx).defNodeId = newDef
 
   gm_newDefs(gm_newDefCount) = newDef
   gm_newDefCount = gm_newDefCount + 1
@@ -1120,7 +1432,12 @@ Private Function GmProcessExpr(srcId, doClone As Integer, ByRef outTy As GmType)
   Dim k As Integer = g_nodes(id).kind
 
   If k = NdIntLit Then
-    outTy = GmMakePrim(TyInt)
+    Dim v As Long = g_nodes(id).longVal
+    If (v > 2147483647) Or (v < 0) Then
+      outTy = GmMakePrim(TyLong)
+    Else
+      outTy = GmMakePrim(TyInt)
+    End If
     Return id
   End If
   If k = NdFloatLit Then
@@ -1217,6 +1534,11 @@ Private Function GmProcessExpr(srcId, doClone As Integer, ByRef outTy As GmType)
       outTy = GmType With ( kind = TyEnum, innerKind = TyNothing, arrLen = 0, namePos = nPos, nameLen = nLen )
       Return id
     End If
+    Dim uuIdx = -1, uvIdx = -1 As Integer
+    If GmFindUnqualUnionVariant(nPos, nLen, ByRef uuIdx, ByRef uvIdx) = 1 Then
+      outTy = GmType With ( kind = TyUnion, innerKind = TyNothing, arrLen = 0, namePos = gm_cUnions(uuIdx).namePos, nameLen = gm_cUnions(uuIdx).nameLen )
+      Return id
+    End If
     outTy = GmMakePrim(TyInt)
     Return id
   End If
@@ -1224,7 +1546,7 @@ Private Function GmProcessExpr(srcId, doClone As Integer, ByRef outTy As GmType)
   If (k = NdNeg) Or (k = NdNot) Then
     Dim inTy As GmType
     g_nodes(id).left = GmProcessExpr(g_nodes(id).left, doClone, ByRef inTy)
-    If (inTy.arrLen = 0) And (inTy.kind = TyStruct) Then
+    If (inTy.arrLen = 0) And ((inTy.kind = TyStruct) Or (inTy.kind = TyUnion)) Then
       Dim opTok As Integer = TkMinus
       If k = NdNot Then
         opTok = TkNot
@@ -1249,7 +1571,7 @@ Private Function GmProcessExpr(srcId, doClone As Integer, ByRef outTy As GmType)
     g_nodes(id).left = GmProcessExpr(g_nodes(id).left, doClone, ByRef t1)
     g_nodes(id).right = GmProcessExpr(g_nodes(id).right, doClone, ByRef t2)
     Dim op As Integer = g_nodes(id).op
-    Dim hasStruct As Boolean = ((t1.arrLen = 0) And (t1.kind = TyStruct)) Or ((t2.arrLen = 0) And (t2.kind = TyStruct))
+    Dim hasStruct As Boolean = ((t1.arrLen = 0) And ((t1.kind = TyStruct) Or (t1.kind = TyUnion))) Or ((t2.arrLen = 0) And ((t2.kind = TyStruct) Or (t2.kind = TyUnion)))
     If hasStruct Then
       Dim coi As Integer = GmFindConcreteBinOp(op, t1, g_nodes(id).left, t2, g_nodes(id).right)
       If coi >= 0 Then
@@ -1285,6 +1607,44 @@ Private Function GmProcessExpr(srcId, doClone As Integer, ByRef outTy As GmType)
   End If
 
   If k = NdFieldAccess Then
+    Dim baseNode As Integer = g_nodes(id).left
+    If (baseNode >= 0) And (g_nodes(baseNode).kind = NdVar) Then
+      Dim bPos = g_nodes(baseNode).intVal, bLen = g_nodes(baseNode).lenVal As Integer
+      If g_nodes(baseNode).tyArgCount > 0 Then
+        Dim newBase As Integer = baseNode
+        If doClone = 1 Then
+          newBase = GmCopyNode(baseNode)
+        End If
+        Dim uRes As GmType = GmResolveTypeSpec(TyStruct, TyNothing, 0, bPos, bLen, g_nodes(baseNode).tyArgStart, g_nodes(baseNode).tyArgCount)
+        g_nodes(newBase).intVal = uRes.namePos
+        g_nodes(newBase).lenVal = uRes.nameLen
+        g_nodes(newBase).tyArgStart = 0
+        g_nodes(newBase).tyArgCount = 0
+        g_nodes(id).left = newBase
+        outTy = uRes
+        Return id
+      End If
+      Dim subTy As GmType
+      If GmLookupSubst(bPos, bLen, ByRef subTy) And (subTy.kind = TyUnion) Then
+        Dim newBase As Integer = baseNode
+        If doClone = 1 Then
+          newBase = GmCopyNode(baseNode)
+        End If
+        g_nodes(newBase).intVal = subTy.namePos
+        g_nodes(newBase).lenVal = subTy.nameLen
+        g_nodes(id).left = newBase
+        outTy = subTy
+        Return id
+      End If
+      Dim dummyVarTy As GmType
+      If (Not GmLookupVar(bPos, bLen, ByRef dummyVarTy)) And (GmFindConcreteUnion(bPos, bLen) >= 0) Then
+        If doClone = 1 Then
+          g_nodes(id).left = GmCopyNode(baseNode)
+        End If
+        outTy = GmType With ( kind = TyUnion, innerKind = TyNothing, arrLen = 0, namePos = bPos, nameLen = bLen )
+        Return id
+      End If
+    End If
     Dim baseTy As GmType
     g_nodes(id).left = GmProcessExpr(g_nodes(id).left, doClone, ByRef baseTy)
     If (baseTy.arrLen = 0) And (baseTy.kind = TyStruct) Then
@@ -1302,6 +1662,37 @@ Private Function GmProcessExpr(srcId, doClone As Integer, ByRef outTy As GmType)
   End If
 
   If k = NdIndexAccess Then
+    Dim faNode As Integer = g_nodes(id).left
+    If (faNode >= 0) And (g_nodes(faNode).kind = NdFieldAccess) Then
+      Dim baseVar As Integer = g_nodes(faNode).left
+      If (baseVar >= 0) And (g_nodes(baseVar).kind = NdVar) Then
+        Dim bPos = g_nodes(baseVar).intVal, bLen = g_nodes(baseVar).lenVal As Integer
+        Dim dummyVarTy As GmType
+        Dim subTy As GmType
+        Dim isSubstU As Boolean = GmLookupSubst(bPos, bLen, ByRef subTy) And (subTy.kind = TyUnion)
+        Dim isConcU As Boolean = (Not GmLookupVar(bPos, bLen, ByRef dummyVarTy)) And (GmFindConcreteUnion(bPos, bLen) >= 0)
+        If isSubstU Or isConcU Then
+          Dim argTy As GmType
+          g_nodes(id).right = GmProcessExpr(g_nodes(id).right, doClone, ByRef argTy)
+          Dim newFa As Integer = faNode
+          Dim newBase As Integer = baseVar
+          If doClone = 1 Then
+            newFa = GmCopyNode(faNode)
+            newBase = GmCopyNode(baseVar)
+            g_nodes(newFa).left = newBase
+            g_nodes(id).left = newFa
+          End If
+          If isSubstU Then
+            g_nodes(newBase).intVal = subTy.namePos
+            g_nodes(newBase).lenVal = subTy.nameLen
+            outTy = subTy
+          Else
+            outTy = GmType With ( kind = TyUnion, innerKind = TyNothing, arrLen = 0, namePos = bPos, nameLen = bLen )
+          End If
+          Return id
+        End If
+      End If
+    End If
     Dim baseTy = GmMakePrim(TyInt), idxTy = GmMakePrim(TyInt) As GmType
     g_nodes(id).left = GmProcessExpr(g_nodes(id).left, doClone, ByRef baseTy)
     g_nodes(id).right = GmProcessExpr(g_nodes(id).right, doClone, ByRef idxTy)
@@ -1311,6 +1702,57 @@ Private Function GmProcessExpr(srcId, doClone As Integer, ByRef outTy As GmType)
     Else
       outTy = GmMakePrim(TyByte)
     End If
+    Return id
+  End If
+
+  If k = NdUnionInit Then
+    Dim aCnt As Integer = g_nodes(id).childCount
+    If doClone = 1 Then
+      Dim sp As Integer = gm_kidSp
+      For i = 0 To aCnt - 1 Do
+        Dim aTy As GmType
+        gm_kidStack(gm_kidSp) = GmProcessExpr(g_kids(g_nodes(srcId).firstChild + i), 1, ByRef aTy)
+        gm_kidSp = gm_kidSp + 1
+      End For
+      g_nodes(id).firstChild = g_kidCount
+      For i = 0 To aCnt - 1 Do
+        PushKid(gm_kidStack(sp + i))
+      End For
+      gm_kidSp = sp
+    Else
+      For i = 0 To aCnt - 1 Do
+        Dim aTy As GmType
+        g_kids(g_nodes(id).firstChild + i) = GmProcessExpr(g_kids(g_nodes(id).firstChild + i), 0, ByRef aTy)
+      End For
+    End If
+    Dim baseNode As Integer = g_nodes(id).left
+    If (baseNode >= 0) And (g_nodes(baseNode).kind = NdVar) Then
+      Dim newBase As Integer = baseNode
+      If doClone = 1 Then
+        newBase = GmCopyNode(baseNode)
+        g_nodes(id).left = newBase
+      End If
+      Dim bPos = g_nodes(baseNode).intVal, bLen = g_nodes(baseNode).lenVal As Integer
+      If g_nodes(baseNode).tyArgCount > 0 Then
+        Dim uRes As GmType = GmResolveTypeSpec(TyStruct, TyNothing, 0, bPos, bLen, g_nodes(baseNode).tyArgStart, g_nodes(baseNode).tyArgCount)
+        g_nodes(newBase).intVal = uRes.namePos
+        g_nodes(newBase).lenVal = uRes.nameLen
+        g_nodes(newBase).tyArgStart = 0
+        g_nodes(newBase).tyArgCount = 0
+        outTy = uRes
+        Return id
+      End If
+      Dim subTy As GmType
+      If GmLookupSubst(bPos, bLen, ByRef subTy) Then
+        g_nodes(newBase).intVal = subTy.namePos
+        g_nodes(newBase).lenVal = subTy.nameLen
+        outTy = subTy
+        Return id
+      End If
+      outTy = GmType With ( kind = TyUnion, innerKind = TyNothing, arrLen = 0, namePos = bPos, nameLen = bLen )
+      Return id
+    End If
+    outTy = GmMakePrim(TyInt)
     Return id
   End If
 
@@ -1769,12 +2211,173 @@ Private Function GmProcessExpr(srcId, doClone As Integer, ByRef outTy As GmType)
       Return id
     End If
 
+    ' Case 9: Unqualified concrete union variant constructor
+    Dim uuIdx2 = -1, uvIdx2 = -1 As Integer
+    If GmFindUnqualUnionVariant(nPos, nLen, ByRef uuIdx2, ByRef uvIdx2) = 1 Then
+      outTy = GmType With ( kind = TyUnion, innerKind = TyNothing, arrLen = 0, namePos = gm_cUnions(uuIdx2).namePos, nameLen = gm_cUnions(uuIdx2).nameLen )
+      Return id
+    End If
+
     outTy = GmMakePrim(TyInt)
     Return id
   End If
 
   outTy = GmMakePrim(TyInt)
   Return id
+End Function
+
+Private Function GmProcessUnionPattern(srcPe, doClone, uIdx, bindLocals As Integer) As Integer
+  Dim pe As Integer = srcPe
+  If doClone = 1 Then
+    pe = GmCopyNode(srcPe)
+  End If
+  Dim pk As Integer = g_nodes(pe).kind
+  Dim vPos = 0, vLen = 0 As Integer
+  Dim bindNodes(32) As Integer
+  Dim bindCnt As Integer = 0
+
+  If pk = NdVar Then
+    vPos = g_nodes(pe).intVal
+    vLen = g_nodes(pe).lenVal
+  Else
+    If pk = NdCall Then
+      vPos = g_nodes(pe).intVal
+      vLen = g_nodes(pe).lenVal
+      Dim ac As Integer = g_nodes(pe).childCount
+      If doClone = 1 Then
+        Dim sp As Integer = gm_kidSp
+        For i = 0 To ac - 1 Do
+          Dim srcA As Integer = g_kids(g_nodes(srcPe).firstChild + i)
+          Dim newA As Integer = GmCopyNode(srcA)
+          If g_nodes(srcA).left >= 0 Then
+            g_nodes(newA).left = GmCopyNode(g_nodes(srcA).left)
+          End If
+          gm_kidStack(gm_kidSp) = newA
+          gm_kidSp = gm_kidSp + 1
+        End For
+        g_nodes(pe).firstChild = g_kidCount
+        For i = 0 To ac - 1 Do
+          PushKid(gm_kidStack(sp + i))
+        End For
+        gm_kidSp = sp
+      End If
+      For i = 0 To ac - 1 Do
+        Dim aNode As Integer = g_kids(g_nodes(pe).firstChild + i)
+        If bindCnt < 32 Then
+          bindNodes(bindCnt) = g_nodes(aNode).left
+          bindCnt = bindCnt + 1
+        End If
+      End For
+    Else
+      If pk = NdFieldAccess Then
+        vPos = g_nodes(pe).intVal
+        vLen = g_nodes(pe).lenVal
+        Dim baseNode As Integer = g_nodes(pe).left
+        If (baseNode >= 0) And (g_nodes(baseNode).kind = NdVar) Then
+          Dim newBase As Integer = baseNode
+          If doClone = 1 Then
+            newBase = GmCopyNode(baseNode)
+            g_nodes(pe).left = newBase
+          End If
+          If g_nodes(baseNode).tyArgCount > 0 Then
+            Dim uRes As GmType = GmResolveTypeSpec(TyStruct, TyNothing, 0, g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal, g_nodes(baseNode).tyArgStart, g_nodes(baseNode).tyArgCount)
+            g_nodes(newBase).intVal = uRes.namePos
+            g_nodes(newBase).lenVal = uRes.nameLen
+            g_nodes(newBase).tyArgStart = 0
+            g_nodes(newBase).tyArgCount = 0
+          Else
+            Dim subTy As GmType
+            If GmLookupSubst(g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal, ByRef subTy) Then
+              g_nodes(newBase).intVal = subTy.namePos
+              g_nodes(newBase).lenVal = subTy.nameLen
+            End If
+          End If
+        End If
+      Else
+        If pk = NdIndexAccess Then
+          Dim faNode As Integer = g_nodes(pe).left
+          If (faNode >= 0) And (g_nodes(faNode).kind = NdFieldAccess) Then
+            Dim newFa As Integer = GmProcessUnionPattern(faNode, doClone, uIdx, 0)
+            g_nodes(pe).left = newFa
+            vPos = g_nodes(newFa).intVal
+            vLen = g_nodes(newFa).lenVal
+            If (doClone = 1) And (g_nodes(pe).right >= 0) Then
+              g_nodes(pe).right = GmCopyNode(g_nodes(pe).right)
+            End If
+            bindNodes(0) = g_nodes(pe).right
+            bindCnt = 1
+          End If
+        Else
+          If pk = NdUnionInit Then
+            vPos = g_nodes(pe).intVal
+            vLen = g_nodes(pe).lenVal
+            Dim baseNode As Integer = g_nodes(pe).left
+            If (baseNode >= 0) And (g_nodes(baseNode).kind = NdVar) Then
+              Dim newBase As Integer = baseNode
+              If doClone = 1 Then
+                newBase = GmCopyNode(baseNode)
+                g_nodes(pe).left = newBase
+              End If
+              If g_nodes(baseNode).tyArgCount > 0 Then
+                Dim uRes As GmType = GmResolveTypeSpec(TyStruct, TyNothing, 0, g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal, g_nodes(baseNode).tyArgStart, g_nodes(baseNode).tyArgCount)
+                g_nodes(newBase).intVal = uRes.namePos
+                g_nodes(newBase).lenVal = uRes.nameLen
+                g_nodes(newBase).tyArgStart = 0
+                g_nodes(newBase).tyArgCount = 0
+              Else
+                Dim subTy As GmType
+                If GmLookupSubst(g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal, ByRef subTy) Then
+                  g_nodes(newBase).intVal = subTy.namePos
+                  g_nodes(newBase).lenVal = subTy.nameLen
+                End If
+              End If
+            End If
+            Dim ac As Integer = g_nodes(pe).childCount
+            If doClone = 1 Then
+              Dim sp As Integer = gm_kidSp
+              For i = 0 To ac - 1 Do
+                gm_kidStack(gm_kidSp) = GmCopyNode(g_kids(g_nodes(srcPe).firstChild + i))
+                gm_kidSp = gm_kidSp + 1
+              End For
+              g_nodes(pe).firstChild = g_kidCount
+              For i = 0 To ac - 1 Do
+                PushKid(gm_kidStack(sp + i))
+              End For
+              gm_kidSp = sp
+            End If
+            For i = 0 To ac - 1 Do
+              If bindCnt < 32 Then
+                bindNodes(bindCnt) = g_kids(g_nodes(pe).firstChild + i)
+                bindCnt = bindCnt + 1
+              End If
+            End For
+          End If
+        End If
+      End If
+    End If
+  End If
+
+  If (bindLocals = 1) And (uIdx >= 0) And (vLen > 0) Then
+    Dim vIdx As Integer = GmFindUnionVariant(uIdx, vPos, vLen)
+    If vIdx >= 0 Then
+      Dim vInfo As GmVariantInfo = gm_cVars(gm_cUnions(uIdx).varStart + vIdx)
+      Dim lim As Integer = bindCnt
+      If vInfo.fieldCount < lim Then
+        lim = vInfo.fieldCount
+      End If
+      For bi = 0 To lim - 1 Do
+        Dim bn As Integer = bindNodes(bi)
+        If (bn >= 0) And (g_nodes(bn).kind = NdVar) Then
+          Dim bp = g_nodes(bn).intVal, bl = g_nodes(bn).lenVal As Integer
+          If Not ((bl = 1) And (g_srcPool(bp) = 95)) Then
+            gm_locals(gm_localCount) = GmLocalSym With ( namePos = bp, nameLen = bl, ty = gm_cFields(vInfo.fieldStart + bi).ty )
+            gm_localCount = gm_localCount + 1
+          End If
+        End If
+      End For
+    End If
+  End If
+  Return pe
 End Function
 
 Private Function GmProcessStmt(srcId, doClone As Integer) As Integer
@@ -1961,6 +2564,10 @@ Private Function GmProcessStmt(srcId, doClone As Integer) As Integer
   If k = NdMatch Then
     Dim sTy As GmType
     g_nodes(id).left = GmProcessExpr(g_nodes(id).left, doClone, ByRef sTy)
+    Dim uIdx As Integer = -1
+    If (sTy.arrLen = 0) And (sTy.kind = TyUnion) Then
+      uIdx = GmFindConcreteUnion(sTy.namePos, sTy.nameLen)
+    End If
     Dim armCnt As Integer = g_nodes(id).childCount
     Dim spArms As Integer = gm_kidSp
     For ai = 0 To armCnt - 1 Do
@@ -1969,13 +2576,23 @@ Private Function GmProcessStmt(srcId, doClone As Integer) As Integer
       If doClone = 1 Then
         armId = GmCopyNode(srcArm)
       End If
+      Dim savedLocals As Integer = gm_localCount
       ' Pattern values
       Dim vCnt As Integer = g_nodes(armId).extraCount
       If doClone = 1 Then
         Dim spV As Integer = gm_kidSp
         For vi = 0 To vCnt - 1 Do
-          Dim pTy As GmType
-          gm_kidStack(gm_kidSp) = GmProcessExpr(g_kids(g_nodes(srcArm).extraStart + vi), 1, ByRef pTy)
+          Dim srcPe As Integer = g_kids(g_nodes(srcArm).extraStart + vi)
+          If uIdx >= 0 Then
+            Dim doBind As Integer = 0
+            If vCnt = 1 Then
+              doBind = 1
+            End If
+            gm_kidStack(gm_kidSp) = GmProcessUnionPattern(srcPe, 1, uIdx, doBind)
+          Else
+            Dim pTy As GmType
+            gm_kidStack(gm_kidSp) = GmProcessExpr(srcPe, 1, ByRef pTy)
+          End If
           gm_kidSp = gm_kidSp + 1
         End For
         g_nodes(armId).extraStart = g_kidCount
@@ -1985,8 +2602,17 @@ Private Function GmProcessStmt(srcId, doClone As Integer) As Integer
         gm_kidSp = spV
       Else
         For vi = 0 To vCnt - 1 Do
-          Dim pTy As GmType
-          g_kids(g_nodes(armId).extraStart + vi) = GmProcessExpr(g_kids(g_nodes(armId).extraStart + vi), 0, ByRef pTy)
+          Dim srcPe As Integer = g_kids(g_nodes(armId).extraStart + vi)
+          If uIdx >= 0 Then
+            Dim doBind As Integer = 0
+            If vCnt = 1 Then
+              doBind = 1
+            End If
+            g_kids(g_nodes(armId).extraStart + vi) = GmProcessUnionPattern(srcPe, 0, uIdx, doBind)
+          Else
+            Dim pTy As GmType
+            g_kids(g_nodes(armId).extraStart + vi) = GmProcessExpr(srcPe, 0, ByRef pTy)
+          End If
         End For
       End If
       ' Guard
@@ -1995,7 +2621,6 @@ Private Function GmProcessStmt(srcId, doClone As Integer) As Integer
         g_nodes(armId).left = GmProcessExpr(g_nodes(armId).left, doClone, ByRef gTy)
       End If
       ' Body
-      Dim savedLocals As Integer = gm_localCount
       Dim bCnt As Integer = g_nodes(armId).childCount
       If doClone = 1 Then
         Dim spB As Integer = gm_kidSp
@@ -2082,13 +2707,17 @@ Public Function MonomorphizeProgram(ByRef arena As Arena, progRoot As Integer) A
   gm_structTmpls = ArenaAlloc(ByRef arena, GmStructTmpl, 256)
   gm_funcTmpls = ArenaAlloc(ByRef arena, GmFuncTmpl, 512)
   gm_opTmpls = ArenaAlloc(ByRef arena, GmOpTmpl, 128)
+  gm_unionTmpls = ArenaAlloc(ByRef arena, GmUnionTmpl, 256)
   gm_structSpecs = ArenaAlloc(ByRef arena, GmStructSpec, 512)
   gm_funcSpecs = ArenaAlloc(ByRef arena, GmFuncSpec, 1024)
   gm_opSpecs = ArenaAlloc(ByRef arena, GmOpSpec, 256)
+  gm_unionSpecs = ArenaAlloc(ByRef arena, GmUnionSpec, 512)
   gm_specArgs = ArenaAlloc(ByRef arena, GmType, 4096)
   gm_enums = ArenaAlloc(ByRef arena, GmEnumInfo, 128)
   gm_cStructs = ArenaAlloc(ByRef arena, GmConcreteStruct, 512)
   gm_cFields = ArenaAlloc(ByRef arena, GmFieldInfo, 4096)
+  gm_cUnions = ArenaAlloc(ByRef arena, GmConcreteUnion, 512)
+  gm_cVars = ArenaAlloc(ByRef arena, GmVariantInfo, 4096)
   gm_globals = ArenaAlloc(ByRef arena, GmGlobalInfo, 1024)
   gm_cFuncs = ArenaAlloc(ByRef arena, GmFuncInfo, 2048)
   gm_cOps = ArenaAlloc(ByRef arena, GmOpInfo, 512)
@@ -2100,13 +2729,17 @@ Public Function MonomorphizeProgram(ByRef arena As Arena, progRoot As Integer) A
   gm_structTmplCount = 0
   gm_funcTmplCount = 0
   gm_opTmplCount = 0
+  gm_unionTmplCount = 0
   gm_structSpecCount = 0
   gm_funcSpecCount = 0
   gm_opSpecCount = 0
+  gm_unionSpecCount = 0
   gm_specArgCount = 0
   gm_enumCount = 0
   gm_cStructCount = 0
   gm_cFieldCount = 0
+  gm_cUnionCount = 0
+  gm_cVarCount = 0
   gm_globalCount = 0
   gm_cFuncCount = 0
   gm_cOpCount = 0
@@ -2137,6 +2770,35 @@ Public Function MonomorphizeProgram(ByRef arena As Arena, progRoot As Integer) A
       gm_enumCount = gm_enumCount + 1
       gm_newDefs(gm_newDefCount) = d
       gm_newDefCount = gm_newDefCount + 1
+    End If
+
+    If dk = NdUnionDef Then
+      If g_nodes(d).genCount > 0 Then
+        GmValidateGenParams(g_nodes(d).genStart, g_nodes(d).genCount, g_nodes(d).intVal, g_nodes(d).lenVal)
+        gm_unionTmpls(gm_unionTmplCount) = GmUnionTmpl With (
+          nodeId = d,
+          namePos = g_nodes(d).intVal,
+          nameLen = g_nodes(d).lenVal,
+          genStart = g_nodes(d).genStart,
+          genCount = g_nodes(d).genCount,
+          isPrivate = isPriv,
+          modId = g_nodes(d).modId
+        )
+        gm_unionTmplCount = gm_unionTmplCount + 1
+      Else
+        gm_cUnions(gm_cUnionCount) = GmConcreteUnion With (
+          namePos = g_nodes(d).intVal,
+          nameLen = g_nodes(d).lenVal,
+          varStart = 0,
+          varCount = 0,
+          isPrivate = isPriv,
+          modId = g_nodes(d).modId,
+          nodeId = d
+        )
+        gm_cUnionCount = gm_cUnionCount + 1
+        gm_newDefs(gm_newDefCount) = d
+        gm_newDefCount = gm_newDefCount + 1
+      End If
     End If
 
     If dk = NdStructDef Then
@@ -2214,8 +2876,9 @@ Public Function MonomorphizeProgram(ByRef arena As Arena, progRoot As Integer) A
 
   Dim origConcreteCount As Integer = gm_newDefCount
   Dim origCStructCount As Integer = gm_cStructCount
+  Dim origCUnionCount As Integer = gm_cUnionCount
 
-  ' Pass 2a: Resolve concrete struct fields (instantiating any generic fields)
+  ' Pass 2a: Resolve concrete struct fields and concrete union variant fields
   For si = 0 To origCStructCount - 1 Do
     Dim sd As Integer = gm_cStructs(si).nodeId
     gm_curModId = g_nodes(sd).modId
@@ -2230,6 +2893,29 @@ Public Function MonomorphizeProgram(ByRef arena As Arena, progRoot As Integer) A
     End For
     gm_cStructs(si).fieldStart = fs
     gm_cStructs(si).fieldCount = fc
+  End For
+
+  For ui = 0 To origCUnionCount - 1 Do
+    Dim ud As Integer = gm_cUnions(ui).nodeId
+    gm_curModId = g_nodes(ud).modId
+    gm_altModId = -1
+    Dim vs As Integer = gm_cVarCount
+    Dim vc As Integer = g_nodes(ud).childCount
+    For vi = 0 To vc - 1 Do
+      Dim vn As Integer = g_kids(g_nodes(ud).firstChild + vi)
+      Dim fs As Integer = gm_cFieldCount
+      Dim fc As Integer = g_nodes(vn).childCount
+      For fi = 0 To fc - 1 Do
+        Dim fn As Integer = g_kids(g_nodes(vn).firstChild + fi)
+        Dim fty As GmType = GmApplyResolvedType(fn)
+        gm_cFields(gm_cFieldCount) = GmFieldInfo With ( namePos = g_nodes(fn).intVal, nameLen = g_nodes(fn).lenVal, ty = fty )
+        gm_cFieldCount = gm_cFieldCount + 1
+      End For
+      gm_cVars(gm_cVarCount) = GmVariantInfo With ( namePos = g_nodes(vn).intVal, nameLen = g_nodes(vn).lenVal, fieldStart = fs, fieldCount = fc )
+      gm_cVarCount = gm_cVarCount + 1
+    End For
+    gm_cUnions(ui).varStart = vs
+    gm_cUnions(ui).varCount = vc
   End For
 
   ' Pass 2b: Resolve concrete globals, function signatures, externs, and operator signatures
@@ -2320,8 +3006,14 @@ Public Function MonomorphizeProgram(ByRef arena As Arena, progRoot As Integer) A
       For j = 0 To pc - 1 Do
         Dim pn As Integer = g_kids(g_nodes(d).extraStart + j)
         Dim pTy As GmType With ( kind = g_nodes(pn).tyKind, innerKind = g_nodes(pn).tyInnerKind, arrLen = g_nodes(pn).tyArrLen, namePos = g_nodes(pn).tyNamePos, nameLen = g_nodes(pn).tyNameLen )
-        If (pTy.kind = TyStruct) And (GmFindEnum(pTy.namePos, pTy.nameLen) >= 0) Then
-          pTy.kind = TyEnum
+        If pTy.kind = TyStruct Then
+          If GmFindEnum(pTy.namePos, pTy.nameLen) >= 0 Then
+            pTy.kind = TyEnum
+          Else
+            If GmFindConcreteUnion(pTy.namePos, pTy.nameLen) >= 0 Then
+              pTy.kind = TyUnion
+            End If
+          End If
         End If
         gm_locals(gm_localCount) = GmLocalSym With ( namePos = g_nodes(pn).intVal, nameLen = g_nodes(pn).lenVal, ty = pTy )
         gm_localCount = gm_localCount + 1

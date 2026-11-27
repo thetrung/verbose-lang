@@ -24,12 +24,22 @@ Structure CgStructInfo
   Dim namePos, nameLen, fieldStart, fieldCount As Integer
 End Structure
 
+Structure CgUnionInfo
+  Dim namePos, nameLen, varStart, varCount, isPrivate, modId As Integer
+End Structure
+
+Structure CgUnionVar
+  Dim namePos, nameLen, fieldStart, fieldCount As Integer
+End Structure
+
 Structure CgFieldInfo
   Dim namePos, nameLen As Integer, ty As TypeInfo
 End Structure
 
 Structure CgGlobalInfo
-  Dim namePos, nameLen, isPublic, isPrivate, modId, initNode, isVolatile, hasFixedAddr, fixedAddr As Integer, ty As TypeInfo
+  Dim namePos, nameLen, isPublic, isPrivate, modId, initNode, isVolatile, hasFixedAddr As Integer
+  Dim fixedAddr As Long
+  Dim ty As TypeInfo
 End Structure
 
 Structure CgParamInfo
@@ -90,13 +100,14 @@ End Sub
 
 Private Static cg_enums() As CgEnumInfo, cg_enumMems() As CgEnumMem
 Private Static cg_structs() As CgStructInfo, cg_fields() As CgFieldInfo
+Private Static cg_unions() As CgUnionInfo, cg_unionVars() As CgUnionVar
 Private Static cg_globals() As CgGlobalInfo, cg_funcs() As CgFuncInfo
 Private Static cg_ops() As CgOpInfo
 Private Static cg_params() As CgParamInfo, cg_locals() As CgLocalSym
 Private Static cg_strs() As CgStrConst, cg_staticLocals() As CgStaticLocal
 Private Static cg_withPtrs(16), cg_withVols(16) As Integer, cg_withTys(16) As TypeInfo
 Private Static cg_loopBreakLbls(64), cg_loopContLbls(64) As Integer
-Private Static cg_enumCount, cg_enumMemCount, cg_structCount, cg_fieldCount, cg_globalCount, cg_funcCount, cg_opCount, cg_paramCount, cg_localCount, cg_strCount, cg_staticLocalCount, cg_withDepth, cg_loopDepth As Integer = 0
+Private Static cg_enumCount, cg_enumMemCount, cg_structCount, cg_fieldCount, cg_unionCount, cg_unionVarCount, cg_globalCount, cg_funcCount, cg_opCount, cg_paramCount, cg_localCount, cg_strCount, cg_staticLocalCount, cg_withDepth, cg_loopDepth As Integer = 0
 
 Private Function CgNextReg() As Integer
   Dim r As Integer = cg_reg
@@ -255,6 +266,54 @@ Private Function CgFindUnqualEnumVal(memPos, memLen As Integer, ByRef outVal As 
   Return False
 End Function
 
+Private Function CgFindUnion(pos, slen As Integer) As Integer
+  For i = 0 To cg_unionCount - 1 Do
+    If (cg_unions(i).isPrivate = 1) And (cg_unions(i).modId = cg_curModId) And SlicesEqual(cg_unions(i).namePos, cg_unions(i).nameLen, pos, slen) Then
+      Return i
+    End If
+  End For
+  For i = 0 To cg_unionCount - 1 Do
+    If SlicesEqual(cg_unions(i).namePos, cg_unions(i).nameLen, pos, slen) Then
+      Return i
+    End If
+  End For
+  Return -1
+End Function
+
+Private Function CgFindUnionVariant(uIdx, vPos, vLen As Integer) As Integer
+  Dim st = cg_unions(uIdx).varStart, cnt = cg_unions(uIdx).varCount As Integer
+  For i = 0 To cnt - 1 Do
+    If SlicesEqual(cg_unionVars(st + i).namePos, cg_unionVars(st + i).nameLen, vPos, vLen) Then
+      Return i
+    End If
+  End For
+  Return -1
+End Function
+
+Private Function CgFindUnqualUnionVariant(vPos, vLen As Integer, ByRef outUIdx, outVIdx As Integer) As Boolean
+  For i = 0 To cg_unionCount - 1 Do
+    If (cg_unions(i).isPrivate = 1) And (cg_unions(i).modId = cg_curModId) Then
+      Dim vi As Integer = CgFindUnionVariant(i, vPos, vLen)
+      If vi >= 0 Then
+        outUIdx = i
+        outVIdx = vi
+        Return True
+      End If
+    End If
+  End For
+  For i = 0 To cg_unionCount - 1 Do
+    If cg_unions(i).isPrivate = 0 Then
+      Dim vi As Integer = CgFindUnionVariant(i, vPos, vLen)
+      If vi >= 0 Then
+        outUIdx = i
+        outVIdx = vi
+        Return True
+      End If
+    End If
+  End For
+  Return False
+End Function
+
 Private Function CgFindStruct(pos, slen As Integer) As Integer
   For i = 0 To cg_structCount - 1 Do
     If SlicesEqual(cg_structs(i).namePos, cg_structs(i).nameLen, pos, slen) Then
@@ -331,7 +390,7 @@ Private Function CgTypesMatch(t1 As TypeInfo, t2 As TypeInfo) As Boolean
   If k1 <> k2 Then
     Return False
   End If
-  If k1 = TyStruct Then
+  If (k1 = TyStruct) Or (k1 = TyUnion) Then
     Return t1.typeIdx = t2.typeIdx
   End If
   Return True
@@ -495,6 +554,12 @@ Private Sub CgEmitTypeTag(ty As TypeInfo)
       Else
         CgEmitSlice(ty.namePos, ty.nameLen)
       End If
+    Case TyUnion Then
+      If ty.typeIdx >= 0 Then
+        CgEmitSlice(cg_unions(ty.typeIdx).namePos, cg_unions(ty.typeIdx).nameLen)
+      Else
+        CgEmitSlice(ty.namePos, ty.nameLen)
+      End If
     Case _ Then fprintf(cg_out, "unk")
   End Match
 End Sub
@@ -530,8 +595,14 @@ Private Function CgResolveTypeEx(rawKind, rawInnerKind, arrLen, nPos, nLen As In
       res.kind = TyEnum
       res.typeIdx = eIdx
     Else
-      Dim sIdx As Integer = CgFindStruct(nPos, nLen)
-      res.typeIdx = sIdx
+      Dim uIdx As Integer = CgFindUnion(nPos, nLen)
+      If uIdx >= 0 Then
+        res.kind = TyUnion
+        res.typeIdx = uIdx
+      Else
+        Dim sIdx As Integer = CgFindStruct(nPos, nLen)
+        res.typeIdx = sIdx
+      End If
     End If
   Else
     If (rawKind = TyTask) And (rawInnerKind = TyStruct) Then
@@ -540,8 +611,14 @@ Private Function CgResolveTypeEx(rawKind, rawInnerKind, arrLen, nPos, nLen As In
         res.innerKind = TyEnum
         res.typeIdx = eIdx
       Else
-        Dim sIdx As Integer = CgFindStruct(nPos, nLen)
-        res.typeIdx = sIdx
+        Dim uIdx As Integer = CgFindUnion(nPos, nLen)
+        If uIdx >= 0 Then
+          res.innerKind = TyUnion
+          res.typeIdx = uIdx
+        Else
+          Dim sIdx As Integer = CgFindStruct(nPos, nLen)
+          res.typeIdx = sIdx
+        End If
       End If
     End If
   End If
@@ -559,7 +636,7 @@ Private Function CgIsAggregate(ty As TypeInfo) As Boolean
   If ty.arrLen < 0 Then
     Return False
   End If
-  If (ty.kind = TyArena) Or (ty.kind = TyStruct) Then
+  If (ty.kind = TyArena) Or (ty.kind = TyStruct) Or (ty.kind = TyUnion) Then
     Return True
   End If
   Return False
@@ -576,6 +653,63 @@ Private Function CgElemType(ty As TypeInfo) As TypeInfo
   )
   Return e
 End Function
+
+Private Sub CgComputeUnionLayout(uIdx As Integer, ByRef outMaxSz, outMaxAl As Integer)
+  outMaxSz = 0
+  outMaxAl = 1
+  If (uIdx < 0) Or (uIdx >= cg_unionCount) Then
+    Return
+  End If
+  Dim vst = cg_unions(uIdx).varStart, vcnt = cg_unions(uIdx).varCount As Integer
+  For vi = 0 To vcnt - 1 Do
+    Dim fst = cg_unionVars(vst + vi).fieldStart, fcnt = cg_unionVars(vst + vi).fieldCount As Integer
+    If fcnt > 0 Then
+      Dim off As Integer = 0
+      Dim vAl As Integer = 1
+      For fi = 0 To fcnt - 1 Do
+        Dim fty As TypeInfo = cg_fields(fst + fi).ty
+        Dim fal As Integer = CgTypeAlign(fty)
+        If fal > vAl Then
+          vAl = fal
+        End If
+        off = CgAlignUp(off, fal) + CgTypeSize(fty)
+      End For
+      off = CgAlignUp(off, vAl)
+      If off > outMaxSz Then
+        outMaxSz = off
+      End If
+      If vAl > outMaxAl Then
+        outMaxAl = vAl
+      End If
+    End If
+  End For
+End Sub
+
+Private Function CgUnionSize(uIdx As Integer) As Integer
+  Dim maxSz = 0, maxAl = 1 As Integer
+  CgComputeUnionLayout(uIdx, ByRef maxSz, ByRef maxAl)
+  If maxSz = 0 Then
+    Return 4
+  End If
+  Dim off As Integer = CgAlignUp(4, maxAl) + CgAlignUp(maxSz, maxAl)
+  Dim uAl As Integer = maxAl
+  If uAl < 4 Then
+    uAl = 4
+  End If
+  Return CgAlignUp(off, uAl)
+End Function
+
+Private Sub CgEmitUnionPayloadLlvmType(uIdx, vIdx As Integer)
+  Dim vInfo As CgUnionVar = cg_unionVars(cg_unions(uIdx).varStart + vIdx)
+  fprintf(cg_out, "{ ")
+  For fi = 0 To vInfo.fieldCount - 1 Do
+    If fi > 0 Then
+      fprintf(cg_out, ", ")
+    End If
+    CgEmitLlvmType(cg_fields(vInfo.fieldStart + fi).ty)
+  End For
+  fprintf(cg_out, " }")
+End Sub
 
 Private Function CgBaseAlign(kind As Integer, typeIdx As Integer) As Integer
   Match kind With
@@ -598,6 +732,13 @@ Private Function CgBaseAlign(kind As Integer, typeIdx As Integer) As Integer
         End If
       End For
       Return mx
+    Case TyUnion Then
+      Dim maxSz = 0, maxAl = 1 As Integer
+      CgComputeUnionLayout(typeIdx, ByRef maxSz, ByRef maxAl)
+      If maxAl < 4 Then
+        Return 4
+      End If
+      Return maxAl
     Case _ Then Return 8
   End Match
 End Function
@@ -652,6 +793,7 @@ Private Function CgTypeSize(ty As TypeInfo) As Integer
     Case TyLong, TyDouble Then elemSz = 8
     Case TyArena Then elemSz = 24
     Case TyStruct Then elemSz = CgStructSize(ty.typeIdx)
+    Case TyUnion Then elemSz = CgUnionSize(ty.typeIdx)
     Case _ Then elemSz = 0
   End Match
   If ty.arrLen > 0 Then
@@ -681,6 +823,13 @@ Private Sub CgEmitBaseLlvmType(kind As Integer, typeIdx As Integer, nPos As Inte
       Else
         CgEmitSlice(nPos, nLen)
       End If
+    Case TyUnion Then
+      fprintf(cg_out, "%%union.")
+      If typeIdx >= 0 Then
+        CgEmitSlice(cg_unions(typeIdx).namePos, cg_unions(typeIdx).nameLen)
+      Else
+        CgEmitSlice(nPos, nLen)
+      End If
     Case _ Then fprintf(cg_out, "i32")
   End Match
 End Sub
@@ -700,7 +849,7 @@ Private Sub CgEmitLlvmType(ty As TypeInfo)
 End Sub
 
 Private Sub CgEmitParamLlvmType(p As CgParamInfo)
-  If (p.isByRef = 1) Or (p.ty.arrLen <> 0) Or (p.ty.kind = TyStruct) Or (p.ty.kind = TyArena) Then
+  If (p.isByRef = 1) Or (p.ty.arrLen <> 0) Or (p.ty.kind = TyStruct) Or (p.ty.kind = TyUnion) Or (p.ty.kind = TyArena) Then
     fprintf(cg_out, "ptr")
   Else
     CgEmitLlvmType(p.ty)
@@ -979,7 +1128,7 @@ Private Sub CgEmitZeroVal(ty As TypeInfo)
     Case TySingle, TyDouble Then fprintf(cg_out, "0.0")
     Case TyBoolean Then fprintf(cg_out, "false")
     Case TyPointer, TyTask Then fprintf(cg_out, "null")
-    Case TyArena, TyStruct Then fprintf(cg_out, "zeroinitializer")
+    Case TyArena, TyStruct, TyUnion Then fprintf(cg_out, "zeroinitializer")
     Case _ Then fprintf(cg_out, "0")
   End Match
 End Sub
@@ -1201,6 +1350,35 @@ Private Sub CgEmitSingleHexConst(pos As Integer, slen As Integer, isNeg As Integ
   fprintf(cg_out, "0x%016llX", bits)
 End Sub
 
+Private Sub CgEmitDoubleLit(pos, slen, isNeg As Integer)
+  If isNeg = 1 Then
+    fputc(45, cg_out)
+  End If
+  Dim hasDot As Boolean = False
+  Dim i As Integer = 0
+  While i < slen Do
+    Dim ch As Integer = g_srcPool(pos + i)
+    If ch = 46 Then
+      hasDot = True
+      fputc(ch, cg_out)
+    Else
+      If (ch = 101) Or (ch = 69) Then
+        If Not hasDot Then
+          fputs(".0", cg_out)
+          hasDot = True
+        End If
+        fputc(ch, cg_out)
+        If ((i + 1) < slen) And (g_srcPool(pos + i + 1) <> 43) And (g_srcPool(pos + i + 1) <> 45) Then
+          fputc(43, cg_out)
+        End If
+      Else
+        fputc(ch, cg_out)
+      End If
+    End If
+    i = i + 1
+  End While
+End Sub
+
 Private Sub CgEmitConstInit(ty As TypeInfo, exprId As Integer)
   If exprId < 0 Then
     CgEmitZeroVal(ty)
@@ -1211,26 +1389,26 @@ Private Sub CgEmitConstInit(ty As TypeInfo, exprId As Integer)
     If ty.kind = TySingle Then
       CgEmitSingleHexConst(g_nodes(exprId).intVal, g_nodes(exprId).lenVal, 0)
     Else
-      CgEmitSlice(g_nodes(exprId).intVal, g_nodes(exprId).lenVal)
+      CgEmitDoubleLit(g_nodes(exprId).intVal, g_nodes(exprId).lenVal, 0)
     End If
     Return
   End If
   If k = NdIntLit Then
     If (ty.kind = TyPointer) Or (ty.arrLen < 0) Then
-      If g_nodes(exprId).intVal = 0 Then
+      If g_nodes(exprId).longVal = 0 Then
         fprintf(cg_out, "null")
       Else
         If cg_ptrSize = 4 Then
-          fprintf(cg_out, "inttoptr (i32 %u to ptr)", g_nodes(exprId).intVal)
+          fprintf(cg_out, "inttoptr (i32 %llu to ptr)", g_nodes(exprId).longVal)
         Else
-          fprintf(cg_out, "inttoptr (i64 %u to ptr)", g_nodes(exprId).intVal)
+          fprintf(cg_out, "inttoptr (i64 %llu to ptr)", g_nodes(exprId).longVal)
         End If
       End If
     Else
       If (ty.kind = TySingle) Or (ty.kind = TyDouble) Then
-        fprintf(cg_out, "%d.0", g_nodes(exprId).intVal)
+        fprintf(cg_out, "%lld.0", g_nodes(exprId).longVal)
       Else
-        fprintf(cg_out, "%d", g_nodes(exprId).intVal)
+        fprintf(cg_out, "%lld", g_nodes(exprId).longVal)
       End If
     End If
     Return
@@ -1241,12 +1419,16 @@ Private Sub CgEmitConstInit(ty As TypeInfo, exprId As Integer)
       If ty.kind = TySingle Then
         CgEmitSingleHexConst(g_nodes(inner).intVal, g_nodes(inner).lenVal, 1)
       Else
-        fprintf(cg_out, "-")
-        CgEmitSlice(g_nodes(inner).intVal, g_nodes(inner).lenVal)
+        CgEmitDoubleLit(g_nodes(inner).intVal, g_nodes(inner).lenVal, 1)
       End If
       Return
     End If
-    fprintf(cg_out, "%d", -g_nodes(inner).intVal)
+    Dim negV As Long = -g_nodes(inner).longVal
+    If (ty.kind = TySingle) Or (ty.kind = TyDouble) Then
+      fprintf(cg_out, "%lld.0", negV)
+    Else
+      fprintf(cg_out, "%lld", negV)
+    End If
     Return
   End If
   If k = NdBoolLit Then
@@ -1274,9 +1456,9 @@ Private Sub CgEmitConstInit(ty As TypeInfo, exprId As Integer)
       If gIdx >= 0 Then
         If cg_globals(gIdx).hasFixedAddr = 1 Then
           If cg_ptrSize = 4 Then
-            fprintf(cg_out, "inttoptr (i32 %u to ptr)", cg_globals(gIdx).fixedAddr)
+            fprintf(cg_out, "inttoptr (i32 %llu to ptr)", cg_globals(gIdx).fixedAddr)
           Else
-            fprintf(cg_out, "inttoptr (i64 %u to ptr)", cg_globals(gIdx).fixedAddr)
+            fprintf(cg_out, "inttoptr (i64 %llu to ptr)", cg_globals(gIdx).fixedAddr)
           End If
         Else
           fprintf(cg_out, "@")
@@ -1372,7 +1554,7 @@ End Function
 
 Private Function CgCoerceScalar(valReg As Integer, fromTy As TypeInfo, toTy As TypeInfo) As Integer
   If (toTy.kind = TyPointer) Or (toTy.kind = TyTask) Or (toTy.arrLen < 0) Then
-    If (fromTy.kind = TyPointer) Or (fromTy.kind = TyTask) Or (fromTy.arrLen <> 0) Or (fromTy.kind = TyStruct) Or (fromTy.kind = TyArena) Then
+    If (fromTy.kind = TyPointer) Or (fromTy.kind = TyTask) Or (fromTy.arrLen <> 0) Or (fromTy.kind = TyStruct) Or (fromTy.kind = TyUnion) Or (fromTy.kind = TyArena) Then
       Return valReg
     End If
     Dim fb As Integer = CgIntBits(fromTy.kind)
@@ -1556,9 +1738,9 @@ Private Function CgEmitLValuePtr(id As Integer, ByRef outTy As TypeInfo, ByRef o
       If cg_globals(gIdx).hasFixedAddr = 1 Then
         Dim r As Integer = CgNextReg()
         If cg_ptrSize = 4 Then
-          fprintf(cg_out, "  %%r%d = inttoptr i32 %u to ptr\n", r, cg_globals(gIdx).fixedAddr)
+          fprintf(cg_out, "  %%r%d = inttoptr i32 %llu to ptr\n", r, cg_globals(gIdx).fixedAddr)
         Else
-          fprintf(cg_out, "  %%r%d = inttoptr i64 %u to ptr\n", r, cg_globals(gIdx).fixedAddr)
+          fprintf(cg_out, "  %%r%d = inttoptr i64 %llu to ptr\n", r, cg_globals(gIdx).fixedAddr)
         End If
         Return r
       End If
@@ -1679,20 +1861,66 @@ Private Function CgEmitByRefArg(exprId As Integer) As Integer
   Return ptrReg
 End Function
 
+Private Function CgEmitUnionConstruct(uIdx, vIdx As Integer, argIds() As Integer, argCnt As Integer, ByRef outTy As TypeInfo) As Integer
+  Dim uTy As TypeInfo With (
+    kind = TyUnion,
+    typeIdx = uIdx,
+    arrLen = 0,
+    namePos = cg_unions(uIdx).namePos,
+    nameLen = cg_unions(uIdx).nameLen
+  )
+  Dim al As Integer = CgTypeAlign(uTy)
+  Dim slot As Integer = CgNextReg()
+  CgEmitHoistedAlloca(slot, uTy, al)
+  fprintf(cg_out, "  store ")
+  CgEmitLlvmType(uTy)
+  fprintf(cg_out, " zeroinitializer, ptr %%r%d, align %d\n", slot, al)
+  Dim tagPtr As Integer = CgNextReg()
+  fprintf(cg_out, "  %%r%d = getelementptr inbounds ", tagPtr)
+  CgEmitLlvmType(uTy)
+  fprintf(cg_out, ", ptr %%r%d, i32 0, i32 0\n", slot)
+  fprintf(cg_out, "  store i32 %d, ptr %%r%d, align 4\n", vIdx, tagPtr)
+  Dim vInfo As CgUnionVar = cg_unionVars(cg_unions(uIdx).varStart + vIdx)
+  If (vInfo.fieldCount > 0) And (argCnt > 0) Then
+    Dim payPtr As Integer = CgNextReg()
+    fprintf(cg_out, "  %%r%d = getelementptr inbounds ", payPtr)
+    CgEmitLlvmType(uTy)
+    fprintf(cg_out, ", ptr %%r%d, i32 0, i32 1\n", slot)
+    For fi = 0 To argCnt - 1 Do
+      Dim fTy As TypeInfo = cg_fields(vInfo.fieldStart + fi).ty
+      Dim vTy As TypeInfo
+      Dim vReg As Integer = CgEmitExpr(argIds(fi), ByRef vTy)
+      Dim fPtr As Integer = CgNextReg()
+      fprintf(cg_out, "  %%r%d = getelementptr inbounds ", fPtr)
+      CgEmitUnionPayloadLlvmType(uIdx, vIdx)
+      fprintf(cg_out, ", ptr %%r%d, i32 0, i32 %d\n", payPtr, fi)
+      CgEmitStoreTyped(fPtr, fTy, vReg, vTy)
+    End For
+  End If
+  outTy = uTy
+  Return slot
+End Function
+
 Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
   Dim k As Integer = g_nodes(id).kind
 
   If k = NdIntLit Then
     Dim r As Integer = CgNextReg()
-    fprintf(cg_out, "  %%r%d = add i32 0, %d\n", r, g_nodes(id).intVal)
-    outTy = TypeInfo With ( kind = TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+    Dim v As Long = g_nodes(id).longVal
+    If (v > 2147483647) Or (v < 0) Then
+      fprintf(cg_out, "  %%r%d = add i64 0, %lld\n", r, v)
+      outTy = TypeInfo With ( kind = TyLong, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+    Else
+      fprintf(cg_out, "  %%r%d = add i32 0, %d\n", r, Integer(v))
+      outTy = TypeInfo With ( kind = TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+    End If
     Return r
   End If
 
   If k = NdFloatLit Then
     Dim r As Integer = CgNextReg()
     fprintf(cg_out, "  %%r%d = fadd double 0.0, ", r)
-    CgEmitSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
+    CgEmitDoubleLit(g_nodes(id).intVal, g_nodes(id).lenVal, 0)
     fprintf(cg_out, "\n")
     outTy = TypeInfo With ( kind = TyDouble, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
     Return r
@@ -1871,6 +2099,11 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
         outTy = TypeInfo With ( kind = TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
         Return r
       End If
+      Dim uuIdx = -1, uvIdx = -1 As Integer
+      If CgFindUnqualUnionVariant(vPos, vLen, ByRef uuIdx, ByRef uvIdx) Then
+        Dim emptyArgs(1) As Integer
+        Return CgEmitUnionConstruct(uuIdx, uvIdx, emptyArgs, 0, ByRef outTy)
+      End If
     End If
     Dim vTy As TypeInfo
     Dim isInd = 0, isVol = 0 As Integer
@@ -1904,7 +2137,7 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
   End If
 
   If k = NdFieldAccess Then
-    ' Check EnumName.Variant first
+    ' Check EnumName.Variant and UnionName.Variant first
     Dim baseId As Integer = g_nodes(id).left
     If g_nodes(baseId).kind = NdVar Then
       Dim eIdx As Integer = CgFindEnum(g_nodes(baseId).intVal, g_nodes(baseId).lenVal)
@@ -1915,6 +2148,16 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
           fprintf(cg_out, "  %%r%d = add i32 0, %d\n", r, ev)
           outTy = TypeInfo With ( kind = TyInt, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
           Return r
+        End If
+      End If
+      If (CgFindLocal(g_nodes(baseId).intVal, g_nodes(baseId).lenVal) < 0) And (CgFindGlobal(g_nodes(baseId).intVal, g_nodes(baseId).lenVal) < 0) Then
+        Dim uIdx As Integer = CgFindUnion(g_nodes(baseId).intVal, g_nodes(baseId).lenVal)
+        If uIdx >= 0 Then
+          Dim vIdx As Integer = CgFindUnionVariant(uIdx, g_nodes(id).intVal, g_nodes(id).lenVal)
+          If vIdx >= 0 Then
+            Dim emptyArgs(1) As Integer
+            Return CgEmitUnionConstruct(uIdx, vIdx, emptyArgs, 0, ByRef outTy)
+          End If
         End If
       End If
     End If
@@ -1949,7 +2192,38 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     Return r
   End If
 
+  If k = NdUnionInit Then
+    Dim baseNode As Integer = g_nodes(id).left
+    Dim uIdx As Integer = CgFindUnion(g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal)
+    Dim vIdx As Integer = CgFindUnionVariant(uIdx, g_nodes(id).intVal, g_nodes(id).lenVal)
+    Dim argIds(64) As Integer
+    Dim aCnt As Integer = g_nodes(id).childCount
+    For i = 0 To aCnt - 1 Do
+      argIds(i) = g_kids(g_nodes(id).firstChild + i)
+    End For
+    Return CgEmitUnionConstruct(uIdx, vIdx, argIds, aCnt, ByRef outTy)
+  End If
+
   If (k = NdIndexAccess) Or CgIsVarIndexCall(id) Then
+    If k = NdIndexAccess Then
+      Dim faNode As Integer = g_nodes(id).left
+      If (faNode >= 0) And (g_nodes(faNode).kind = NdFieldAccess) Then
+        Dim baseVar As Integer = g_nodes(faNode).left
+        If (baseVar >= 0) And (g_nodes(baseVar).kind = NdVar) Then
+          If (CgFindLocal(g_nodes(baseVar).intVal, g_nodes(baseVar).lenVal) < 0) And (CgFindGlobal(g_nodes(baseVar).intVal, g_nodes(baseVar).lenVal) < 0) Then
+            Dim uIdx As Integer = CgFindUnion(g_nodes(baseVar).intVal, g_nodes(baseVar).lenVal)
+            If uIdx >= 0 Then
+              Dim vIdx As Integer = CgFindUnionVariant(uIdx, g_nodes(faNode).intVal, g_nodes(faNode).lenVal)
+              If vIdx >= 0 Then
+                Dim oneArg(1) As Integer
+                oneArg(0) = g_nodes(id).right
+                Return CgEmitUnionConstruct(uIdx, vIdx, oneArg, 1, ByRef outTy)
+              End If
+            End If
+          End If
+        End If
+      End If
+    End If
     Dim eTy As TypeInfo
     Dim isInd = 0, isVol = 0 As Integer
     Dim ePtr As Integer = 0
@@ -2000,9 +2274,23 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
   End If
 
   If k = NdNeg Then
+    Dim innerId As Integer = g_nodes(id).left
+    If (innerId >= 0) And (g_nodes(innerId).kind = NdIntLit) Then
+      Dim iv As Long = g_nodes(innerId).longVal
+      If (iv > 2147483647) Or (iv < 0) Then
+        Dim rLit As Integer = CgNextReg()
+        Dim negVal As Long = iv
+        If iv > 0 Then
+          negVal = -iv
+        End If
+        fprintf(cg_out, "  %%r%d = add i64 0, %lld\n", rLit, negVal)
+        outTy = TypeInfo With ( kind = TyLong, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+        Return rLit
+      End If
+    End If
     Dim t As TypeInfo
-    Dim v As Integer = CgEmitExpr(g_nodes(id).left, ByRef t)
-    If (t.arrLen = 0) And (t.kind = TyStruct) Then
+    Dim v As Integer = CgEmitExpr(innerId, ByRef t)
+    If (t.arrLen = 0) And ((t.kind = TyStruct) Or (t.kind = TyUnion)) Then
       Dim uoi As Integer = CgFindUnaryOp(TkMinus, t)
       If uoi >= 0 Then
         Return CgEmitOpCall1(uoi, v, t, ByRef outTy)
@@ -2025,7 +2313,7 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
   If k = NdNot Then
     Dim t As TypeInfo
     Dim v As Integer = CgEmitExpr(g_nodes(id).left, ByRef t)
-    If (t.arrLen = 0) And (t.kind = TyStruct) Then
+    If (t.arrLen = 0) And ((t.kind = TyStruct) Or (t.kind = TyUnion)) Then
       Dim uoi As Integer = CgFindUnaryOp(TkNot, t)
       If uoi >= 0 Then
         Return CgEmitOpCall1(uoi, v, t, ByRef outTy)
@@ -2079,7 +2367,7 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
       Return scRes
     End If
     Dim v2 As Integer = CgEmitExpr(g_nodes(id).right, ByRef t2)
-    If ((t1.arrLen = 0) And (t1.kind = TyStruct)) Or ((t2.arrLen = 0) And (t2.kind = TyStruct)) Then
+    If ((t1.arrLen = 0) And ((t1.kind = TyStruct) Or (t1.kind = TyUnion))) Or ((t2.arrLen = 0) And ((t2.kind = TyStruct) Or (t2.kind = TyUnion))) Then
       Dim boi As Integer = CgFindBinOp(op, t1, g_nodes(id).left, t2, g_nodes(id).right)
       If boi >= 0 Then
         Return CgEmitOpCall2(boi, v1, t1, v2, t2, ByRef outTy)
@@ -2170,7 +2458,7 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
           fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
           outTy = TypeInfo With ( kind = TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
         Case TkNeq Then
-          fprintf(cg_out, "  %%r%d = fcmp one ", r)
+          fprintf(cg_out, "  %%r%d = fcmp une ", r)
           CgEmitLlvmType(unified)
           fprintf(cg_out, " %%r%d, %%r%d\n", v1, v2)
           outTy = TypeInfo With ( kind = TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
@@ -2294,7 +2582,7 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     If dstKind = TyBoolean Then
       Dim r As Integer = CgNextReg()
       If CgIsFloat(srcTy.kind) Then
-        fprintf(cg_out, "  %%r%d = fcmp one ", r)
+        fprintf(cg_out, "  %%r%d = fcmp une ", r)
         CgEmitLlvmType(srcTy)
         fprintf(cg_out, " %%r%d, 0.0\n", srcReg)
         Return r
@@ -2838,8 +3126,18 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     Return slot
   End If
 
-  ' User Function / Sub / ExternDecl / C runtime builtin
+  ' User Function / Sub / ExternDecl / C runtime builtin / Unqualified Union variant constructor
   Dim fnIdx As Integer = CgFindFunc(nPos, nLen)
+  If fnIdx < 0 Then
+    Dim uuIdx = -1, uvIdx = -1 As Integer
+    If CgFindUnqualUnionVariant(nPos, nLen, ByRef uuIdx, ByRef uvIdx) Then
+      Dim uArgs(64) As Integer
+      For uai = 0 To aCount - 1 Do
+        uArgs(uai) = g_nodes(g_kids(aStart + uai)).left
+      End For
+      Return CgEmitUnionConstruct(uuIdx, uvIdx, uArgs, aCount, ByRef outTy)
+    End If
+  End If
   Dim isExternFn As Boolean = (fnIdx >= 0) And (cg_funcs(fnIdx).isExtern = 1)
   Dim argRegs(64) As Integer
   Dim argTys(64) As TypeInfo
@@ -2941,7 +3239,7 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
             End If
           End If
         Else
-          If (pInfo.ty.arrLen <> 0) Or (pInfo.ty.kind = TyStruct) Or (pInfo.ty.kind = TyArena) Then
+          If (pInfo.ty.arrLen <> 0) Or (pInfo.ty.kind = TyStruct) Or (pInfo.ty.kind = TyUnion) Or (pInfo.ty.kind = TyArena) Then
             argRegs(emitArgCnt) = aReg
             argIsPtr(emitArgCnt) = 1
             argCAbi(emitArgCnt) = 0
@@ -3109,7 +3407,7 @@ Private Function CgEmitOpCall1(opIdx As Integer, v1 As Integer, t1 As TypeInfo, 
   Dim p0 As CgParamInfo = cg_params(oi.paramStart)
   Dim a0Reg As Integer = v1
   Dim a0IsPtr As Integer = 0
-  If (p0.ty.arrLen <> 0) Or (p0.ty.kind = TyStruct) Or (p0.ty.kind = TyArena) Then
+  If (p0.ty.arrLen <> 0) Or (p0.ty.kind = TyStruct) Or (p0.ty.kind = TyUnion) Or (p0.ty.kind = TyArena) Then
     a0IsPtr = 1
   Else
     a0Reg = CgCoerceScalar(v1, t1, p0.ty)
@@ -3143,12 +3441,12 @@ Private Function CgEmitOpCall2(opIdx As Integer, v1 As Integer, t1 As TypeInfo, 
   Dim p0 As CgParamInfo = cg_params(oi.paramStart)
   Dim p1 As CgParamInfo = cg_params(oi.paramStart + 1)
   Dim a0Reg = v1, a1Reg = v2, a0IsPtr = 0, a1IsPtr = 0 As Integer
-  If (p0.ty.arrLen <> 0) Or (p0.ty.kind = TyStruct) Or (p0.ty.kind = TyArena) Then
+  If (p0.ty.arrLen <> 0) Or (p0.ty.kind = TyStruct) Or (p0.ty.kind = TyUnion) Or (p0.ty.kind = TyArena) Then
     a0IsPtr = 1
   Else
     a0Reg = CgCoerceScalar(v1, t1, p0.ty)
   End If
-  If (p1.ty.arrLen <> 0) Or (p1.ty.kind = TyStruct) Or (p1.ty.kind = TyArena) Then
+  If (p1.ty.arrLen <> 0) Or (p1.ty.kind = TyStruct) Or (p1.ty.kind = TyUnion) Or (p1.ty.kind = TyArena) Then
     a1IsPtr = 1
   Else
     a1Reg = CgCoerceScalar(v2, t2, p1.ty)
@@ -3379,10 +3677,11 @@ Private Sub CgEmitStmt(id As Integer)
     Dim vTy As TypeInfo
     Dim vReg As Integer = CgEmitExpr(g_nodes(id).left, ByRef vTy)
     If CgIsAggregate(cg_curRetTy) Then
+      Dim rAl As Integer = CgTypeAlign(cg_curRetTy)
       Dim loaded As Integer = CgNextReg()
       fprintf(cg_out, "  %%r%d = load ", loaded)
       CgEmitLlvmType(cg_curRetTy)
-      fprintf(cg_out, ", ptr %%r%d, align 8\n", vReg)
+      fprintf(cg_out, ", ptr %%r%d, align %d\n", vReg, rAl)
       fprintf(cg_out, "  ret ")
       CgEmitLlvmType(cg_curRetTy)
       fprintf(cg_out, " %%r%d\n", loaded)
@@ -3610,6 +3909,235 @@ Private Sub CgEmitStmt(id As Integer)
     If Not isCondMatch Then
       tReg = CgEmitExpr(g_nodes(id).left, ByRef tTy)
     End If
+
+    ' Tagged Union Match lowering (tag check + payload destructuring bindings + optional When guard)
+    If (Not isCondMatch) And (tTy.arrLen = 0) And (tTy.kind = TyUnion) And (tTy.typeIdx >= 0) Then
+      Dim uIdx As Integer = tTy.typeIdx
+      Dim tagPtr As Integer = CgNextReg()
+      fprintf(cg_out, "  %%r%d = getelementptr inbounds ", tagPtr)
+      CgEmitLlvmType(tTy)
+      fprintf(cg_out, ", ptr %%r%d, i32 0, i32 0\n", tReg)
+      Dim tagReg As Integer = CgNextReg()
+      fprintf(cg_out, "  %%r%d = load i32, ptr %%r%d, align 4\n", tagReg, tagPtr)
+
+      Dim lExit As Integer = CgNextLbl()
+      Dim anyFalls As Boolean = False
+      Dim hasUncondWild As Boolean = False
+      Dim brStart As Integer = g_nodes(id).firstChild
+      Dim brCount As Integer = g_nodes(id).childCount
+      Dim bi As Integer = 0
+      While (bi < brCount) And (Not hasUncondWild) Do
+        Dim arm As Integer = g_kids(brStart + bi)
+        Dim isWild As Boolean = (g_nodes(arm).op = 1)
+        Dim guardNode As Integer = g_nodes(arm).left
+        Dim lBody As Integer = CgNextLbl()
+        Dim lNext As Integer = CgNextLbl()
+        Dim savedB As Integer = cg_localCount
+
+        If isWild And (guardNode < 0) Then
+          hasUncondWild = True
+          fprintf(cg_out, "  br label %%L%d\n", lBody)
+        Else
+          If isWild Then
+            Dim gTy As TypeInfo
+            Dim gReg As Integer = CgEmitExpr(guardNode, ByRef gTy)
+            Dim gBit As Integer = gReg
+            If gTy.kind <> TyBoolean Then
+              gBit = CgNextReg()
+              fprintf(cg_out, "  %%r%d = icmp ne ", gBit)
+              CgEmitLlvmType(gTy)
+              fprintf(cg_out, " %%r%d, 0\n", gReg)
+            End If
+            fprintf(cg_out, "  br i1 %%r%d, label %%L%d, label %%L%d\n", gBit, lBody, lNext)
+          Else
+            Dim vStart As Integer = g_nodes(arm).extraStart
+            Dim vCount As Integer = g_nodes(arm).extraCount
+            Dim singleVIdx As Integer = -1
+            Dim bindNodes(32) As Integer
+            Dim bindCnt As Integer = 0
+            Dim lMatch As Integer = lBody
+            Dim hasBindOrGuard As Boolean = (guardNode >= 0)
+
+            ' Pre-inspect single-pattern arm to see if bindings exist
+            If vCount = 1 Then
+              Dim pe0 As Integer = g_kids(vStart)
+              Dim pk0 As Integer = g_nodes(pe0).kind
+              Dim vp0 = 0, vl0 = 0 As Integer
+              If pk0 = NdVar Then
+                vp0 = g_nodes(pe0).intVal
+                vl0 = g_nodes(pe0).lenVal
+              Else
+                If pk0 = NdCall Then
+                  vp0 = g_nodes(pe0).intVal
+                  vl0 = g_nodes(pe0).lenVal
+                  For ai = 0 To g_nodes(pe0).childCount - 1 Do
+                    If bindCnt < 32 Then
+                      bindNodes(bindCnt) = g_nodes(g_kids(g_nodes(pe0).firstChild + ai)).left
+                      bindCnt = bindCnt + 1
+                    End If
+                  End For
+                Else
+                  If pk0 = NdFieldAccess Then
+                    vp0 = g_nodes(pe0).intVal
+                    vl0 = g_nodes(pe0).lenVal
+                  Else
+                    If pk0 = NdIndexAccess Then
+                      Dim fa0 As Integer = g_nodes(pe0).left
+                      vp0 = g_nodes(fa0).intVal
+                      vl0 = g_nodes(fa0).lenVal
+                      bindNodes(0) = g_nodes(pe0).right
+                      bindCnt = 1
+                    Else
+                      If pk0 = NdUnionInit Then
+                        vp0 = g_nodes(pe0).intVal
+                        vl0 = g_nodes(pe0).lenVal
+                        For ai = 0 To g_nodes(pe0).childCount - 1 Do
+                          If bindCnt < 32 Then
+                            bindNodes(bindCnt) = g_kids(g_nodes(pe0).firstChild + ai)
+                            bindCnt = bindCnt + 1
+                          End If
+                        End For
+                      End If
+                    End If
+                  End If
+                End If
+              End If
+              singleVIdx = CgFindUnionVariant(uIdx, vp0, vl0)
+              If bindCnt > 0 Then
+                hasBindOrGuard = True
+              End If
+            End If
+
+            If hasBindOrGuard Then
+              lMatch = CgNextLbl()
+            End If
+
+            For vi = 0 To vCount - 1 Do
+              Dim lTryNext As Integer = lNext
+              If (vi + 1) < vCount Then
+                lTryNext = CgNextLbl()
+              End If
+              Dim pe As Integer = g_kids(vStart + vi)
+              Dim pk As Integer = g_nodes(pe).kind
+              Dim vp = 0, vl = 0 As Integer
+              If (pk = NdVar) Or (pk = NdCall) Or (pk = NdFieldAccess) Or (pk = NdUnionInit) Then
+                vp = g_nodes(pe).intVal
+                vl = g_nodes(pe).lenVal
+              Else
+                If pk = NdIndexAccess Then
+                  Dim faNode As Integer = g_nodes(pe).left
+                  vp = g_nodes(faNode).intVal
+                  vl = g_nodes(faNode).lenVal
+                End If
+              End If
+              Dim matchVIdx As Integer = CgFindUnionVariant(uIdx, vp, vl)
+              Dim eqR As Integer = CgNextReg()
+              fprintf(cg_out, "  %%r%d = icmp eq i32 %%r%d, %d\n", eqR, tagReg, matchVIdx)
+              fprintf(cg_out, "  br i1 %%r%d, label %%L%d, label %%L%d\n", eqR, lMatch, lTryNext)
+              If (vi + 1) < vCount Then
+                fprintf(cg_out, "L%d:\n", lTryNext)
+              End If
+            End For
+
+            If hasBindOrGuard Then
+              fprintf(cg_out, "L%d:\n", lMatch)
+              If (singleVIdx >= 0) And (bindCnt > 0) Then
+                Dim vInfo As CgUnionVar = cg_unionVars(cg_unions(uIdx).varStart + singleVIdx)
+                Dim payPtr As Integer = CgNextReg()
+                fprintf(cg_out, "  %%r%d = getelementptr inbounds ", payPtr)
+                CgEmitLlvmType(tTy)
+                fprintf(cg_out, ", ptr %%r%d, i32 0, i32 1\n", tReg)
+                Dim lim As Integer = bindCnt
+                If vInfo.fieldCount < lim Then
+                  lim = vInfo.fieldCount
+                End If
+                For pbi = 0 To lim - 1 Do
+                  Dim bn As Integer = bindNodes(pbi)
+                  If (bn >= 0) And (g_nodes(bn).kind = NdVar) Then
+                    Dim bp = g_nodes(bn).intVal, bl = g_nodes(bn).lenVal As Integer
+                    If Not ((bl = 1) And (g_srcPool(bp) = 95)) Then
+                      Dim fTy As TypeInfo = cg_fields(vInfo.fieldStart + pbi).ty
+                      Dim fAl As Integer = CgTypeAlign(fTy)
+                      Dim fPtr As Integer = CgNextReg()
+                      fprintf(cg_out, "  %%r%d = getelementptr inbounds ", fPtr)
+                      CgEmitUnionPayloadLlvmType(uIdx, singleVIdx)
+                      fprintf(cg_out, ", ptr %%r%d, i32 0, i32 %d\n", payPtr, pbi)
+                      Dim slot As Integer = CgNextReg()
+                      CgEmitHoistedAlloca(slot, fTy, fAl)
+                      If CgIsAggregate(fTy) Then
+                        Dim fSz As Integer = CgTypeSize(fTy)
+                        fprintf(cg_out, "  call void @llvm.memcpy.p0.p0.i64(ptr align %d %%r%d, ptr align %d %%r%d, i64 %d, i1 false)\n", fAl, slot, fAl, fPtr, fSz)
+                      Else
+                        Dim fVal As Integer = CgNextReg()
+                        fprintf(cg_out, "  %%r%d = load ", fVal)
+                        CgEmitLlvmType(fTy)
+                        fprintf(cg_out, ", ptr %%r%d, align %d\n", fPtr, fAl)
+                        fprintf(cg_out, "  store ")
+                        CgEmitLlvmType(fTy)
+                        fprintf(cg_out, " %%r%d, ptr %%r%d, align %d\n", fVal, slot, fAl)
+                      End If
+                      cg_locals(cg_localCount) = CgLocalSym With (
+                        namePos = bp,
+                        nameLen = bl,
+                        slotReg = slot,
+                        isIndirect = 0,
+                        staticPlusOne = 0,
+                        isVolatile = 0,
+                        ty = fTy
+                      )
+                      cg_localCount = cg_localCount + 1
+                    End If
+                  End If
+                End For
+              End If
+              If guardNode >= 0 Then
+                Dim gTy As TypeInfo
+                Dim gReg As Integer = CgEmitExpr(guardNode, ByRef gTy)
+                Dim gBit As Integer = gReg
+                If gTy.kind <> TyBoolean Then
+                  gBit = CgNextReg()
+                  fprintf(cg_out, "  %%r%d = icmp ne ", gBit)
+                  CgEmitLlvmType(gTy)
+                  fprintf(cg_out, " %%r%d, 0\n", gReg)
+                End If
+                fprintf(cg_out, "  br i1 %%r%d, label %%L%d, label %%L%d\n", gBit, lBody, lNext)
+              Else
+                fprintf(cg_out, "  br label %%L%d\n", lBody)
+              End If
+            End If
+          End If
+        End If
+
+        fprintf(cg_out, "L%d:\n", lBody)
+        cg_blockEnded = 0
+        For si = 0 To g_nodes(arm).childCount - 1 Do
+          CgEmitStmt(g_kids(g_nodes(arm).firstChild + si))
+        End For
+        cg_localCount = savedB
+        If cg_blockEnded = 0 Then
+          anyFalls = True
+          fprintf(cg_out, "  br label %%L%d\n", lExit)
+        End If
+        If Not hasUncondWild Then
+          fprintf(cg_out, "L%d:\n", lNext)
+          cg_blockEnded = 0
+        End If
+        bi = bi + 1
+      End While
+
+      If Not hasUncondWild Then
+        anyFalls = True
+        fprintf(cg_out, "  br label %%L%d\n", lExit)
+      End If
+      If anyFalls Then
+        fprintf(cg_out, "L%d:\n", lExit)
+        cg_blockEnded = 0
+      Else
+        cg_blockEnded = 1
+      End If
+      Return
+    End If
+
     Dim tIsStr As Boolean = (Not isCondMatch) And (((tTy.arrLen = 0) And (tTy.kind = TyPointer)) Or ((tTy.arrLen <> 0) And (tTy.kind = TyByte)))
     Dim lExit As Integer = CgNextLbl()
     Dim anyFalls As Boolean = False
@@ -3666,7 +4194,7 @@ Private Sub CgEmitStmt(id As Integer)
               End If
             Else
               If tIsStr Then
-                If (g_nodes(pe).kind = NdIntLit) And (g_nodes(pe).intVal = 0) Then
+                If (g_nodes(pe).kind = NdIntLit) And (g_nodes(pe).longVal = 0) Then
                   eqR = CgNextReg()
                   fprintf(cg_out, "  %%r%d = icmp eq ptr %%r%d, null\n", eqR, tReg)
                 Else
@@ -4248,6 +4776,8 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   cg_enumMems = ArenaAlloc(ByRef arena, CgEnumMem, 1024)
   cg_structs = ArenaAlloc(ByRef arena, CgStructInfo, 512)
   cg_fields = ArenaAlloc(ByRef arena, CgFieldInfo, 4096)
+  cg_unions = ArenaAlloc(ByRef arena, CgUnionInfo, 512)
+  cg_unionVars = ArenaAlloc(ByRef arena, CgUnionVar, 4096)
   cg_globals = ArenaAlloc(ByRef arena, CgGlobalInfo, 1024)
   cg_funcs = ArenaAlloc(ByRef arena, CgFuncInfo, 2048)
   cg_ops = ArenaAlloc(ByRef arena, CgOpInfo, 512)
@@ -4260,6 +4790,8 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   cg_enumMemCount = 0
   cg_structCount = 0
   cg_fieldCount = 0
+  cg_unionCount = 0
+  cg_unionVarCount = 0
   cg_globalCount = 0
   cg_funcCount = 0
   cg_opCount = 0
@@ -4335,13 +4867,30 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
       )
       cg_structCount = cg_structCount + 1
     End If
+    If dk = NdUnionDef Then
+      Dim isPriv As Integer = 0
+      If g_nodes(d).op = 2 Then
+        isPriv = 1
+      End If
+      cg_unions(cg_unionCount) = CgUnionInfo With (
+        namePos = g_nodes(d).intVal,
+        nameLen = g_nodes(d).lenVal,
+        varStart = 0,
+        varCount = 0,
+        isPrivate = isPriv,
+        modId = g_nodes(d).modId
+      )
+      cg_unionCount = cg_unionCount + 1
+    End If
   End For
 
-  ' Pass 1b: Resolve Struct fields (now that all structs & enums are registered)
+  ' Pass 1b: Resolve Struct fields and Union variant fields (now that all enums, structs & unions are registered)
   Dim si As Integer = 0
+  Dim ui As Integer = 0
   For i = 0 To defCount - 1 Do
     Dim d As Integer = g_kids(defStart + i)
     If g_nodes(d).kind = NdStructDef Then
+      cg_curModId = g_nodes(d).modId
       Dim fs As Integer = cg_fieldCount
       Dim fc As Integer = g_nodes(d).childCount
       Dim j As Integer = 0
@@ -4359,6 +4908,35 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
       cg_structs(si).fieldCount = fc
       si = si + 1
     End If
+    If g_nodes(d).kind = NdUnionDef Then
+      cg_curModId = g_nodes(d).modId
+      Dim vs As Integer = cg_unionVarCount
+      Dim vc As Integer = g_nodes(d).childCount
+      For vi = 0 To vc - 1 Do
+        Dim vn As Integer = g_kids(g_nodes(d).firstChild + vi)
+        Dim fs As Integer = cg_fieldCount
+        Dim fc As Integer = g_nodes(vn).childCount
+        For fi2 = 0 To fc - 1 Do
+          Dim f As Integer = g_kids(g_nodes(vn).firstChild + fi2)
+          cg_fields(cg_fieldCount) = CgFieldInfo With (
+            namePos = g_nodes(f).intVal,
+            nameLen = g_nodes(f).lenVal,
+            ty = CgResolveTypeEx(g_nodes(f).tyKind, g_nodes(f).tyInnerKind, g_nodes(f).tyArrLen, g_nodes(f).tyNamePos, g_nodes(f).tyNameLen)
+          )
+          cg_fieldCount = cg_fieldCount + 1
+        End For
+        cg_unionVars(cg_unionVarCount) = CgUnionVar With (
+          namePos = g_nodes(vn).intVal,
+          nameLen = g_nodes(vn).lenVal,
+          fieldStart = fs,
+          fieldCount = fc
+        )
+        cg_unionVarCount = cg_unionVarCount + 1
+      End For
+      cg_unions(ui).varStart = vs
+      cg_unions(ui).varCount = vc
+      ui = ui + 1
+    End If
   End For
 
   ' Pass 1c: Register Globals, Functions, and ExternDecls
@@ -4370,7 +4948,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
       Dim gvPriv As Integer = 0
       Dim gvVol As Integer = 0
       Dim gvHasAddr As Integer = 0
-      Dim gvAddr As Integer = 0
+      Dim gvAddr As Long = 0
       If g_nodes(d).op = 1 Then
         gvPub = 1
       End If
@@ -4382,7 +4960,7 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
       End If
       If g_nodes(d).right >= 0 Then
         gvHasAddr = 1
-        gvAddr = g_nodes(g_nodes(d).right).intVal
+        gvAddr = g_nodes(g_nodes(d).right).longVal
       End If
       cg_globals(cg_globalCount) = CgGlobalInfo With (
         namePos = g_nodes(d).intVal,
@@ -4547,6 +5125,30 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
       j = j + 1
     End While
     fprintf(cg_out, " }\n")
+  End For
+  ' Emit tagged union layouts (%union.<Name> = type { i32 [, [N x i{8|16|32|64}]] })
+  For i = 0 To cg_unionCount - 1 Do
+    Dim maxSz = 0, maxAl = 1 As Integer
+    CgComputeUnionLayout(i, ByRef maxSz, ByRef maxAl)
+    fprintf(cg_out, "%%union.")
+    CgEmitSlice(cg_unions(i).namePos, cg_unions(i).nameLen)
+    If maxSz = 0 Then
+      fprintf(cg_out, " = type { i32 }\n")
+    Else
+      If maxAl >= 8 Then
+        fprintf(cg_out, " = type { i32, [%d x i64] }\n", (maxSz + 7) / 8)
+      Else
+        If maxAl >= 4 Then
+          fprintf(cg_out, " = type { i32, [%d x i32] }\n", (maxSz + 3) / 4)
+        Else
+          If maxAl >= 2 Then
+            fprintf(cg_out, " = type { i32, [%d x i16] }\n", (maxSz + 1) / 2)
+          Else
+            fprintf(cg_out, " = type { i32, [%d x i8] }\n", maxSz)
+          End If
+        End If
+      End If
+    End If
   End For
   ' Emit Async frame struct layouts
   For i = 0 To cg_funcCount - 1 Do

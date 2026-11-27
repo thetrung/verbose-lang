@@ -65,7 +65,7 @@ Private Sub PrTypeGen(tk, innerKind, arrLen, nPos, nLen, taStart, taCount As Int
         PrTypeGen(innerKind, TyNothing, 0, nPos, nLen, taStart, taCount)
         Printf(")")
       End If
-    Case TyStruct, TyEnum Then
+    Case TyStruct, TyEnum, TyUnion Then
       PrSlice(nPos, nLen)
       PrGenArgs(taStart, taCount)
     Case _ Then Printf("Unknown")
@@ -114,7 +114,7 @@ Private Sub PrExpr(id As Integer)
   End If
   Dim k As Integer = g_nodes(id).kind
   If k = NdIntLit Then
-    Printf("%d", g_nodes(id).intVal)
+    Printf("%lld", g_nodes(id).longVal)
     Return
   End If
   If k = NdFloatLit Then
@@ -321,6 +321,20 @@ Private Sub PrExpr(id As Integer)
       PrExpr(g_kids(g_nodes(id).firstChild + i))
       i = i + 1
     End While
+    Printf(")")
+    Return
+  End If
+  If k = NdUnionInit Then
+    PrExpr(g_nodes(id).left)
+    Printf(".")
+    PrSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
+    Printf("(")
+    For i = 0 To g_nodes(id).childCount - 1 Do
+      If i > 0 Then
+        Printf(", ")
+      End If
+      PrExpr(g_kids(g_nodes(id).firstChild + i))
+    End For
     Printf(")")
     Return
   End If
@@ -554,6 +568,32 @@ Public Sub PrintProgramAst(progRoot As Integer)
         j = j + 1
       End While
       Printf("End Enum\n\n")
+    End If
+    If dk = NdUnionDef Then
+      Printf("Union ")
+      PrSlice(g_nodes(d).intVal, g_nodes(d).lenVal)
+      PrGenParams(g_nodes(d).genStart, g_nodes(d).genCount)
+      Printf("\n")
+      For j = 0 To g_nodes(d).childCount - 1 Do
+        Dim v As Integer = g_kids(g_nodes(d).firstChild + j)
+        Printf("  Case ")
+        PrSlice(g_nodes(v).intVal, g_nodes(v).lenVal)
+        If g_nodes(v).childCount > 0 Then
+          Printf("(")
+          For pi = 0 To g_nodes(v).childCount - 1 Do
+            If pi > 0 Then
+              Printf(", ")
+            End If
+            Dim fp As Integer = g_kids(g_nodes(v).firstChild + pi)
+            PrSlice(g_nodes(fp).intVal, g_nodes(fp).lenVal)
+            Printf(" As ")
+            PrTypeGen(g_nodes(fp).tyKind, g_nodes(fp).tyInnerKind, g_nodes(fp).tyArrLen, g_nodes(fp).tyNamePos, g_nodes(fp).tyNameLen, g_nodes(fp).tyArgStart, g_nodes(fp).tyArgCount)
+          End For
+          Printf(")")
+        End If
+        Printf("\n")
+      End For
+      Printf("End Union\n\n")
     End If
     If dk = NdStructDef Then
       Printf("Structure ")

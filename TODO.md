@@ -8,9 +8,7 @@ Active roadmap and future extensions for **VerBose-Lang**. Completed tasks and m
 - [x] Completed in `v0.8.0` and archived in **[LOGS.md](LOGS.md)**.
 
 ### Milestone 2: Tagged Unions / Sum Types & `Result`-Style Error Handling
-- [ ] Add algebraic data types / tagged unions (e.g., `Union` / payload-carrying `Enum` variants) with zero-GC inline tagged memory layout.
-- [ ] Extend `Match ... With` to destructure tagged union variants with bindings and compile-time exhaustiveness checking.
-- [ ] Provide ergonomic `Option(Of T)` / `Result(Of T, E)` patterns (building on Milestone 1 generics) to replace manual sentinel return codes.
+- [x] Completed in `v0.9.0` and archived in **[LOGS.md](LOGS.md)**.
 
 ### Milestone 3: Deterministic `Defer` Statement
 - [ ] Add lexical-scope `Defer <stmt>` (executed in LIFO order on normal block exit, `Return`, `Break`, and `Continue`) for deterministic `HeapFree`, `ArenaDestroy`, and file/handle cleanup with zero GC or hidden RAII.
@@ -24,11 +22,6 @@ Active roadmap and future extensions for **VerBose-Lang**. Completed tasks and m
 - [ ] Emit LLVM DWARF debug metadata (`!DICompileUnit`, `!DISubprogram`, `!DILocation`) behind `-g` / `--debug` so GDB/LLDB show `.vb` file names, line numbers, and readable stack traces.
 - [ ] Add pure-VerBose synchronization & concurrency primitives in `std/sync.vb` (mutexes, atomics, spinlocks/barriers) beyond 1:1 `Async`/`Await` tasks.
 - [ ] Clarify and improve string ownership ergonomics (arena-backed string formatting/concatenation helpers alongside existing `calloc`-backed `&`/`$"..."`).
-
-### Compiler Literal & Float Quality-of-Life Fixes (Discovered building `std/json.vb`)
-- [ ] **64-bit integer literals (`AstNode.intVal As Long`)**: Widen integer literal parsing and AST storage from 32-bit `Integer` to 64-bit `Long` so literals `> 2^31 - 1` (e.g. `9223372036854775807`, `1000000000000`) do not silently truncate.
-- [ ] **Scientific notation float literals**: Support `e`/`E` exponents (`1.0e-4`, `1.7976931348623157e308`) in `src/lexer.vb`.
-- [ ] **IEEE-754 unordered float `<>`**: Emit `fcmp une` (instead of `fcmp one`) for floating-point `<>` in `src/codegen.vb` so `NaN <> NaN` evaluates to `True` per IEEE-754.
 
 ## Extensions
 

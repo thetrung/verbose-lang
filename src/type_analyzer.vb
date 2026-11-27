@@ -15,6 +15,14 @@ Structure TaStructInfo
   Dim namePos, nameLen, fieldStart, fieldCount, isPrivate, modId As Integer
 End Structure
 
+Structure TaUnionInfo
+  Dim namePos, nameLen, varStart, varCount, isPrivate, modId As Integer
+End Structure
+
+Structure TaUnionVar
+  Dim namePos, nameLen, fieldStart, fieldCount As Integer
+End Structure
+
 Structure TaFieldInfo
   Dim namePos, nameLen As Integer, ty As TypeInfo
 End Structure
@@ -47,12 +55,13 @@ End Structure
 
 Private Static ta_enums() As TaEnumInfo, ta_enumMems() As TaEnumMem
 Private Static ta_structs() As TaStructInfo, ta_fields() As TaFieldInfo
+Private Static ta_unions() As TaUnionInfo, ta_unionVars() As TaUnionVar
 Private Static ta_globals() As TaGlobalInfo, ta_funcs() As TaFuncInfo
 Private Static ta_ops() As TaOpInfo
 Private Static ta_params() As TaParamInfo, ta_locals() As TaLocalSym
 Private Static ta_labels(128) As TaLabelInfo
 Private Static ta_withTys(16) As TypeInfo
-Private Static ta_enumCount, ta_enumMemCount, ta_structCount, ta_fieldCount, ta_globalCount, ta_funcCount, ta_opCount, ta_paramCount, ta_localCount, ta_labelCount, ta_withDepth, ta_loopDepth, ta_curModId, ta_errCount As Integer = 0
+Private Static ta_enumCount, ta_enumMemCount, ta_structCount, ta_fieldCount, ta_unionCount, ta_unionVarCount, ta_globalCount, ta_funcCount, ta_opCount, ta_paramCount, ta_localCount, ta_labelCount, ta_withDepth, ta_loopDepth, ta_curModId, ta_errCount As Integer = 0
 Private Static ta_altModId = -1, ta_ptrSize = 8, ta_curFrameReported = 0 As Integer
 Private Static ta_maxStackBytes = 65536, ta_curFrameBytes = 0 As Long
 Private Static ta_curRetTy As TypeInfo
@@ -71,6 +80,44 @@ Public Sub TaSetMaxStack(bytes As Long)
   If bytes >= 0 Then
     ta_maxStackBytes = bytes
   End If
+End Sub
+
+Private Sub TaUnionLayout(uIdx As Integer, ByRef outMaxPaySz As Long, ByRef outMaxPayAl As Integer)
+  outMaxPaySz = 0
+  outMaxPayAl = 1
+  If (uIdx < 0) Or (uIdx >= ta_unionCount) Then
+    Return
+  End If
+  Dim vst = ta_unions(uIdx).varStart, vcnt = ta_unions(uIdx).varCount As Integer
+  For vi = 0 To vcnt - 1 Do
+    Dim fst = ta_unionVars(vst + vi).fieldStart, fcnt = ta_unionVars(vst + vi).fieldCount As Integer
+    If fcnt > 0 Then
+      Dim off As Long = 0
+      Dim vAl As Integer = 1
+      For fi = 0 To fcnt - 1 Do
+        Dim fty As TypeInfo = ta_fields(fst + fi).ty
+        Dim fal As Integer = TaTypeAlign(fty)
+        If fal > vAl Then
+          vAl = fal
+        End If
+        Dim rem As Long = off Mod Long(fal)
+        If rem <> 0 Then
+          off = off + (Long(fal) - rem)
+        End If
+        off = off + TaTypeSize(fty)
+      End For
+      Dim remEnd As Long = off Mod Long(vAl)
+      If remEnd <> 0 Then
+        off = off + (Long(vAl) - remEnd)
+      End If
+      If off > outMaxPaySz Then
+        outMaxPaySz = off
+      End If
+      If vAl > outMaxPayAl Then
+        outMaxPayAl = vAl
+      End If
+    End If
+  End For
 End Sub
 
 Private Function TaTypeAlign(ty As TypeInfo) As Integer
@@ -97,6 +144,14 @@ Private Function TaTypeAlign(ty As TypeInfo) As Integer
           maxAl = fal
         End If
       End For
+      Return maxAl
+    Case TyUnion Then
+      Dim maxSz As Long = 0
+      Dim maxAl As Integer = 1
+      TaUnionLayout(ty.typeIdx, ByRef maxSz, ByRef maxAl)
+      If maxAl < 4 Then
+        Return 4
+      End If
       Return maxAl
     Case _ Then Return 4
   End Match
@@ -141,6 +196,35 @@ Private Function TaTypeSize(ty As TypeInfo) As Long
         End If
         If off = 0 Then
           off = 1
+        End If
+        elemSz = off
+      End If
+    Case TyUnion Then
+      Dim maxPaySz As Long = 0
+      Dim maxPayAl As Integer = 1
+      TaUnionLayout(ty.typeIdx, ByRef maxPaySz, ByRef maxPayAl)
+      If maxPaySz = 0 Then
+        elemSz = 4
+      Else
+        Dim pAl As Long = Long(maxPayAl)
+        Dim off As Long = 4
+        Dim rem1 As Long = off Mod pAl
+        If rem1 <> 0 Then
+          off = off + (pAl - rem1)
+        End If
+        Dim pSz As Long = maxPaySz
+        Dim rem2 As Long = pSz Mod pAl
+        If rem2 <> 0 Then
+          pSz = pSz + (pAl - rem2)
+        End If
+        off = off + pSz
+        Dim uAl As Long = pAl
+        If uAl < 4 Then
+          uAl = 4
+        End If
+        Dim rem3 As Long = off Mod uAl
+        If rem3 <> 0 Then
+          off = off + (uAl - rem3)
         End If
         elemSz = off
       End If
@@ -210,7 +294,7 @@ Private Sub TaPrintType(ty As TypeInfo)
         TaPrintType(innerT)
         Printf(")")
       End If
-    Case TyStruct, TyEnum Then TaPrintSlice(ty.namePos, ty.nameLen)
+    Case TyStruct, TyEnum, TyUnion Then TaPrintSlice(ty.namePos, ty.nameLen)
     Case _ Then Printf("Unknown")
   End Match
   If ty.arrLen > 0 Then
@@ -268,6 +352,54 @@ Private Function TaFindUnqualEnumMem(pos, slen As Integer, ByRef outEnumIdx As I
     If (ta_enums(i).isPrivate = 0) Or (ta_enums(i).modId = ta_curModId) Then
       If TaHasEnumMem(i, pos, slen) Then
         outEnumIdx = i
+        matches = matches + 1
+      End If
+    End If
+  End For
+  Return matches
+End Function
+
+Private Function TaFindUnion(pos, slen As Integer) As Integer
+  For i = 0 To ta_unionCount - 1 Do
+    If (ta_unions(i).isPrivate = 1) And ((ta_unions(i).modId = ta_curModId) Or ((ta_altModId >= 0) And (ta_unions(i).modId = ta_altModId))) And SlicesEqual(ta_unions(i).namePos, ta_unions(i).nameLen, pos, slen) Then
+      Return i
+    End If
+  End For
+  For i = 0 To ta_unionCount - 1 Do
+    If (ta_unions(i).isPrivate = 0) And SlicesEqual(ta_unions(i).namePos, ta_unions(i).nameLen, pos, slen) Then
+      Return i
+    End If
+  End For
+  Return -1
+End Function
+
+Private Function TaHasPrivateUnionOther(pos, slen As Integer) As Boolean
+  For i = 0 To ta_unionCount - 1 Do
+    If (ta_unions(i).isPrivate = 1) And (ta_unions(i).modId <> ta_curModId) And SlicesEqual(ta_unions(i).namePos, ta_unions(i).nameLen, pos, slen) Then
+      Return True
+    End If
+  End For
+  Return False
+End Function
+
+Private Function TaFindUnionVariant(uIdx, vPos, vLen As Integer) As Integer
+  Dim st = ta_unions(uIdx).varStart, cnt = ta_unions(uIdx).varCount As Integer
+  For i = 0 To cnt - 1 Do
+    If SlicesEqual(ta_unionVars(st + i).namePos, ta_unionVars(st + i).nameLen, vPos, vLen) Then
+      Return i
+    End If
+  End For
+  Return -1
+End Function
+
+Private Function TaFindUnqualUnionVariant(vPos, vLen As Integer, ByRef outUIdx, outVIdx As Integer) As Integer
+  Dim matches As Integer = 0
+  For i = 0 To ta_unionCount - 1 Do
+    If (ta_unions(i).isPrivate = 0) Or (ta_unions(i).modId = ta_curModId) Then
+      Dim vi As Integer = TaFindUnionVariant(i, vPos, vLen)
+      If vi >= 0 Then
+        outUIdx = i
+        outVIdx = vi
         matches = matches + 1
       End If
     End If
@@ -396,8 +528,14 @@ Private Function TaResolveTypeEx(rawKind As Integer, rawInnerKind As Integer, ar
       res.kind = TyEnum
       res.typeIdx = eIdx
     Else
-      Dim sIdx As Integer = TaFindStruct(nPos, nLen)
-      res.typeIdx = sIdx
+      Dim uIdx As Integer = TaFindUnion(nPos, nLen)
+      If uIdx >= 0 Then
+        res.kind = TyUnion
+        res.typeIdx = uIdx
+      Else
+        Dim sIdx As Integer = TaFindStruct(nPos, nLen)
+        res.typeIdx = sIdx
+      End If
     End If
   Else
     If (rawKind = TyTask) And (rawInnerKind = TyStruct) Then
@@ -406,8 +544,14 @@ Private Function TaResolveTypeEx(rawKind As Integer, rawInnerKind As Integer, ar
         res.innerKind = TyEnum
         res.typeIdx = eIdx
       Else
-        Dim sIdx As Integer = TaFindStruct(nPos, nLen)
-        res.typeIdx = sIdx
+        Dim uIdx As Integer = TaFindUnion(nPos, nLen)
+        If uIdx >= 0 Then
+          res.innerKind = TyUnion
+          res.typeIdx = uIdx
+        Else
+          Dim sIdx As Integer = TaFindStruct(nPos, nLen)
+          res.typeIdx = sIdx
+        End If
       End If
     End If
   End If
@@ -423,9 +567,9 @@ Private Sub TaValidateType(ty As TypeInfo)
     Printf(MSG_TA_ARRAY_SIZE_POS)
     ta_errCount = ta_errCount + 1
   End If
-  Dim badStruct As Boolean = ((ty.kind = TyStruct) And (ty.typeIdx < 0)) Or ((ty.kind = TyTask) And (ty.innerKind = TyStruct) And (ty.typeIdx < 0))
+  Dim badStruct As Boolean = (((ty.kind = TyStruct) Or (ty.kind = TyUnion)) And (ty.typeIdx < 0)) Or ((ty.kind = TyTask) And ((ty.innerKind = TyStruct) Or (ty.innerKind = TyUnion)) And (ty.typeIdx < 0))
   If badStruct Then
-    If TaHasPrivateStructOther(ty.namePos, ty.nameLen) Or TaHasPrivateEnumOther(ty.namePos, ty.nameLen) Then
+    If TaHasPrivateStructOther(ty.namePos, ty.nameLen) Or TaHasPrivateEnumOther(ty.namePos, ty.nameLen) Or TaHasPrivateUnionOther(ty.namePos, ty.nameLen) Then
       Printf(MSG_TA_PRIVATE_TYPE)
       TaPrintSlice(ty.namePos, ty.nameLen)
       Printf(MSG_TA_FROM_MOD_SUFFIX)
@@ -477,7 +621,7 @@ Private Function TaBaseTypesEqual(t1 As TypeInfo, t2 As TypeInfo) As Boolean
   If k1 <> k2 Then
     Return False
   End If
-  If k1 = TyStruct Then
+  If (k1 = TyStruct) Or (k1 = TyUnion) Then
     Return t1.typeIdx = t2.typeIdx
   End If
   If k1 = TyTask Then
@@ -486,7 +630,7 @@ Private Function TaBaseTypesEqual(t1 As TypeInfo, t2 As TypeInfo) As Boolean
     If ik1 <> ik2 Then
       Return False
     End If
-    If ik1 = TyStruct Then
+    If (ik1 = TyStruct) Or (ik1 = TyUnion) Then
       Return t1.typeIdx = t2.typeIdx
     End If
     Return True
@@ -528,13 +672,13 @@ Private Function TaIsAssignable(target As TypeInfo, actual As TypeInfo, rhsNode 
     If (actual.arrLen <> 0) And TaBaseTypesEqual(target, actual) Then
       Return True
     End If
-    If (rhsNode >= 0) And (g_nodes(rhsNode).kind = NdIntLit) And (g_nodes(rhsNode).intVal = 0) Then
+    If (rhsNode >= 0) And (g_nodes(rhsNode).kind = NdIntLit) And (g_nodes(rhsNode).longVal = 0) Then
       Return True
     End If
   End If
   ' Task(T) <- literal 0 (null handle)
   If (target.arrLen = 0) And (target.kind = TyTask) Then
-    If (rhsNode >= 0) And (g_nodes(rhsNode).kind = NdIntLit) And (g_nodes(rhsNode).intVal = 0) Then
+    If (rhsNode >= 0) And (g_nodes(rhsNode).kind = NdIntLit) And (g_nodes(rhsNode).longVal = 0) Then
       Return True
     End If
   End If
@@ -680,7 +824,7 @@ Private Function TaIsVarIndexCall(callId As Integer) As Boolean
   If (vTy.arrLen <> 0) Or (vTy.kind = TyPointer) Then
     Return True
   End If
-  If (TaFindFunc(nPos, nLen) < 0) And (TaFindStruct(nPos, nLen) < 0) Then
+  If (TaFindFunc(nPos, nLen) < 0) And (TaFindStruct(nPos, nLen) < 0) And (TaFindUnion(nPos, nLen) < 0) Then
     Return True
   End If
   Return False
@@ -696,8 +840,8 @@ Private Function TaIsLValue(id As Integer) As Boolean
     If TaLookupVar(g_nodes(id).intVal, g_nodes(id).lenVal, ByRef tmpTy) Then
       Return True
     End If
-    Dim dummyE As Integer = -1
-    If (TaFindEnum(g_nodes(id).intVal, g_nodes(id).lenVal) >= 0) Or (TaFindUnqualEnumMem(g_nodes(id).intVal, g_nodes(id).lenVal, ByRef dummyE) > 0) Then
+    Dim dummyE = -1, dummyU = -1, dummyV = -1 As Integer
+    If (TaFindEnum(g_nodes(id).intVal, g_nodes(id).lenVal) >= 0) Or (TaFindUnqualEnumMem(g_nodes(id).intVal, g_nodes(id).lenVal, ByRef dummyE) > 0) Or (TaFindUnion(g_nodes(id).intVal, g_nodes(id).lenVal) >= 0) Or (TaFindUnqualUnionVariant(g_nodes(id).intVal, g_nodes(id).lenVal, ByRef dummyU, ByRef dummyV) > 0) Then
       Return False
     End If
     Return True
@@ -718,7 +862,7 @@ Private Function TaIsConstExpr(ty As TypeInfo, exprId As Integer) As Boolean
   Dim k As Integer = g_nodes(exprId).kind
   ' Pointer or unsized slice initialized to integer address / 0, StringLit, or AddressOf(func/global)
   If ((ty.arrLen = 0) And (ty.kind = TyPointer)) Or (ty.arrLen = -1) Then
-    If (k = NdIntLit) And ((g_nodes(exprId).intVal = 0) Or ((ty.arrLen = 0) And (ty.kind = TyPointer))) Then
+    If (k = NdIntLit) And ((g_nodes(exprId).longVal = 0) Or ((ty.arrLen = 0) And (ty.kind = TyPointer))) Then
       Return True
     End If
     If (ty.arrLen = 0) And (k = NdStrLit) Then
@@ -735,7 +879,7 @@ Private Function TaIsConstExpr(ty As TypeInfo, exprId As Integer) As Boolean
     Return False
   End If
   If (ty.arrLen = 0) And (ty.kind = TyTask) Then
-    Return (k = NdIntLit) And (g_nodes(exprId).intVal = 0)
+    Return (k = NdIntLit) And (g_nodes(exprId).longVal = 0)
   End If
   If TaIsIntType(ty) Then
     If TaIsIntLitNode(exprId) Then
@@ -831,7 +975,7 @@ Private Function TaTryEvalConstInt(exprId As Integer, ByRef outVal As Long) As B
   End If
   Dim k As Integer = g_nodes(exprId).kind
   If k = NdIntLit Then
-    outVal = Long(g_nodes(exprId).intVal)
+    outVal = g_nodes(exprId).longVal
     Return True
   End If
   If k = NdNeg Then
@@ -1299,6 +1443,28 @@ Private Function TaTypeOfCall(id As Integer) As TypeInfo
     Return TaMakePrim(TyInt)
   End If
 
+  Dim uIdx = -1, vIdx = -1 As Integer
+  Dim uMatch As Integer = TaFindUnqualUnionVariant(nPos, nLen, ByRef uIdx, ByRef vIdx)
+  If uMatch = 1 Then
+    Dim argIds(64) As Integer
+    For ai = 0 To aCount - 1 Do
+      Dim aNode As Integer = g_kids(aStart + ai)
+      If g_nodes(aNode).op = 1 Then
+        Printf(MSG_TA_UNION_BYREF)
+        ta_errCount = ta_errCount + 1
+      End If
+      argIds(ai) = g_nodes(aNode).left
+    End For
+    Return TaCheckUnionConstruct(uIdx, nPos, nLen, argIds, aCount)
+  End If
+  If uMatch > 1 Then
+    Printf("Semantic Type Error: Ambiguous union variant '")
+    TaPrintSlice(nPos, nLen)
+    Printf("' (qualify with UnionName.Variant)\n")
+    ta_errCount = ta_errCount + 1
+    Return TaMakePrim(TyInt)
+  End If
+
   If TaHasPrivateFuncOther(nPos, nLen) Then
     Printf("Semantic Type Error: Cannot access Private function '")
     TaPrintSlice(nPos, nLen)
@@ -1314,6 +1480,48 @@ Private Function TaTypeOfCall(id As Integer) As TypeInfo
   Return TaMakePrim(TyInt)
 End Function
 
+Private Function TaCheckUnionConstruct(uIdx, vPos, vLen As Integer, argIds() As Integer, argCnt As Integer) As TypeInfo
+  Dim uTy As TypeInfo With ( kind = TyUnion, typeIdx = uIdx, arrLen = 0, namePos = ta_unions(uIdx).namePos, nameLen = ta_unions(uIdx).nameLen )
+  Dim vIdx As Integer = TaFindUnionVariant(uIdx, vPos, vLen)
+  If vIdx < 0 Then
+    Printf("Semantic Type Error: Union '")
+    TaPrintSlice(ta_unions(uIdx).namePos, ta_unions(uIdx).nameLen)
+    Printf("' has no variant named '")
+    TaPrintSlice(vPos, vLen)
+    Printf("'\n")
+    ta_errCount = ta_errCount + 1
+    Return uTy
+  End If
+  Dim vInfo As TaUnionVar = ta_unionVars(ta_unions(uIdx).varStart + vIdx)
+  If argCnt <> vInfo.fieldCount Then
+    Printf("Semantic Type Error: Union variant '")
+    TaPrintSlice(ta_unions(uIdx).namePos, ta_unions(uIdx).nameLen)
+    Printf(".")
+    TaPrintSlice(vPos, vLen)
+    Printf("' expects %d argument(s), got %d\n", vInfo.fieldCount, argCnt)
+    ta_errCount = ta_errCount + 1
+  End If
+  Dim lim As Integer = argCnt
+  If vInfo.fieldCount < lim Then
+    lim = vInfo.fieldCount
+  End If
+  For i = 0 To lim - 1 Do
+    Dim aTy As TypeInfo = TaTypeOfExpr(argIds(i))
+    Dim fTy As TypeInfo = ta_fields(vInfo.fieldStart + i).ty
+    If Not TaIsAssignable(fTy, aTy, argIds(i)) Then
+      Printf("Semantic Type Error: Type mismatch for argument %d of union variant '", i + 1)
+      TaPrintSlice(vPos, vLen)
+      Printf("': expected ")
+      TaPrintType(fTy)
+      Printf(", got ")
+      TaPrintType(aTy)
+      Printf("\n")
+      ta_errCount = ta_errCount + 1
+    End If
+  End For
+  Return uTy
+End Function
+
 Private Function TaTypeOfExpr(id As Integer) As TypeInfo
   If id < 0 Then
     Return TaMakePrim(TyInt)
@@ -1321,6 +1529,10 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
   Dim k As Integer = g_nodes(id).kind
 
   If k = NdIntLit Then
+    Dim v As Long = g_nodes(id).longVal
+    If (v > 2147483647) Or (v < 0) Then
+      Return TaMakePrim(TyLong)
+    End If
     Return TaMakePrim(TyInt)
   End If
   If k = NdFloatLit Then
@@ -1381,6 +1593,19 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
       ta_errCount = ta_errCount + 1
       Return TaMakePrim(TyInt)
     End If
+    Dim uuIdx = -1, uvIdx = -1 As Integer
+    Dim uvCnt As Integer = TaFindUnqualUnionVariant(nPos, nLen, ByRef uuIdx, ByRef uvIdx)
+    If uvCnt = 1 Then
+      Dim emptyArgs(1) As Integer
+      Return TaCheckUnionConstruct(uuIdx, nPos, nLen, emptyArgs, 0)
+    End If
+    If uvCnt > 1 Then
+      Printf("Semantic Type Error: Ambiguous union variant '")
+      TaPrintSlice(nPos, nLen)
+      Printf("' (qualify with UnionName.Variant)\n")
+      ta_errCount = ta_errCount + 1
+      Return TaMakePrim(TyInt)
+    End If
     If TaHasPrivateGlobalOther(nPos, nLen) Or TaHasPrivateFuncOther(nPos, nLen) Then
       Printf("Semantic Type Error: Cannot access Private symbol '")
       TaPrintSlice(nPos, nLen)
@@ -1397,7 +1622,7 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
 
   If k = NdNot Then
     Dim t As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
-    If (t.arrLen = 0) And (t.kind = TyStruct) Then
+    If (t.arrLen = 0) And ((t.kind = TyStruct) Or (t.kind = TyUnion)) Then
       Dim uoi As Integer = TaFindUnaryOp(TkNot, t)
       If uoi >= 0 Then
         Return ta_ops(uoi).retTy
@@ -1413,7 +1638,7 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
 
   If k = NdNeg Then
     Dim t As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
-    If (t.arrLen = 0) And (t.kind = TyStruct) Then
+    If (t.arrLen = 0) And ((t.kind = TyStruct) Or (t.kind = TyUnion)) Then
       Dim uoi As Integer = TaFindUnaryOp(TkMinus, t)
       If uoi >= 0 Then
         Return ta_ops(uoi).retTy
@@ -1433,7 +1658,7 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
     Dim op As Integer = g_nodes(id).op
     Dim t1 As TypeInfo = TaTypeOfExpr(e1)
     Dim t2 As TypeInfo = TaTypeOfExpr(e2)
-    Dim hasStructOp As Boolean = ((t1.arrLen = 0) And (t1.kind = TyStruct)) Or ((t2.arrLen = 0) And (t2.kind = TyStruct))
+    Dim hasStructOp As Boolean = ((t1.arrLen = 0) And ((t1.kind = TyStruct) Or (t1.kind = TyUnion))) Or ((t2.arrLen = 0) And ((t2.kind = TyStruct) Or (t2.kind = TyUnion)))
     If hasStructOp Then
       Dim boi As Integer = TaFindBinOp(op, t1, e1, t2, e2)
       If boi >= 0 Then
@@ -1525,6 +1750,14 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
         ta_errCount = ta_errCount + 1
         Return TaMakePrim(TyInt)
       End If
+      Dim dummyVarTy As TypeInfo
+      If Not TaLookupVar(g_nodes(baseId).intVal, g_nodes(baseId).lenVal, ByRef dummyVarTy) Then
+        Dim uIdx As Integer = TaFindUnion(g_nodes(baseId).intVal, g_nodes(baseId).lenVal)
+        If uIdx >= 0 Then
+          Dim emptyArgs(1) As Integer
+          Return TaCheckUnionConstruct(uIdx, fPos, fLen, emptyArgs, 0)
+        End If
+      End If
     End If
     Dim baseTy As TypeInfo = TaTypeOfExpr(baseId)
     If (baseTy.arrLen = 0) And (baseTy.kind = TyStruct) And (baseTy.typeIdx >= 0) Then
@@ -1549,8 +1782,53 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
   End If
 
   If k = NdIndexAccess Then
+    Dim faNode As Integer = g_nodes(id).left
+    If (faNode >= 0) And (g_nodes(faNode).kind = NdFieldAccess) Then
+      Dim baseVar As Integer = g_nodes(faNode).left
+      If (baseVar >= 0) And (g_nodes(baseVar).kind = NdVar) Then
+        Dim dummyVarTy As TypeInfo
+        If Not TaLookupVar(g_nodes(baseVar).intVal, g_nodes(baseVar).lenVal, ByRef dummyVarTy) Then
+          Dim uIdx As Integer = TaFindUnion(g_nodes(baseVar).intVal, g_nodes(baseVar).lenVal)
+          If uIdx >= 0 Then
+            Dim oneArg(1) As Integer
+            oneArg(0) = g_nodes(id).right
+            Return TaCheckUnionConstruct(uIdx, g_nodes(faNode).intVal, g_nodes(faNode).lenVal, oneArg, 1)
+          End If
+        End If
+      End If
+    End If
     Dim baseTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
     Return TaCheckIndex(baseTy, g_nodes(id).right)
+  End If
+
+  If k = NdUnionInit Then
+    Dim baseNode As Integer = g_nodes(id).left
+    If (baseNode >= 0) And (g_nodes(baseNode).kind = NdVar) Then
+      Dim uIdx As Integer = TaFindUnion(g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal)
+      If uIdx >= 0 Then
+        Dim argIds(64) As Integer
+        Dim aCnt As Integer = g_nodes(id).childCount
+        For i = 0 To aCnt - 1 Do
+          argIds(i) = g_kids(g_nodes(id).firstChild + i)
+        End For
+        Return TaCheckUnionConstruct(uIdx, g_nodes(id).intVal, g_nodes(id).lenVal, argIds, aCnt)
+      End If
+      If TaHasPrivateUnionOther(g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal) Then
+        Printf(MSG_TA_PRIVATE_TYPE)
+        TaPrintSlice(g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal)
+        Printf(MSG_TA_FROM_MOD_SUFFIX)
+        ta_errCount = ta_errCount + 1
+        Return TaMakePrim(TyInt)
+      End If
+      Printf("Semantic Type Error: Unknown Union type '")
+      TaPrintSlice(g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal)
+      Printf("'\n")
+      ta_errCount = ta_errCount + 1
+      Return TaMakePrim(TyInt)
+    End If
+    Printf("Semantic Type Error: Invalid Union variant constructor target\n")
+    ta_errCount = ta_errCount + 1
+    Return TaMakePrim(TyInt)
   End If
 
   If k = NdArrayLit Then
@@ -1748,8 +2026,8 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
         If TaLookupVar(vp, vl, ByRef dummyTy) Or (TaFindFunc(vp, vl) >= 0) Then
           Return TaMakePrim(TyPointer)
         End If
-        Dim dummyEnumIdx As Integer = -1
-        If (TaFindEnum(vp, vl) >= 0) Or (TaFindUnqualEnumMem(vp, vl, ByRef dummyEnumIdx) > 0) Then
+        Dim dummyEnumIdx = -1, dummyU = -1, dummyV = -1 As Integer
+        If (TaFindEnum(vp, vl) >= 0) Or (TaFindUnqualEnumMem(vp, vl, ByRef dummyEnumIdx) > 0) Or (TaFindUnion(vp, vl) >= 0) Or (TaFindUnqualUnionVariant(vp, vl, ByRef dummyU, ByRef dummyV) > 0) Then
           Printf(MSG_TA_ADDRESSOF_TARGET)
           ta_errCount = ta_errCount + 1
           Return TaMakePrim(TyPointer)
@@ -1760,7 +2038,7 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
       If tk = NdFieldAccess Then
         Dim baseId As Integer = g_nodes(tgt).left
         If (baseId >= 0) And (g_nodes(baseId).kind = NdVar) Then
-          If TaFindEnum(g_nodes(baseId).intVal, g_nodes(baseId).lenVal) >= 0 Then
+          If (TaFindEnum(g_nodes(baseId).intVal, g_nodes(baseId).lenVal) >= 0) Or (TaFindUnion(g_nodes(baseId).intVal, g_nodes(baseId).lenVal) >= 0) Then
             Printf(MSG_TA_ADDRESSOF_TARGET)
             ta_errCount = ta_errCount + 1
             Return TaMakePrim(TyPointer)
@@ -2255,6 +2533,217 @@ Private Sub TaCheckStmt(id As Integer)
 
   If k = NdMatch Then
     Dim targetTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
+    If (g_nodes(id).op = 0) And (targetTy.arrLen = 0) And (targetTy.kind = TyUnion) And (targetTy.typeIdx >= 0) Then
+      Dim uIdx As Integer = targetTy.typeIdx
+      Dim vCount As Integer = ta_unions(uIdx).varCount
+      Dim covered(128) As Integer
+      For ci = 0 To 127 Do
+        covered(ci) = 0
+      End For
+      Dim hasWild As Boolean = False
+
+      For bi = 0 To g_nodes(id).childCount - 1 Do
+        Dim arm As Integer = g_kids(g_nodes(id).firstChild + bi)
+        Dim hasGuard As Boolean = (g_nodes(arm).left >= 0)
+        Dim savedLocals As Integer = ta_localCount
+
+        If g_nodes(arm).op = 1 Then
+          If Not hasGuard Then
+            hasWild = True
+          End If
+        Else
+          Dim pCount As Integer = g_nodes(arm).extraCount
+          For vi = 0 To pCount - 1 Do
+            Dim pe As Integer = g_kids(g_nodes(arm).extraStart + vi)
+            Dim pk As Integer = g_nodes(pe).kind
+            Dim qPos = 0, qLen = 0, vPos = 0, vLen = 0 As Integer
+            Dim bindNodes(32) As Integer
+            Dim bindCnt As Integer = 0
+            Dim patOk As Boolean = True
+
+            If pk = NdVar Then
+              vPos = g_nodes(pe).intVal
+              vLen = g_nodes(pe).lenVal
+            Else
+              If pk = NdCall Then
+                vPos = g_nodes(pe).intVal
+                vLen = g_nodes(pe).lenVal
+                Dim ac As Integer = g_nodes(pe).childCount
+                For ai = 0 To ac - 1 Do
+                  Dim aNode As Integer = g_kids(g_nodes(pe).firstChild + ai)
+                  If g_nodes(aNode).op = 1 Then
+                    Printf("Semantic Type Error: Match variant pattern binding cannot use ByRef\n")
+                    ta_errCount = ta_errCount + 1
+                  End If
+                  If bindCnt < 32 Then
+                    bindNodes(bindCnt) = g_nodes(aNode).left
+                    bindCnt = bindCnt + 1
+                  End If
+                End For
+              Else
+                If pk = NdFieldAccess Then
+                  Dim bNode As Integer = g_nodes(pe).left
+                  If (bNode >= 0) And (g_nodes(bNode).kind = NdVar) Then
+                    qPos = g_nodes(bNode).intVal
+                    qLen = g_nodes(bNode).lenVal
+                    vPos = g_nodes(pe).intVal
+                    vLen = g_nodes(pe).lenVal
+                  Else
+                    patOk = False
+                  End If
+                Else
+                  If pk = NdIndexAccess Then
+                    Dim faNode As Integer = g_nodes(pe).left
+                    If (faNode >= 0) And (g_nodes(faNode).kind = NdFieldAccess) Then
+                      Dim bNode As Integer = g_nodes(faNode).left
+                      If (bNode >= 0) And (g_nodes(bNode).kind = NdVar) Then
+                        qPos = g_nodes(bNode).intVal
+                        qLen = g_nodes(bNode).lenVal
+                        vPos = g_nodes(faNode).intVal
+                        vLen = g_nodes(faNode).lenVal
+                        bindNodes(0) = g_nodes(pe).right
+                        bindCnt = 1
+                      Else
+                        patOk = False
+                      End If
+                    Else
+                      patOk = False
+                    End If
+                  Else
+                    If pk = NdUnionInit Then
+                      Dim bNode As Integer = g_nodes(pe).left
+                      If (bNode >= 0) And (g_nodes(bNode).kind = NdVar) Then
+                        qPos = g_nodes(bNode).intVal
+                        qLen = g_nodes(bNode).lenVal
+                        vPos = g_nodes(pe).intVal
+                        vLen = g_nodes(pe).lenVal
+                        Dim ac As Integer = g_nodes(pe).childCount
+                        For ai = 0 To ac - 1 Do
+                          If bindCnt < 32 Then
+                            bindNodes(bindCnt) = g_kids(g_nodes(pe).firstChild + ai)
+                            bindCnt = bindCnt + 1
+                          End If
+                        End For
+                      Else
+                        patOk = False
+                      End If
+                    Else
+                      patOk = False
+                    End If
+                  End If
+                End If
+              End If
+            End If
+
+            If Not patOk Then
+              Printf("Semantic Type Error: Invalid Union Case pattern in Match\n")
+              ta_errCount = ta_errCount + 1
+            Else
+              If (qLen > 0) And (Not SlicesEqual(qPos, qLen, ta_unions(uIdx).namePos, ta_unions(uIdx).nameLen)) Then
+                Printf("Semantic Type Error: Match Case union '")
+                TaPrintSlice(qPos, qLen)
+                Printf("' does not match scrutinee union '")
+                TaPrintSlice(ta_unions(uIdx).namePos, ta_unions(uIdx).nameLen)
+                Printf("'\n")
+                ta_errCount = ta_errCount + 1
+              End If
+              Dim vIdx As Integer = TaFindUnionVariant(uIdx, vPos, vLen)
+              If vIdx < 0 Then
+                Printf("Semantic Type Error: Union '")
+                TaPrintSlice(ta_unions(uIdx).namePos, ta_unions(uIdx).nameLen)
+                Printf("' has no variant named '")
+                TaPrintSlice(vPos, vLen)
+                Printf("'\n")
+                ta_errCount = ta_errCount + 1
+              Else
+                Dim vInfo As TaUnionVar = ta_unionVars(ta_unions(uIdx).varStart + vIdx)
+                If bindCnt <> vInfo.fieldCount Then
+                  Printf("Semantic Type Error: Variant '")
+                  TaPrintSlice(vPos, vLen)
+                  Printf("' expects %d payload binding(s), got %d (use '_' to ignore)\n", vInfo.fieldCount, bindCnt)
+                  ta_errCount = ta_errCount + 1
+                End If
+                Dim lim As Integer = bindCnt
+                If vInfo.fieldCount < lim Then
+                  lim = vInfo.fieldCount
+                End If
+                For pbi = 0 To lim - 1 Do
+                  Dim bn As Integer = bindNodes(pbi)
+                  If (bn < 0) Or (g_nodes(bn).kind <> NdVar) Then
+                    Printf("Semantic Type Error: Match variant payload binding must be an identifier or '_'\n")
+                    ta_errCount = ta_errCount + 1
+                  Else
+                    Dim bp = g_nodes(bn).intVal, bl = g_nodes(bn).lenVal As Integer
+                    Dim isIgnore As Boolean = (bl = 1) And (g_srcPool(bp) = 95)
+                    If Not isIgnore Then
+                      If pCount > 1 Then
+                        Printf(MSG_TA_UNION_PAT_MULTI_BIND)
+                        ta_errCount = ta_errCount + 1
+                      Else
+                        For prevB = 0 To pbi - 1 Do
+                          Dim pbn As Integer = bindNodes(prevB)
+                          If (pbn >= 0) And (g_nodes(pbn).kind = NdVar) Then
+                            If SlicesEqual(g_nodes(pbn).intVal, g_nodes(pbn).lenVal, bp, bl) Then
+                              Printf("Semantic Type Error: Duplicate binding name '")
+                              TaPrintSlice(bp, bl)
+                              Printf("' in Match Case pattern\n")
+                              ta_errCount = ta_errCount + 1
+                            End If
+                          End If
+                        End For
+                        Dim fTy As TypeInfo = ta_fields(vInfo.fieldStart + pbi).ty
+                        TaAccountStackLocal(bp, bl, fTy)
+                        ta_locals(ta_localCount) = TaLocalSym With ( namePos = bp, nameLen = bl, ty = fTy )
+                        ta_localCount = ta_localCount + 1
+                      End If
+                    End If
+                  End If
+                End For
+                If (Not hasGuard) And (vIdx < 128) Then
+                  covered(vIdx) = 1
+                End If
+              End If
+            End If
+          End For
+        End If
+
+        If hasGuard Then
+          Dim gTy As TypeInfo = TaTypeOfExpr(g_nodes(arm).left)
+          If Not (((gTy.arrLen = 0) And (gTy.kind = TyBoolean)) Or TaIsIntType(gTy)) Then
+            Printf(MSG_TA_MATCH_GUARD)
+            ta_errCount = ta_errCount + 1
+          End If
+        End If
+        For si = 0 To g_nodes(arm).childCount - 1 Do
+          TaCheckStmt(g_kids(g_nodes(arm).firstChild + si))
+        End For
+        ta_localCount = savedLocals
+      End For
+
+      If Not hasWild Then
+        Dim missCnt As Integer = 0
+        For vi = 0 To vCount - 1 Do
+          If (vi < 128) And (covered(vi) = 0) Then
+            If missCnt = 0 Then
+              Printf("Semantic Type Error: Non-exhaustive Match on Union '")
+              TaPrintSlice(ta_unions(uIdx).namePos, ta_unions(uIdx).nameLen)
+              Printf("'; missing variant(s): ")
+            Else
+              Printf(", ")
+            End If
+            Dim mv As TaUnionVar = ta_unionVars(ta_unions(uIdx).varStart + vi)
+            TaPrintSlice(mv.namePos, mv.nameLen)
+            missCnt = missCnt + 1
+          End If
+        End For
+        If missCnt > 0 Then
+          Printf("\n")
+          ta_errCount = ta_errCount + 1
+        End If
+      End If
+      Return
+    End If
+
     For bi = 0 To g_nodes(id).childCount - 1 Do
       Dim arm As Integer = g_kids(g_nodes(id).firstChild + bi)
       If g_nodes(arm).op = 0 Then
@@ -2290,6 +2779,8 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
   ta_enumMems = ArenaAlloc(ByRef arena, TaEnumMem, 1024)
   ta_structs = ArenaAlloc(ByRef arena, TaStructInfo, 512)
   ta_fields = ArenaAlloc(ByRef arena, TaFieldInfo, 4096)
+  ta_unions = ArenaAlloc(ByRef arena, TaUnionInfo, 512)
+  ta_unionVars = ArenaAlloc(ByRef arena, TaUnionVar, 4096)
   ta_globals = ArenaAlloc(ByRef arena, TaGlobalInfo, 1024)
   ta_funcs = ArenaAlloc(ByRef arena, TaFuncInfo, 2048)
   ta_ops = ArenaAlloc(ByRef arena, TaOpInfo, 512)
@@ -2300,6 +2791,8 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
   ta_enumMemCount = 0
   ta_structCount = 0
   ta_fieldCount = 0
+  ta_unionCount = 0
+  ta_unionVarCount = 0
   ta_globalCount = 0
   ta_funcCount = 0
   ta_opCount = 0
@@ -2355,10 +2848,30 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       )
       ta_structCount = ta_structCount + 1
     End If
+    If dk = NdUnionDef Then
+      Dim isPriv As Integer = 0
+      If g_nodes(d).op = 2 Then
+        isPriv = 1
+      End If
+      If g_nodes(d).childCount <= 0 Then
+        Printf(MSG_TA_UNION_EMPTY)
+        ta_errCount = ta_errCount + 1
+      End If
+      ta_unions(ta_unionCount) = TaUnionInfo With (
+        namePos = g_nodes(d).intVal,
+        nameLen = g_nodes(d).lenVal,
+        varStart = 0,
+        varCount = 0,
+        isPrivate = isPriv,
+        modId = g_nodes(d).modId
+      )
+      ta_unionCount = ta_unionCount + 1
+    End If
   End For
 
-  ' Pass 1b: Resolve Struct fields
+  ' Pass 1b: Resolve Struct fields and Union variant fields
   Dim si As Integer = 0
+  Dim ui As Integer = 0
   For i = 0 To defCount - 1 Do
     Dim d As Integer = g_kids(defStart + i)
     If g_nodes(d).kind = NdStructDef Then
@@ -2382,6 +2895,49 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       ta_structs(si).fieldStart = fs
       ta_structs(si).fieldCount = fc
       si = si + 1
+    End If
+    If g_nodes(d).kind = NdUnionDef Then
+      ta_curModId = g_nodes(d).modId
+      ta_altModId = g_nodes(d).third
+      Dim vs As Integer = ta_unionVarCount
+      Dim vc As Integer = g_nodes(d).childCount
+      For vi = 0 To vc - 1 Do
+        Dim vn As Integer = g_kids(g_nodes(d).firstChild + vi)
+        For prevV = 0 To vi - 1 Do
+          Dim pvn As Integer = g_kids(g_nodes(d).firstChild + prevV)
+          If SlicesEqual(g_nodes(pvn).intVal, g_nodes(pvn).lenVal, g_nodes(vn).intVal, g_nodes(vn).lenVal) Then
+            Printf(MSG_TA_UNION_DUP_VAR)
+            ta_errCount = ta_errCount + 1
+          End If
+        End For
+        Dim fs As Integer = ta_fieldCount
+        Dim fc As Integer = g_nodes(vn).childCount
+        For fi2 = 0 To fc - 1 Do
+          Dim f As Integer = g_kids(g_nodes(vn).firstChild + fi2)
+          If g_nodes(f).op = 1 Then
+            Printf(MSG_TA_UNION_BYREF)
+            ta_errCount = ta_errCount + 1
+          End If
+          Dim fty As TypeInfo = TaResolveTypeEx(g_nodes(f).tyKind, g_nodes(f).tyInnerKind, g_nodes(f).tyArrLen, g_nodes(f).tyNamePos, g_nodes(f).tyNameLen)
+          TaValidateType(fty)
+          ta_fields(ta_fieldCount) = TaFieldInfo With (
+            namePos = g_nodes(f).intVal,
+            nameLen = g_nodes(f).lenVal,
+            ty = fty
+          )
+          ta_fieldCount = ta_fieldCount + 1
+        End For
+        ta_unionVars(ta_unionVarCount) = TaUnionVar With (
+          namePos = g_nodes(vn).intVal,
+          nameLen = g_nodes(vn).lenVal,
+          fieldStart = fs,
+          fieldCount = fc
+        )
+        ta_unionVarCount = ta_unionVarCount + 1
+      End For
+      ta_unions(ui).varStart = vs
+      ta_unions(ui).varCount = vc
+      ui = ui + 1
     End If
   End For
   ta_altModId = -1
@@ -2474,7 +3030,7 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
           ta_errCount = ta_errCount + 1
         End If
         Dim pty As TypeInfo = TaResolveTypeEx(g_nodes(pn).tyKind, g_nodes(pn).tyInnerKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen)
-        If (pty.arrLen = 0) And (pty.kind = TyStruct) Then
+        If (pty.arrLen = 0) And ((pty.kind = TyStruct) Or (pty.kind = TyUnion)) Then
           hasStructParam = True
         End If
         ta_params(ta_paramCount) = TaParamInfo With ( isByRef = g_nodes(pn).op, ty = pty )

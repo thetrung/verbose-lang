@@ -14,6 +14,7 @@ Public Enum TypeKind
   TySingle = 10
   TyDouble = 11
   TyTask = 12
+  TyUnion = 13
 End Enum
 
 Public Structure TypeInfo
@@ -85,10 +86,14 @@ Public Enum NodeKind
   NdOpDef = 66
   NdCast = 67
   NdTypeRef = 68
+  NdUnionDef = 69
+  NdUnionVariant = 70
+  NdUnionInit = 71
 End Enum
 
 Public Structure AstNode
   Dim kind, op, intVal, lenVal As Integer
+  Dim longVal As Long
   Dim left, right, third, firstChild, childCount, extraStart, extraCount As Integer
   Dim tyKind, tyArrLen, tyNamePos, tyNameLen, tyInnerKind, modId, flags As Integer
   Dim genStart, genCount, tyArgStart, tyArgCount As Integer
@@ -113,6 +118,7 @@ Public Function NewNode(kind As Integer) As Integer
     op = 0,
     intVal = 0,
     lenVal = 0,
+    longVal = 0,
     left = -1,
     right = -1,
     third = -1,

@@ -152,6 +152,7 @@ Private Function LxClassifyKeyword(pos, slen As Integer) As Integer
     Case SliceEqualsStr(pos, slen, "Continue", 8) Then Return TkContinue
     Case SliceEqualsStr(pos, slen, "Operator", 8) Then Return TkOperator
     Case SliceEqualsStr(pos, slen, "Of", 2) Then Return TkOf
+    Case SliceEqualsStr(pos, slen, "Union", 5) Then Return TkUnion
     Case SliceEqualsStr(pos, slen, "And", 3) Then Return TkAnd
     Case SliceEqualsStr(pos, slen, "Or", 2) Then Return TkOr
     Case SliceEqualsStr(pos, slen, "Not", 3) Then Return TkNot
@@ -163,13 +164,14 @@ Private Function LxClassifyKeyword(pos, slen As Integer) As Integer
   End Match
 End Function
 
-Private Sub LxEmitTok(kind, pos, slen, ival, line As Integer)
+Private Sub LxEmitTok(kind, pos, slen As Integer, ival As Long, line As Integer)
   If g_tokCount < g_tokCap Then
     g_tokens(g_tokCount) = Token With (
       kind = kind,
       pos = pos,
       len = slen,
-      intVal = ival,
+      intVal = Integer(ival),
+      longVal = ival,
       line = line,
       modId = lx_curModId
     )
@@ -609,21 +611,22 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
         End If
       Case LxIsDigit(c) Then
         Dim nStart As Integer = pos
-        Dim acc = 0, nextC = 0 As Integer
+        Dim acc As Long = 0
+        Dim nextC As Integer = 0
         If (pos + 1) < fileEnd Then
           nextC = g_srcPool(pos + 1)
         End If
         If (c = 48) And ((nextC = 120) Or (nextC = 88)) Then
           pos = pos + 2
           While (pos < fileEnd) And LxIsHexDigit(g_srcPool(pos)) Do
-            acc = acc * 16 + LxHexVal(g_srcPool(pos))
+            acc = acc * 16 + Long(LxHexVal(g_srcPool(pos)))
             pos = pos + 1
           End While
           LxEmitTok(TkIntLit, nStart, pos - nStart, acc, line)
         Else
           While (pos < fileEnd) And LxIsDigit(g_srcPool(pos)) Do
             Dim d As Integer = g_srcPool(pos)
-            acc = acc * 10 + (d - 48)
+            acc = acc * 10 + Long(d - 48)
             pos = pos + 1
           End While
           Dim isFloat As Boolean = False
@@ -633,6 +636,19 @@ Public Function LexerLoadFile(ByRef arena As Arena, pathPos, pathLen As Integer)
             While (pos < fileEnd) And LxIsDigit(g_srcPool(pos)) Do
               pos = pos + 1
             End While
+          End If
+          If (pos < fileEnd) And ((g_srcPool(pos) = 101) Or (g_srcPool(pos) = 69)) Then
+            Dim ePos As Integer = pos + 1
+            If (ePos < fileEnd) And ((g_srcPool(ePos) = 43) Or (g_srcPool(ePos) = 45)) Then
+              ePos = ePos + 1
+            End If
+            If (ePos < fileEnd) And LxIsDigit(g_srcPool(ePos)) Then
+              isFloat = True
+              pos = ePos
+              While (pos < fileEnd) And LxIsDigit(g_srcPool(pos)) Do
+                pos = pos + 1
+              End While
+            End If
           End If
           If isFloat Then
             LxEmitTok(TkFloatLit, nStart, pos - nStart, 0, line)

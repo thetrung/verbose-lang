@@ -1,7 +1,7 @@
 ' VerBose Self-Hosting Compiler (verbose) - Shared Diagnostics, Messages & LLVM IR Templates
 
 ' --- Compiler Version & CLI Driver Messages ---
-Public Static MSG_CLI_VERSION As Pointer = "verbose 0.8.0 (VerBose-Lang Self-Hosted Compiler)\n"
+Public Static MSG_CLI_VERSION As Pointer = "verbose 0.9.0 (VerBose-Lang Self-Hosted Compiler)\n"
 Public Static MSG_CLI_USAGE As Pointer = "Usage: verbose <filename>.vb [options]\n" &
   "       verbose test [file.vb | dir] [options]\n" &
   "  test         Run built-in Test/Assert blocks in a .vb file or directory (default: tests)\n" &
@@ -98,7 +98,11 @@ Public Static MSG_TA_BREAK_LOOP = "Semantic Type Error: 'Break' can only be used
   MSG_TA_OP_STRUCT = "Semantic Type Error: Operator overload must have at least one Structure parameter\n",
   MSG_TA_OP_RET = "Semantic Type Error: Operator overload must specify a non-Nothing return type\n",
   MSG_TA_OP_DUP = "Semantic Type Error: Duplicate operator overload definition\n",
-  MSG_TA_OP_NO_OVERLOAD = "Semantic Type Error: No matching Operator overload for Structure operand(s)\n" As Pointer
+  MSG_TA_OP_NO_OVERLOAD = "Semantic Type Error: No matching Operator overload for Structure operand(s)\n",
+  MSG_TA_UNION_BYREF = "Semantic Type Error: Union variant fields cannot be ByRef\n",
+  MSG_TA_UNION_DUP_VAR = "Semantic Type Error: Duplicate variant name in Union definition\n",
+  MSG_TA_UNION_EMPTY = "Semantic Type Error: Union must declare at least one Case variant\n",
+  MSG_TA_UNION_PAT_MULTI_BIND = "Semantic Type Error: Cannot bind payload variables in comma-separated multi-variant Case pattern (use '_' to ignore)\n" As Pointer
 
 ' --- Generics / Monomorphizer Diagnostics ---
 Public Static MSG_GM_MAX_DEPTH = "Generic Error: Maximum generic instantiation depth exceeded (possible infinite recursive instantiation)\n",
