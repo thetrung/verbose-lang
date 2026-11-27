@@ -146,7 +146,7 @@ Public Function main() As Integer
   Dim sq As Integer = Await job
 
   ' String type alias, native concat (&), and VB.NET-style string interpolation ($"...")
-  Dim banner As String = "VerBose" & " v0.7.4"
+  Dim banner As String = "VerBose" & " v0.11.0"
   Dim summary As String = $"{banner}: hero#{hero.id} sq={sq} sub0={IntSpanAt(subSp, 0)} avg={Integer(avg)}"
   Printf("%s\n", summary)
   HeapFree(summary)
@@ -220,7 +220,7 @@ make bootstrap-ir
 
 # Run built-in Test/Assert blocks (required for test files without a main() function)
 ./verbose test tests/test_std_io.vb               # run a single test file
-./verbose test                                    # run all 29 tests/test_*.vb suites
+./verbose test                                    # run all 37 tests/test_*.vb suites
 ./verbose test --bounds-check tests/test_bounds.vb # opt-in runtime bounds checking for debug/test builds
 
 # Enforce custom per-function stack frame budget (default: 64 KB hosted / 4 KB arm-m)
@@ -269,7 +269,7 @@ All implemented language, memory, FFI, standard library, compiler, and tooling f
 
 ## Ecosystem
 
-Official companion repositories built for VerBose-Lang `v0.7.x`:
+Official companion repositories built for VerBose-Lang `v0.11.0`:
 
 - **[verbose-raylib](https://github.com/thetrung/verbose-raylib)** — **100% pure VerBose-Lang** wrapper for Raylib 5.x/6.x (zero custom C shims!) with native ABI structs, 2D/3D math, color palettes, orbital camera helpers, pure-VerBose headless mock, and graphical demos.
 - **[verbose.nvim](https://github.com/thetrung/verbose.nvim)** — Neovim plugin with Tree-sitter grammar & queries, recursive `Include`-cached in-process LSP (completion, `gd`, hover, diagnostics), and `:VerboseInstall` latest compiler installer.

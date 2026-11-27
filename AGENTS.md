@@ -46,7 +46,7 @@ make bootstrap                            # Cold-bootstrap ./verbose from checke
 make build                                # Stage 1 -> 2 -> 3 fixpoint (diff verbose2.ll verbose3.ll) + bootstrap_suite.vb
 make bootstrap-ir                         # Regenerate checked-in target-neutral verbose.ll from ./verbose
 make pkg-arch                             # Build Arch Linux .pkg.tar.zst + pacman repo DB in packaging/arch/
-make test                                 # Run all 29 pure-VerBose suites (./verbose test)
+make test                                 # Run all 37 pure-VerBose suites (./verbose test)
 make test-all                             # Full fixpoint build + all tests
 ./verbose test tests/test_<name>.vb       # Run a single suite
 ./verbose --ast file.vb                   # Dump parsed AST

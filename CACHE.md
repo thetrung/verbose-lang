@@ -2,7 +2,7 @@
 
 ## Project Summary
 
-**VerBose-Lang** (`v0.8.0`) is a brace-free, case-sensitive, Visual Basic–inspired systems programming language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**). It targets Linux (`x86-64`, `arm64`), macOS (`arm64`), Windows (`x86-64`), and bare-metal 32-bit `arm-m`, shipping a 10-module self-hosted compiler (`src/`, including zero-overhead monomorphized generics in `src/generics.vb`) and a 6-module zero-GC, Arena-backed pure-VerBose standard library (`std/`).
+**VerBose-Lang** (`v0.11.0`) is a brace-free, case-sensitive, Visual Basic–inspired systems programming language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**). It targets Linux (`x86-64`, `arm64`), macOS (`arm64`), Windows (`x86-64`), and bare-metal 32-bit `arm-m`, shipping a 10-module self-hosted compiler (`src/`, including zero-overhead monomorphized generics in `src/generics.vb`) and an 8-module zero-GC, Arena-backed pure-VerBose standard library (`std/`).
 
 ---
 
@@ -35,6 +35,87 @@
 | `SbAppend(ByRef sb As StrBuilder, s As Pointer)` | Append null-terminated string `s` to the builder. |
 | `SbAppendInt(ByRef sb As StrBuilder, n As Integer)` | Append signed integer `n` formatted in base 10 to the builder. |
 | `SbFinish(ByRef sb As StrBuilder) As Pointer` | Null-terminate the builder buffer and return its `Pointer`. |
+| `SbReset(ByRef sb As StrBuilder)` | Reset the builder to empty (retains capacity). |
+| `SbAppendSlice(ByRef sb As StrBuilder, s As Pointer, length As Integer)` | Append exactly `length` bytes from `s` to the builder. |
+| `SbAppendLine(ByRef sb As StrBuilder, s As Pointer)` | Append null-terminated string `s` followed by `\n` to the builder. |
+| `SbAppendBool(ByRef sb As StrBuilder, b As Boolean)` | Append `True`/`False` to the builder. |
+| `SbAppendLong(ByRef sb As StrBuilder, n As Long)` | Append signed `Long` `n` formatted in base 10 to the builder. |
+| `SbAppendHex(ByRef sb As StrBuilder, n As Long)` | Append `Long` `n` formatted in hexadecimal to the builder. |
+| `SbAppendDouble(ByRef sb As StrBuilder, v As Double, decimals As Integer)` | Append `Double` `v` formatted with `decimals` decimal places to the builder. |
+| `BoolToStr(b As Boolean) As Pointer` | Return a C string for `b` (`"True"` / `"False"`). |
+| `LongToStr(ByRef a As Arena, n As Long) As Pointer` | Format signed `Long` `n` as a decimal string in `Arena` `a`. |
+| `HexToStr(ByRef a As Arena, n As Long) As Pointer` | Format `Long` `n` as a hexadecimal string in `Arena` `a`. |
+| `DoubleToStr(ByRef a As Arena, v As Double, decimals As Integer) As Pointer` | Format `Double` `v` with `decimals` decimal places into `Arena` `a`. |
+| `StrConcat3(ByRef a As Arena, s1, s2, s3 As Pointer) As Pointer` | Concatenate three strings into `Arena` `a`. |
+| `StrConcat4(ByRef a As Arena, s1, s2, s3, s4 As Pointer) As Pointer` | Concatenate four strings into `Arena` `a`. |
+| `StrJoin(ByRef a As Arena, parts() As Pointer, count As Integer, sep As Pointer) As Pointer` | Join `count` strings with separator `sep` into `Arena` `a`. |
+| `StrRepeat(ByRef a As Arena, s As Pointer, times As Integer) As Pointer` | Repeat string `s` `times` times into `Arena` `a`. |
+| `StrFmtArgs(ByRef a As Arena, fmt As Pointer, args() As Pointer, argCount As Integer) As Pointer` | Format `fmt` with positional `{}` placeholders (literal braces escaped as `{{`/`}}`) from `args` into `Arena` `a`. |
+| `StrFmt1(ByRef a As Arena, fmt, a1 As Pointer) As Pointer` | Format `fmt` with one positional `{}` argument. |
+| `StrFmt2(ByRef a As Arena, fmt, a1, a2 As Pointer) As Pointer` | Format `fmt` with two positional `{}` arguments. |
+| `StrFmt3(ByRef a As Arena, fmt, a1, a2, a3 As Pointer) As Pointer` | Format `fmt` with three positional `{}` arguments. |
+
+### `std/sync.vb` — Concurrency Primitives (LLVM `Atomic*` builtins, bare-metal safe)
+*Public types:* `AtomicInt`, `AtomicLong`, `SpinLock`, `RwSpinLock`, `Once`, `WaitGroup`, `SpinBarrier`, `Mutex`, `CondVar`
+
+| Function / Sub | Description |
+| :--- | :--- |
+| `AtomicIntNew(initial As Integer) As AtomicInt` | Create an `AtomicInt` with value `initial`. |
+| `AtomicIntLoad(ByRef a As AtomicInt) As Integer` | Atomically load `a`. |
+| `AtomicIntStore(ByRef a As AtomicInt, v As Integer)` | Atomically store `v` into `a`. |
+| `AtomicIntAdd(ByRef a As AtomicInt, delta As Integer) As Integer` | Atomic read-modify-write add; returns the new value. |
+| `AtomicIntSub(ByRef a As AtomicInt, delta As Integer) As Integer` | Atomic read-modify-write subtract; returns the new value. |
+| `AtomicIntExchange(ByRef a As AtomicInt, desired As Integer) As Integer` | Atomically exchange value with `desired`; returns the old value. |
+| `AtomicIntCas(ByRef a As AtomicInt, expected, desired As Integer) As Boolean` | Atomic compare-and-swap; returns `True` on success. |
+| `AtomicLongNew` / `AtomicLongLoad` / `AtomicLongStore` / `AtomicLongAdd` / `AtomicLongSub` / `AtomicLongExchange` / `AtomicLongCas` | `Long`-width versions of the `AtomicInt` operations above. |
+| `SpinLockNew() As SpinLock` | Create an unlocked spin lock. |
+| `SpinLockTryAcquire(ByRef lk As SpinLock) As Boolean` | Non-blocking acquire; returns `True` if acquired. |
+| `SpinLockAcquire(ByRef lk As SpinLock)` | Blocking acquire (spins while held). |
+| `SpinLockRelease(ByRef lk As SpinLock)` | Release the spin lock. |
+| `RwSpinNew() As RwSpinLock` | Create an unlocked read-write spin lock. |
+| `RwSpinReadLock(ByRef rw As RwSpinLock)` | Acquire a shared read lock. |
+| `RwSpinReadUnlock(ByRef rw As RwSpinLock)` | Release a read lock. |
+| `RwSpinWriteLock(ByRef rw As RwSpinLock)` | Acquire an exclusive write lock. |
+| `RwSpinWriteUnlock(ByRef rw As RwSpinLock)` | Release a write lock. |
+| `OnceNew() As Once` | Create a new `Once`. |
+| `OnceCall(ByRef o As Once, fn As SubPtr())` | Run `fn` exactly once (subsequent calls are no-ops). |
+| `WgNew() As WaitGroup` | Create a new wait group. |
+| `WgAdd(ByRef wg As WaitGroup, delta As Integer)` | Add `delta` to the wait group counter. |
+| `WgDone(ByRef wg As WaitGroup)` | Decrement the wait group counter. |
+| `WgWait(ByRef wg As WaitGroup)` | Block until the wait group counter reaches `0`. |
+| `BarrierNew(partyCount As Integer) As SpinBarrier` | Create a spin barrier for `partyCount` parties. |
+| `BarrierWait(ByRef b As SpinBarrier) As Boolean` | Wait at the barrier; returns `True` when all parties have arrived. |
+| `MutexInit(ByRef m As Mutex) As Boolean` | Initialize a hosted POSIX/winpthreads mutex (hosted targets only). |
+| `MutexDestroy(ByRef m As Mutex)` | Destroy a mutex. |
+| `MutexLock(ByRef m As Mutex)` | Block until the mutex is acquired. |
+| `MutexTryLock(ByRef m As Mutex) As Boolean` | Non-blocking mutex acquire. |
+| `MutexUnlock(ByRef m As Mutex)` | Release the mutex. |
+| `CondInit(ByRef c As CondVar) As Boolean` | Initialize a hosted condition variable. |
+| `CondDestroy(ByRef c As CondVar)` | Destroy a condition variable. |
+| `CondWait(ByRef c As CondVar, ByRef m As Mutex)` | Wait on the condition (releases `m`). |
+| `CondSignal(ByRef c As CondVar)` | Wake one waiter. |
+| `CondBroadcast(ByRef c As CondVar)` | Wake all waiters. |
+
+### `std/result.vb` — Tagged Unions: `Option(Of T)` & `Result(Of T, E)` (zero libc, bare-metal safe)
+*Public types:* `Option(Of T)`, `Result(Of T, E)`
+
+| Function | Description |
+| :--- | :--- |
+| `OptNone(Of T)() As Option(Of T)` | Create an `Option` in the `None` state. |
+| `OptSome(Of T)(val As T) As Option(Of T)` | Create an `Option` in the `Some(val)` state. |
+| `OptIsSome(Of T)(o As Option(Of T)) As Boolean` | Return `True` if `o` is `Some`. |
+| `OptIsNone(Of T)(o As Option(Of T)) As Boolean` | Return `True` if `o` is `None`. |
+| `OptUnwrapOr(Of T)(o As Option(Of T), defaultVal As T) As T` | Return the contained value or `defaultVal` if `None`. |
+| `OptUnwrap(Of T)(o As Option(Of T)) As T` | Return the contained value; asserts on `None`. |
+| `ResOk(Of T, E)(val As T) As Result(Of T, E)` | Create a `Result` in the `Ok(val)` state. |
+| `ResErr(Of T, E)(e As E) As Result(Of T, E)` | Create a `Result` in the `Err(e)` state. |
+| `ResIsOk(Of T, E)(r As Result(Of T, E)) As Boolean` | Return `True` if `r` is `Ok`. |
+| `ResIsErr(Of T, E)(r As Result(Of T, E)) As Boolean` | Return `True` if `r` is `Err`. |
+| `ResUnwrapOr(Of T, E)(r As Result(Of T, E), defaultVal As T) As T` | Return the contained value or `defaultVal` if `Err`. |
+| `ResUnwrap(Of T, E)(r As Result(Of T, E)) As T` | Return the contained value; asserts on `Err`. |
+| `ResUnwrapErr(Of T, E)(r As Result(Of T, E)) As E` | Return the error value; asserts on `Ok`. |
+| `ResOkOpt(Of T, E)(r As Result(Of T, E)) As Option(Of T)` | Convert `Result` to `Option`, `Err` → `None`. |
+| `ResErrOpt(Of T, E)(r As Result(Of T, E)) As Option(Of E)` | Convert `Result` to `Option`, `Ok` → `None`. |
 
 ### `std/math.vb` — Pure-VerBose Math (zero `-lm`)
 *Public constants:* `MATH_PI`, `MATH_TAU`, `MATH_E`, `MATH_HALF_PI`, `MATH_EPS`
@@ -194,6 +275,7 @@
 | `src/type_analyzer.vb` | `AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Integer` | Run two-pass semantic type checking, constant fixed-array OOB checks, and stack-frame budget enforcement; returns error count. |
 | `src/codegen.vb` | `CgSetTestMode(enabled As Integer)` | Enable/disable `verbose test` harness synthesis mode. |
 | `src/codegen.vb` | `CgSetBoundsCheck(enabled As Integer)` | Enable/disable opt-in runtime fixed-array bounds checks (`--bounds-check`). |
+| `src/codegen.vb` | `CgSetDebugInfo(enabled As Integer)` | Enable/disable DWARF debug metadata emission (`-g` / `--debug`, compiles with `clang -O0 -g`). |
 | `src/codegen.vb` | `CgUsesAsync() As Integer` | Return `1` if the compiled module uses `Async`/`Await` (triggers `-lpthread` linking). |
 | `src/codegen.vb` | `CgSetTarget(targetId As Integer)` | Configure LLVM target triple, datalayout, pointer width, and C struct ABI lowering. |
 | `src/codegen.vb` | `EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, outPath As Pointer) As Integer` | Emit complete LLVM IR (`.ll`) for `progRoot` to `outPath`; returns `0` on success. |
