@@ -11,12 +11,10 @@ Active roadmap and future extensions for **VerBose-Lang**. Completed tasks and m
 - [x] Completed in `v0.9.0` and archived in **[LOGS.md](LOGS.md)**.
 
 ### Milestone 3: Deterministic `Defer` Statement
-- [ ] Add lexical-scope `Defer <stmt>` (executed in LIFO order on normal block exit, `Return`, `Break`, and `Continue`) for deterministic `HeapFree`, `ArenaDestroy`, and file/handle cleanup with zero GC or hidden RAII.
-- [ ] Validate control-flow edge cases in Type Analyzer (no `Return`/`Break`/`Continue`/`GoTo` escaping a `Defer` body) and lower cleanly in `codegen.vb`.
+- [x] Completed in `v0.10.0` and archived in **[LOGS.md](LOGS.md)**.
 
 ### Milestone 4: Typed Function Pointers
-- [ ] Add first-class typed function pointer types (e.g. `FuncPtr(params) As Ret` / `SubPtr(params)`) so `AddressOf(fn)` and C FFI callbacks are type-checked instead of falling back to untyped `Pointer`.
-- [ ] Support indirect calls through typed function pointer variables, struct fields, and parameters with full C ABI parity across all targets.
+- [x] Completed in `v0.10.0` and archived in **[LOGS.md](LOGS.md)**.
 
 ### Milestone 5: Debug Info (`-g` DWARF) & Concurrency / String Ownership Ergonomics
 - [ ] Emit LLVM DWARF debug metadata (`!DICompileUnit`, `!DISubprogram`, `!DILocation`) behind `-g` / `--debug` so GDB/LLDB show `.vb` file names, line numbers, and readable stack traces.

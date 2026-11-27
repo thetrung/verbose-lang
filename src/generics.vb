@@ -66,7 +66,7 @@ Structure GmGlobalInfo
 End Structure
 
 Structure GmFuncInfo
-  Dim namePos, nameLen, isPrivate, isAsync, modId As Integer, retTy As GmType
+  Dim namePos, nameLen, isPrivate, isAsync, modId, nodeId As Integer, retTy As GmType
 End Structure
 
 Structure GmOpInfo
@@ -115,6 +115,77 @@ Private Function GmMakePrim(k As Integer) As GmType
   Return t
 End Function
 
+Private Function GmNodeToType(nodeId As Integer) As GmType
+  Dim t As GmType With (
+    kind = g_nodes(nodeId).tyKind,
+    innerKind = g_nodes(nodeId).tyInnerKind,
+    arrLen = g_nodes(nodeId).tyArrLen,
+    namePos = g_nodes(nodeId).tyNamePos,
+    nameLen = g_nodes(nodeId).tyNameLen
+  )
+  If t.kind = TyStruct Then
+    If GmFindEnum(t.namePos, t.nameLen) >= 0 Then
+      t.kind = TyEnum
+    Else
+      If GmFindConcreteUnion(t.namePos, t.nameLen) >= 0 Then
+        t.kind = TyUnion
+      End If
+    End If
+  Else
+    If (t.kind = TyTask) And (t.innerKind = TyStruct) Then
+      If GmFindEnum(t.namePos, t.nameLen) >= 0 Then
+        t.innerKind = TyEnum
+      Else
+        If GmFindConcreteUnion(t.namePos, t.nameLen) >= 0 Then
+          t.innerKind = TyUnion
+        End If
+      End If
+    End If
+  End If
+  Return t
+End Function
+
+Private Function GmFuncPtrRetType(sigId As Integer) As GmType
+  If (sigId < 0) Or (g_nodes(sigId).kind <> NdFuncPtrType) Then
+    Return GmMakePrim(TyInt)
+  End If
+  If (g_nodes(sigId).op = 1) Or (g_nodes(sigId).left < 0) Then
+    Return GmMakePrim(TyNothing)
+  End If
+  Return GmNodeToType(g_nodes(sigId).left)
+End Function
+
+Private Function GmFuncPtrSigsEqual(sig1, sig2 As Integer) As Boolean
+  If sig1 = sig2 Then
+    Return True
+  End If
+  If (sig1 < 0) Or (sig2 < 0) Then
+    Return False
+  End If
+  If (g_nodes(sig1).kind <> NdFuncPtrType) Or (g_nodes(sig2).kind <> NdFuncPtrType) Then
+    Return False
+  End If
+  If (g_nodes(sig1).op <> g_nodes(sig2).op) Or (g_nodes(sig1).childCount <> g_nodes(sig2).childCount) Then
+    Return False
+  End If
+  If g_nodes(sig1).op = 0 Then
+    If Not GmTypesEqual(GmFuncPtrRetType(sig1), GmFuncPtrRetType(sig2)) Then
+      Return False
+    End If
+  End If
+  For i = 0 To g_nodes(sig1).childCount - 1 Do
+    Dim p1 As Integer = g_kids(g_nodes(sig1).firstChild + i)
+    Dim p2 As Integer = g_kids(g_nodes(sig2).firstChild + i)
+    If g_nodes(p1).op <> g_nodes(p2).op Then
+      Return False
+    End If
+    If Not GmTypesEqual(GmNodeToType(p1), GmNodeToType(p2)) Then
+      Return False
+    End If
+  End For
+  Return True
+End Function
+
 Private Function GmTypesEqual(a As GmType, b As GmType) As Boolean
   If (a.kind <> b.kind) Or (a.arrLen <> b.arrLen) Then
     Return False
@@ -122,12 +193,18 @@ Private Function GmTypesEqual(a As GmType, b As GmType) As Boolean
   If (a.kind = TyStruct) Or (a.kind = TyEnum) Or (a.kind = TyUnion) Then
     Return SlicesEqual(a.namePos, a.nameLen, b.namePos, b.nameLen)
   End If
+  If a.kind = TyFuncPtr Then
+    Return GmFuncPtrSigsEqual(a.namePos, b.namePos)
+  End If
   If a.kind = TyTask Then
     If a.innerKind <> b.innerKind Then
       Return False
     End If
     If (a.innerKind = TyStruct) Or (a.innerKind = TyEnum) Or (a.innerKind = TyUnion) Then
       Return SlicesEqual(a.namePos, a.nameLen, b.namePos, b.nameLen)
+    End If
+    If a.innerKind = TyFuncPtr Then
+      Return GmFuncPtrSigsEqual(a.namePos, b.namePos)
     End If
     Return True
   End If
@@ -207,6 +284,40 @@ Private Sub GmAppendTypeMangle(t As GmType)
     Case TyPointer Then GmAppendStr("Pointer", 7)
     Case TyArena Then GmAppendStr("Arena", 5)
     Case TyStruct, TyEnum, TyUnion Then GmAppendSlice(t.namePos, t.nameLen)
+    Case TyFuncPtr Then
+      Dim sid As Integer = t.namePos
+      If (sid >= 0) And (g_nodes(sid).kind = NdFuncPtrType) Then
+        If g_nodes(sid).op = 1 Then
+          GmAppendStr("Sp_", 3)
+        Else
+          GmAppendStr("Fp_", 3)
+        End If
+        For fi = 0 To g_nodes(sid).childCount - 1 Do
+          If fi > 0 Then
+            GmAppendStr("_", 1)
+          End If
+          Dim pn As Integer = g_kids(g_nodes(sid).firstChild + fi)
+          If g_nodes(pn).op = 1 Then
+            GmAppendStr("Ref_", 4)
+          End If
+          Dim pt As GmType = GmNodeToType(pn)
+          If pt.arrLen < 0 Then
+            GmAppendStr("Slc_", 4)
+          Else
+            If pt.arrLen > 0 Then
+              GmAppendStr("Arr_", 4)
+            End If
+          End If
+          GmAppendTypeMangle(pt)
+        End For
+        If g_nodes(sid).op = 0 Then
+          GmAppendStr("_Ret_", 5)
+          GmAppendTypeMangle(GmFuncPtrRetType(sid))
+        End If
+        GmAppendStr("_EndFp", 6)
+      Else
+        GmAppendStr("FuncPtr", 7)
+      End If
     Case TyTask Then
       If t.innerKind = TyNothing Then
         GmAppendStr("Task", 4)
@@ -580,9 +691,92 @@ End Function
 ' Type Resolution & Substitution
 ' =============================================================================
 
+Private Function GmResolveFuncPtrSig(sigId As Integer, doClone As Integer) As Integer
+  If (sigId < 0) Or (g_nodes(sigId).kind <> NdFuncPtrType) Then
+    Return sigId
+  End If
+  Dim dstId As Integer = sigId
+  If doClone = 1 Then
+    dstId = GmCopyNode(sigId)
+  End If
+  Dim pc As Integer = g_nodes(sigId).childCount
+  If doClone = 1 Then
+    Dim sp As Integer = gm_kidSp
+    For i = 0 To pc - 1 Do
+      Dim newP As Integer = GmCopyNode(g_kids(g_nodes(sigId).firstChild + i))
+      GmApplyResolvedType(newP)
+      gm_kidStack(gm_kidSp) = newP
+      gm_kidSp = gm_kidSp + 1
+    End For
+    g_nodes(dstId).firstChild = g_kidCount
+    For i = 0 To pc - 1 Do
+      PushKid(gm_kidStack(sp + i))
+    End For
+    gm_kidSp = sp
+  Else
+    For i = 0 To pc - 1 Do
+      GmApplyResolvedType(g_kids(g_nodes(sigId).firstChild + i))
+    End For
+  End If
+  If (g_nodes(sigId).op = 0) And (g_nodes(sigId).left >= 0) Then
+    Dim rn As Integer = g_nodes(sigId).left
+    If doClone = 1 Then
+      rn = GmCopyNode(rn)
+      g_nodes(dstId).left = rn
+    End If
+    GmApplyResolvedType(rn)
+  End If
+  Return dstId
+End Function
+
+Private Function GmMakeSigFromFuncNode(fnNodeId As Integer) As Integer
+  If fnNodeId < 0 Then
+    Return -1
+  End If
+  Dim isSub As Integer = 0
+  Dim retNode As Integer = -1
+  If g_nodes(fnNodeId).tyKind = TyNothing Then
+    isSub = 1
+  Else
+    retNode = NewNode(NdTypeRef)
+    With g_nodes(retNode)
+      .tyKind = g_nodes(fnNodeId).tyKind
+      .tyInnerKind = g_nodes(fnNodeId).tyInnerKind
+      .tyNamePos = g_nodes(fnNodeId).tyNamePos
+      .tyNameLen = g_nodes(fnNodeId).tyNameLen
+    End With
+  End If
+  Dim pc As Integer = g_nodes(fnNodeId).extraCount
+  Dim sigId As Integer = NewNode(NdFuncPtrType)
+  With g_nodes(sigId)
+    .op = isSub
+    .left = retNode
+    .firstChild = g_kidCount
+    .childCount = pc
+  End With
+  For i = 0 To pc - 1 Do
+    PushKid(g_kids(g_nodes(fnNodeId).extraStart + i))
+  End For
+  Return sigId
+End Function
+
 Private Function GmResolveTypeSpec(rawKind, rawInner, arrLen, nPos, nLen, taStart, taCount As Integer) As GmType
   Dim res As GmType With ( kind = rawKind, innerKind = rawInner, arrLen = arrLen, namePos = nPos, nameLen = nLen )
+  Dim needClone As Integer = 0
+  If gm_substCount > gm_substBase Then
+    needClone = 1
+  End If
+  If rawKind = TyFuncPtr Then
+    res.namePos = GmResolveFuncPtrSig(nPos, needClone)
+    res.nameLen = 0
+    Return res
+  End If
   If rawKind = TyTask Then
+    If rawInner = TyFuncPtr Then
+      res.namePos = GmResolveFuncPtrSig(nPos, needClone)
+      res.nameLen = 0
+      Return res
+    End If
     If rawInner = TyStruct Then
       Dim innerRes As GmType = GmResolveTypeSpec(TyStruct, TyNothing, 0, nPos, nLen, taStart, taCount)
       If innerRes.kind = TyTask Then
@@ -732,10 +926,38 @@ Private Sub GmUnifyType(genStart, genCount, patKind, patInner, patNPos, patNLen,
     Return
   End If
 
+  If patKind = TyFuncPtr Then
+    If (actTy.kind = TyFuncPtr) And (patNPos >= 0) And (actTy.namePos >= 0) Then
+      Dim pSig As Integer = patNPos
+      Dim aSig As Integer = actTy.namePos
+      If (g_nodes(pSig).kind = NdFuncPtrType) And (g_nodes(aSig).kind = NdFuncPtrType) And (g_nodes(pSig).op = g_nodes(aSig).op) And (g_nodes(pSig).childCount = g_nodes(aSig).childCount) Then
+        For pi = 0 To g_nodes(pSig).childCount - 1 Do
+          Dim pp As Integer = g_kids(g_nodes(pSig).firstChild + pi)
+          Dim ap As Integer = g_kids(g_nodes(aSig).firstChild + pi)
+          Dim apTy As GmType = GmNodeToType(ap)
+          GmUnifyType(genStart, genCount, g_nodes(pp).tyKind, g_nodes(pp).tyInnerKind, g_nodes(pp).tyNamePos, g_nodes(pp).tyNameLen, g_nodes(pp).tyArgStart, g_nodes(pp).tyArgCount, g_nodes(pp).tyArrLen, apTy, -1, bound, boundTy)
+        End For
+        If (g_nodes(pSig).op = 0) And (g_nodes(pSig).left >= 0) Then
+          Dim pr As Integer = g_nodes(pSig).left
+          Dim arTy As GmType = GmFuncPtrRetType(aSig)
+          GmUnifyType(genStart, genCount, g_nodes(pr).tyKind, g_nodes(pr).tyInnerKind, g_nodes(pr).tyNamePos, g_nodes(pr).tyNameLen, g_nodes(pr).tyArgStart, g_nodes(pr).tyArgCount, 0, arTy, -1, bound, boundTy)
+        End If
+      End If
+    End If
+    Return
+  End If
+
   If patKind = TyTask Then
-    If (actTy.kind = TyTask) And (patInner = TyStruct) Then
-      Dim actInner As GmType With ( kind = actTy.innerKind, innerKind = TyNothing, arrLen = 0, namePos = actTy.namePos, nameLen = actTy.nameLen )
-      GmUnifyType(genStart, genCount, TyStruct, TyNothing, patNPos, patNLen, patTaStart, patTaCount, 0, actInner, -1, bound, boundTy)
+    If actTy.kind = TyTask Then
+      If patInner = TyStruct Then
+        Dim actInner As GmType With ( kind = actTy.innerKind, innerKind = TyNothing, arrLen = 0, namePos = actTy.namePos, nameLen = actTy.nameLen )
+        GmUnifyType(genStart, genCount, TyStruct, TyNothing, patNPos, patNLen, patTaStart, patTaCount, 0, actInner, -1, bound, boundTy)
+      Else
+        If (patInner = TyFuncPtr) And (actTy.innerKind = TyFuncPtr) Then
+          Dim actInner As GmType With ( kind = TyFuncPtr, innerKind = TyNothing, arrLen = 0, namePos = actTy.namePos, nameLen = 0 )
+          GmUnifyType(genStart, genCount, TyFuncPtr, TyNothing, patNPos, 0, 0, 0, 0, actInner, -1, bound, boundTy)
+        End If
+      End If
     End If
     Return
   End If
@@ -1171,6 +1393,7 @@ Private Sub GmInstantiateFunc(tmplIdx As Integer, argTys() As GmType, argCnt, ca
     isPrivate = tmpl.isPrivate,
     isAsync = tmpl.isAsync,
     modId = tmpl.modId,
+    nodeId = newDef,
     retTy = callRetTy
   )
   gm_cFuncCount = gm_cFuncCount + 1
@@ -1700,7 +1923,45 @@ Private Function GmProcessExpr(srcId, doClone As Integer, ByRef outTy As GmType)
       outTy = baseTy
       outTy.arrLen = 0
     Else
-      outTy = GmMakePrim(TyByte)
+      If baseTy.kind = TyFuncPtr Then
+        outTy = GmFuncPtrRetType(baseTy.namePos)
+      Else
+        outTy = GmMakePrim(TyByte)
+      End If
+    End If
+    Return id
+  End If
+
+  If k = NdIndirectCall Then
+    Dim cTy As GmType
+    g_nodes(id).left = GmProcessExpr(g_nodes(id).left, doClone, ByRef cTy)
+    Dim aCnt As Integer = g_nodes(id).childCount
+    If doClone = 1 Then
+      Dim sp As Integer = gm_kidSp
+      For i = 0 To aCnt - 1 Do
+        Dim srcA As Integer = g_kids(g_nodes(srcId).firstChild + i)
+        Dim newA As Integer = GmCopyNode(srcA)
+        Dim aTy As GmType
+        g_nodes(newA).left = GmProcessExpr(g_nodes(srcA).left, 1, ByRef aTy)
+        gm_kidStack(gm_kidSp) = newA
+        gm_kidSp = gm_kidSp + 1
+      End For
+      g_nodes(id).firstChild = g_kidCount
+      For i = 0 To aCnt - 1 Do
+        PushKid(gm_kidStack(sp + i))
+      End For
+      gm_kidSp = sp
+    Else
+      For i = 0 To aCnt - 1 Do
+        Dim aNode As Integer = g_kids(g_nodes(id).firstChild + i)
+        Dim aTy As GmType
+        g_nodes(aNode).left = GmProcessExpr(g_nodes(aNode).left, 0, ByRef aTy)
+      End For
+    End If
+    If (cTy.arrLen = 0) And (cTy.kind = TyFuncPtr) Then
+      outTy = GmFuncPtrRetType(cTy.namePos)
+    Else
+      outTy = GmMakePrim(TyInt)
     End If
     Return id
   End If
@@ -1727,30 +1988,54 @@ Private Function GmProcessExpr(srcId, doClone As Integer, ByRef outTy As GmType)
     End If
     Dim baseNode As Integer = g_nodes(id).left
     If (baseNode >= 0) And (g_nodes(baseNode).kind = NdVar) Then
-      Dim newBase As Integer = baseNode
-      If doClone = 1 Then
-        newBase = GmCopyNode(baseNode)
-        g_nodes(id).left = newBase
-      End If
       Dim bPos = g_nodes(baseNode).intVal, bLen = g_nodes(baseNode).lenVal As Integer
-      If g_nodes(baseNode).tyArgCount > 0 Then
-        Dim uRes As GmType = GmResolveTypeSpec(TyStruct, TyNothing, 0, bPos, bLen, g_nodes(baseNode).tyArgStart, g_nodes(baseNode).tyArgCount)
-        g_nodes(newBase).intVal = uRes.namePos
-        g_nodes(newBase).lenVal = uRes.nameLen
-        g_nodes(newBase).tyArgStart = 0
-        g_nodes(newBase).tyArgCount = 0
-        outTy = uRes
+      Dim dummyVarTy As GmType
+      Dim isVarShadow As Boolean = GmLookupVar(bPos, bLen, ByRef dummyVarTy)
+      If (Not isVarShadow) And ((g_nodes(baseNode).tyArgCount > 0) Or (GmFindConcreteUnion(bPos, bLen) >= 0) Or (GmFindUnionTmpl(bPos, bLen) >= 0)) Then
+        Dim newBase As Integer = baseNode
+        If doClone = 1 Then
+          newBase = GmCopyNode(baseNode)
+          g_nodes(id).left = newBase
+        End If
+        If g_nodes(baseNode).tyArgCount > 0 Then
+          Dim uRes As GmType = GmResolveTypeSpec(TyStruct, TyNothing, 0, bPos, bLen, g_nodes(baseNode).tyArgStart, g_nodes(baseNode).tyArgCount)
+          g_nodes(newBase).intVal = uRes.namePos
+          g_nodes(newBase).lenVal = uRes.nameLen
+          g_nodes(newBase).tyArgStart = 0
+          g_nodes(newBase).tyArgCount = 0
+          outTy = uRes
+          Return id
+        End If
+        outTy = GmType With ( kind = TyUnion, innerKind = TyNothing, arrLen = 0, namePos = bPos, nameLen = bLen )
         Return id
       End If
       Dim subTy As GmType
-      If GmLookupSubst(bPos, bLen, ByRef subTy) Then
+      If (Not isVarShadow) And GmLookupSubst(bPos, bLen, ByRef subTy) Then
+        Dim newBase As Integer = baseNode
+        If doClone = 1 Then
+          newBase = GmCopyNode(baseNode)
+          g_nodes(id).left = newBase
+        End If
         g_nodes(newBase).intVal = subTy.namePos
         g_nodes(newBase).lenVal = subTy.nameLen
         outTy = subTy
         Return id
       End If
-      outTy = GmType With ( kind = TyUnion, innerKind = TyNothing, arrLen = 0, namePos = bPos, nameLen = bLen )
-      Return id
+    End If
+    ' Indirect call on a struct field (e.g. obj.cb() or obj.cb(a, b) or .cb(a, b))
+    Dim baseTy As GmType
+    g_nodes(id).left = GmProcessExpr(g_nodes(id).left, doClone, ByRef baseTy)
+    If (baseTy.arrLen = 0) And (baseTy.kind = TyStruct) Then
+      Dim sIdx As Integer = GmFindConcreteStruct(baseTy.namePos, baseTy.nameLen)
+      If sIdx >= 0 Then
+        Dim fTy As GmType
+        If GmFindStructField(sIdx, g_nodes(id).intVal, g_nodes(id).lenVal, ByRef fTy) >= 0 Then
+          If (fTy.arrLen = 0) And (fTy.kind = TyFuncPtr) Then
+            outTy = GmFuncPtrRetType(fTy.namePos)
+            Return id
+          End If
+        End If
+      End If
     End If
     outTy = GmMakePrim(TyInt)
     Return id
@@ -1940,6 +2225,21 @@ Private Function GmProcessExpr(srcId, doClone As Integer, ByRef outTy As GmType)
   If k = NdAddressOf Then
     Dim tTy As GmType
     g_nodes(id).left = GmProcessExpr(g_nodes(id).left, doClone, ByRef tTy)
+    Dim tgt As Integer = g_nodes(id).left
+    If (tgt >= 0) And (g_nodes(tgt).kind = NdVar) Then
+      Dim vp = g_nodes(tgt).intVal, vl = g_nodes(tgt).lenVal As Integer
+      Dim dummyVarTy As GmType
+      If Not GmLookupVar(vp, vl, ByRef dummyVarTy) Then
+        Dim cfIdx As Integer = GmFindConcreteFunc(vp, vl)
+        If (cfIdx >= 0) And (gm_cFuncs(cfIdx).isAsync = 0) Then
+          Dim sigId As Integer = GmMakeSigFromFuncNode(gm_cFuncs(cfIdx).nodeId)
+          If sigId >= 0 Then
+            outTy = GmType With ( kind = TyFuncPtr, innerKind = TyNothing, arrLen = 0, namePos = sigId, nameLen = 0 )
+            Return id
+          End If
+        End If
+      End If
+    End If
     outTy = GmMakePrim(TyPointer)
     Return id
   End If
@@ -2090,19 +2390,25 @@ Private Function GmProcessExpr(srcId, doClone As Integer, ByRef outTy As GmType)
       Return id
     End If
 
-    ' Case 4: Array / Pointer indexing parsed as Call: var(idx)
-    If aCnt = 1 Then
-      Dim a0 As Integer = g_kids(g_nodes(id).firstChild)
-      Dim vTy As GmType
-      If (g_nodes(a0).op = 0) And GmLookupVar(nPos, nLen, ByRef vTy) Then
-        If vTy.arrLen <> 0 Then
-          outTy = vTy
-          outTy.arrLen = 0
-          Return id
-        End If
-        If vTy.kind = TyPointer Then
-          outTy = GmMakePrim(TyByte)
-          Return id
+    ' Case 4: Array / Pointer indexing or FuncPtr variable call parsed as Call
+    Dim varCallTy As GmType
+    If GmLookupVar(nPos, nLen, ByRef varCallTy) Then
+      If (varCallTy.arrLen = 0) And (varCallTy.kind = TyFuncPtr) Then
+        outTy = GmFuncPtrRetType(varCallTy.namePos)
+        Return id
+      End If
+      If aCnt = 1 Then
+        Dim a0 As Integer = g_kids(g_nodes(id).firstChild)
+        If g_nodes(a0).op = 0 Then
+          If varCallTy.arrLen <> 0 Then
+            outTy = varCallTy
+            outTy.arrLen = 0
+            Return id
+          End If
+          If varCallTy.kind = TyPointer Then
+            outTy = GmMakePrim(TyByte)
+            Return id
+          End If
         End If
       End If
     End If
@@ -2391,6 +2697,29 @@ Private Function GmProcessStmt(srcId, doClone As Integer) As Integer
   Dim k As Integer = g_nodes(id).kind
 
   If (k = NdLabel) Or (k = NdGoTo) Or (k = NdBreak) Or (k = NdContinue) Then
+    Return id
+  End If
+
+  If k = NdDefer Then
+    Dim savedLocals As Integer = gm_localCount
+    Dim dCnt As Integer = g_nodes(id).childCount
+    If doClone = 1 Then
+      Dim sp As Integer = gm_kidSp
+      For i = 0 To dCnt - 1 Do
+        gm_kidStack(gm_kidSp) = GmProcessStmt(g_kids(g_nodes(srcId).firstChild + i), 1)
+        gm_kidSp = gm_kidSp + 1
+      End For
+      g_nodes(id).firstChild = g_kidCount
+      For i = 0 To dCnt - 1 Do
+        PushKid(gm_kidStack(sp + i))
+      End For
+      gm_kidSp = sp
+    Else
+      For i = 0 To dCnt - 1 Do
+        g_kids(g_nodes(id).firstChild + i) = GmProcessStmt(g_kids(g_nodes(id).firstChild + i), 0)
+      End For
+    End If
+    gm_localCount = savedLocals
     Return id
   End If
 
@@ -2958,6 +3287,7 @@ Public Function MonomorphizeProgram(ByRef arena As Arena, progRoot As Integer) A
         isPrivate = fnPriv,
         isAsync = isAsy,
         modId = g_nodes(d).modId,
+        nodeId = d,
         retTy = callRetTy
       )
       gm_cFuncCount = gm_cFuncCount + 1

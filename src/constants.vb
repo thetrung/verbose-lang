@@ -1,7 +1,7 @@
 ' VerBose Self-Hosting Compiler (verbose) - Shared Diagnostics, Messages & LLVM IR Templates
 
 ' --- Compiler Version & CLI Driver Messages ---
-Public Static MSG_CLI_VERSION As Pointer = "verbose 0.9.0 (VerBose-Lang Self-Hosted Compiler)\n"
+Public Static MSG_CLI_VERSION As Pointer = "verbose 0.10.0 (VerBose-Lang Self-Hosted Compiler)\n"
 Public Static MSG_CLI_USAGE As Pointer = "Usage: verbose <filename>.vb [options]\n" &
   "       verbose test [file.vb | dir] [options]\n" &
   "  test         Run built-in Test/Assert blocks in a .vb file or directory (default: tests)\n" &
@@ -102,7 +102,15 @@ Public Static MSG_TA_BREAK_LOOP = "Semantic Type Error: 'Break' can only be used
   MSG_TA_UNION_BYREF = "Semantic Type Error: Union variant fields cannot be ByRef\n",
   MSG_TA_UNION_DUP_VAR = "Semantic Type Error: Duplicate variant name in Union definition\n",
   MSG_TA_UNION_EMPTY = "Semantic Type Error: Union must declare at least one Case variant\n",
-  MSG_TA_UNION_PAT_MULTI_BIND = "Semantic Type Error: Cannot bind payload variables in comma-separated multi-variant Case pattern (use '_' to ignore)\n" As Pointer
+  MSG_TA_UNION_PAT_MULTI_BIND = "Semantic Type Error: Cannot bind payload variables in comma-separated multi-variant Case pattern (use '_' to ignore)\n",
+  MSG_TA_DEFER_RETURN = "Semantic Type Error: 'Return' cannot be used inside a Defer block\n",
+  MSG_TA_DEFER_BREAK = "Semantic Type Error: 'Break' cannot escape a Defer block\n",
+  MSG_TA_DEFER_CONTINUE = "Semantic Type Error: 'Continue' cannot escape a Defer block\n",
+  MSG_TA_DEFER_GOTO = "Semantic Type Error: 'GoTo' cannot be used inside a Defer block\n",
+  MSG_TA_DEFER_LABEL = "Semantic Type Error: 'Label' cannot be declared inside a Defer block\n",
+  MSG_TA_DEFER_GOTO_CROSS = "Semantic Type Error: 'GoTo' cannot jump across a Defer statement\n",
+  MSG_TA_FP_ASYNC = "Semantic Type Error: Cannot take AddressOf an Async function\n",
+  MSG_TA_FP_CALL_NON_FP = "Semantic Type Error: Cannot invoke expression that is not a function pointer\n" As Pointer
 
 ' --- Generics / Monomorphizer Diagnostics ---
 Public Static MSG_GM_MAX_DEPTH = "Generic Error: Maximum generic instantiation depth exceeded (possible infinite recursive instantiation)\n",

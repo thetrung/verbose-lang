@@ -68,6 +68,37 @@ Private Sub PrTypeGen(tk, innerKind, arrLen, nPos, nLen, taStart, taCount As Int
     Case TyStruct, TyEnum, TyUnion Then
       PrSlice(nPos, nLen)
       PrGenArgs(taStart, taCount)
+    Case TyFuncPtr Then
+      If (nPos >= 0) And (g_nodes(nPos).kind = NdFuncPtrType) Then
+        Dim isSub As Integer = g_nodes(nPos).op
+        If isSub = 1 Then
+          Printf("SubPtr(")
+        Else
+          Printf("FuncPtr(")
+        End If
+        For fi = 0 To g_nodes(nPos).childCount - 1 Do
+          If fi > 0 Then
+            Printf(", ")
+          End If
+          Dim pn As Integer = g_kids(g_nodes(nPos).firstChild + fi)
+          If g_nodes(pn).op = 1 Then
+            Printf("ByRef ")
+          End If
+          If g_nodes(pn).lenVal > 0 Then
+            PrSlice(g_nodes(pn).intVal, g_nodes(pn).lenVal)
+            Printf(" As ")
+          End If
+          PrTypeGen(g_nodes(pn).tyKind, g_nodes(pn).tyInnerKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen, g_nodes(pn).tyArgStart, g_nodes(pn).tyArgCount)
+        End For
+        Printf(")")
+        If (isSub = 0) And (g_nodes(nPos).left >= 0) Then
+          Dim rn As Integer = g_nodes(nPos).left
+          Printf(" As ")
+          PrTypeGen(g_nodes(rn).tyKind, g_nodes(rn).tyInnerKind, 0, g_nodes(rn).tyNamePos, g_nodes(rn).tyNameLen, g_nodes(rn).tyArgStart, g_nodes(rn).tyArgCount)
+        End If
+      Else
+        Printf("FuncPtr")
+      End If
     Case _ Then Printf("Unknown")
   End Match
   Match With
@@ -338,6 +369,22 @@ Private Sub PrExpr(id As Integer)
     Printf(")")
     Return
   End If
+  If k = NdIndirectCall Then
+    PrExpr(g_nodes(id).left)
+    Printf("(")
+    For i = 0 To g_nodes(id).childCount - 1 Do
+      If i > 0 Then
+        Printf(", ")
+      End If
+      Dim aNode As Integer = g_kids(g_nodes(id).firstChild + i)
+      If g_nodes(aNode).op = 1 Then
+        Printf("ByRef ")
+      End If
+      PrExpr(g_nodes(aNode).left)
+    End For
+    Printf(")")
+    Return
+  End If
   If k = NdCall Then
     PrSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
     PrGenArgs(g_nodes(id).tyArgStart, g_nodes(id).tyArgCount)
@@ -440,6 +487,20 @@ Private Sub PrStmt(id, depth As Integer)
   End If
   If k = NdContinue Then
     Printf("Continue\n")
+    Return
+  End If
+  If k = NdDefer Then
+    If (g_nodes(id).op = 1) And (g_nodes(id).childCount = 1) Then
+      Printf("Defer ")
+      PrStmt(g_kids(g_nodes(id).firstChild), 0)
+    Else
+      Printf("Defer\n")
+      For di = 0 To g_nodes(id).childCount - 1 Do
+        PrStmt(g_kids(g_nodes(id).firstChild + di), depth + 1)
+      End For
+      PrIndent(depth)
+      Printf("End Defer\n")
+    End If
     Return
   End If
   If k = NdAssert Then

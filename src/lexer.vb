@@ -153,6 +153,9 @@ Private Function LxClassifyKeyword(pos, slen As Integer) As Integer
     Case SliceEqualsStr(pos, slen, "Operator", 8) Then Return TkOperator
     Case SliceEqualsStr(pos, slen, "Of", 2) Then Return TkOf
     Case SliceEqualsStr(pos, slen, "Union", 5) Then Return TkUnion
+    Case SliceEqualsStr(pos, slen, "Defer", 5) Then Return TkDefer
+    Case SliceEqualsStr(pos, slen, "FuncPtr", 7) Then Return TkFuncPtr
+    Case SliceEqualsStr(pos, slen, "SubPtr", 6) Then Return TkSubPtr
     Case SliceEqualsStr(pos, slen, "And", 3) Then Return TkAnd
     Case SliceEqualsStr(pos, slen, "Or", 2) Then Return TkOr
     Case SliceEqualsStr(pos, slen, "Not", 3) Then Return TkNot

@@ -150,20 +150,227 @@ Private Sub PParseGenericArgs(ByRef outStart, outCount As Integer)
   End For
 End Sub
 
+Private Function PPeekAt(offset As Integer) As Integer
+  If (p_pos + offset) >= g_tokCount Then
+    Return TkEof
+  End If
+  Return g_tokens(p_pos + offset).kind
+End Function
+
+Private Function PIsNamedFpParam() As Boolean
+  If PPeekKind() <> TkIdent Then
+    Return False
+  End If
+  Dim k1 As Integer = PPeekAt(1)
+  If k1 = TkAs Then
+    Return True
+  End If
+  If k1 = TkLParen Then
+    If PPeekAt(2) = TkOf Then
+      Return False
+    End If
+    Dim off As Integer = 2
+    If PPeekAt(off) = TkIntLit Then
+      off = off + 1
+    End If
+    If PPeekAt(off) = TkRParen Then
+      Return PPeekAt(off + 1) = TkAs
+    End If
+    Return False
+  End If
+  If k1 = TkComma Then
+    Dim off As Integer = 1
+    While PPeekAt(off) = TkComma Do
+      off = off + 1
+      While PPeekAt(off) = TkNewline Do
+        off = off + 1
+      End While
+      If PPeekAt(off) <> TkIdent Then
+        Return False
+      End If
+      off = off + 1
+      If PPeekAt(off) = TkLParen Then
+        off = off + 1
+        If PPeekAt(off) = TkIntLit Then
+          off = off + 1
+        End If
+        If PPeekAt(off) <> TkRParen Then
+          Return False
+        End If
+        off = off + 1
+      End If
+    End While
+    Return PPeekAt(off) = TkAs
+  End If
+  Return False
+End Function
+
+Private Function PParseFuncPtrType(isSub As Integer) As Integer
+  PAdvance()
+  PExpect(TkLParen)
+  PSkipNewlines()
+  Dim pBuf(64) As Integer
+  Dim pCnt As Integer = 0
+  If PPeekKind() <> TkRParen Then
+    Dim grpStart As Integer = 0
+    Dim grpByRef As Integer = 0
+    Dim reading As Boolean = True
+    While reading And (PPeekKind() <> TkEof) Do
+      PSkipNewlines()
+      Dim isByRef As Integer = grpByRef
+      If PPeekKind() = TkByRef Then
+        isByRef = 1
+        grpByRef = 1
+        PAdvance()
+      End If
+      If PIsNamedFpParam() Then
+        Dim pPos As Integer = g_tokens(p_pos).pos
+        Dim pLen As Integer = g_tokens(p_pos).len
+        PAdvance()
+        Dim arrLen As Integer = 0
+        If PPeekKind() = TkLParen Then
+          PAdvance()
+          If PPeekKind() = TkRParen Then
+            arrLen = -1
+            PAdvance()
+          Else
+            arrLen = g_tokens(p_pos).intVal
+            PExpect(TkIntLit)
+            PExpect(TkRParen)
+          End If
+        End If
+        Dim pn As Integer = NewNode(NdParam)
+        With g_nodes(pn)
+          .op = isByRef
+          .intVal = pPos
+          .lenVal = pLen
+          .tyArrLen = arrLen
+        End With
+        pBuf(pCnt) = pn
+        pCnt = pCnt + 1
+        If PPeekKind() = TkAs Then
+          PAdvance()
+          Dim tk = 0, tik = 0, tnPos = 0, tnLen = 0, taStart = 0, taCount = 0 As Integer
+          PParseTypeSpec(ByRef tk, ByRef tik, ByRef tnPos, ByRef tnLen, ByRef taStart, ByRef taCount)
+          For gi = grpStart To pCnt - 1 Do
+            With g_nodes(pBuf(gi))
+              .tyKind = tk
+              .tyInnerKind = tik
+              .tyNamePos = tnPos
+              .tyNameLen = tnLen
+              .tyArgStart = taStart
+              .tyArgCount = taCount
+            End With
+          End For
+          grpStart = pCnt
+          grpByRef = 0
+        End If
+      Else
+        Dim tk = 0, tik = 0, tnPos = 0, tnLen = 0, taStart = 0, taCount = 0 As Integer
+        PParseTypeSpec(ByRef tk, ByRef tik, ByRef tnPos, ByRef tnLen, ByRef taStart, ByRef taCount)
+        Dim arrLen As Integer = 0
+        If PPeekKind() = TkLParen Then
+          PAdvance()
+          If PPeekKind() = TkRParen Then
+            arrLen = -1
+            PAdvance()
+          Else
+            arrLen = g_tokens(p_pos).intVal
+            PExpect(TkIntLit)
+            PExpect(TkRParen)
+          End If
+        End If
+        Dim pn As Integer = NewNode(NdParam)
+        With g_nodes(pn)
+          .op = isByRef
+          .tyKind = tk
+          .tyInnerKind = tik
+          .tyArrLen = arrLen
+          .tyNamePos = tnPos
+          .tyNameLen = tnLen
+          .tyArgStart = taStart
+          .tyArgCount = taCount
+        End With
+        pBuf(pCnt) = pn
+        pCnt = pCnt + 1
+        grpStart = pCnt
+        grpByRef = 0
+      End If
+      PSkipNewlines()
+      If PPeekKind() = TkComma Then
+        PAdvance()
+        PSkipNewlines()
+      Else
+        reading = False
+      End If
+    End While
+    If pCnt > grpStart Then
+      PExpect(TkAs)
+    End If
+  End If
+  PExpect(TkRParen)
+  Dim retNode As Integer = -1
+  If isSub = 0 Then
+    PExpect(TkAs)
+    Dim rk = 0, rik = 0, rnPos = 0, rnLen = 0, rTaStart = 0, rTaCount = 0 As Integer
+    PParseTypeSpec(ByRef rk, ByRef rik, ByRef rnPos, ByRef rnLen, ByRef rTaStart, ByRef rTaCount)
+    retNode = NewNode(NdTypeRef)
+    With g_nodes(retNode)
+      .tyKind = rk
+      .tyInnerKind = rik
+      .tyNamePos = rnPos
+      .tyNameLen = rnLen
+      .tyArgStart = rTaStart
+      .tyArgCount = rTaCount
+    End With
+  End If
+  Dim sigId As Integer = NewNode(NdFuncPtrType)
+  With g_nodes(sigId)
+    .op = isSub
+    .left = retNode
+    .firstChild = g_kidCount
+    .childCount = pCnt
+  End With
+  For i = 0 To pCnt - 1 Do
+    PushKid(pBuf(i))
+  End For
+  Return sigId
+End Function
+
 Private Sub PParseTypeSpec(ByRef outKind, outInnerKind, outNamePos, outNameLen, outTaStart, outTaCount As Integer)
   outInnerKind = TyNothing
   outNamePos = 0
   outNameLen = 0
   outTaStart = 0
   outTaCount = 0
+  If PPeekKind() = TkFuncPtr Then
+    outKind = TyFuncPtr
+    outNamePos = PParseFuncPtrType(0)
+    Return
+  End If
+  If PPeekKind() = TkSubPtr Then
+    outKind = TyFuncPtr
+    outNamePos = PParseFuncPtrType(1)
+    Return
+  End If
   If PPeekKind() = TkTask Then
     outKind = TyTask
     PAdvance()
     If PPeekKind() = TkLParen Then
       PAdvance()
-      PParseBaseType(ByRef outInnerKind, ByRef outNamePos, ByRef outNameLen)
-      If (outInnerKind = TyStruct) And (PPeekKind() = TkLParen) And (PPeekNextKind() = TkOf) Then
-        PParseGenericArgs(ByRef outTaStart, ByRef outTaCount)
+      If PPeekKind() = TkFuncPtr Then
+        outInnerKind = TyFuncPtr
+        outNamePos = PParseFuncPtrType(0)
+      Else
+        If PPeekKind() = TkSubPtr Then
+          outInnerKind = TyFuncPtr
+          outNamePos = PParseFuncPtrType(1)
+        Else
+          PParseBaseType(ByRef outInnerKind, ByRef outNamePos, ByRef outNameLen)
+          If (outInnerKind = TyStruct) And (PPeekKind() = TkLParen) And (PPeekNextKind() = TkOf) Then
+            PParseGenericArgs(ByRef outTaStart, ByRef outTaCount)
+          End If
+        End If
       End If
       PExpect(TkRParen)
     End If
@@ -703,53 +910,81 @@ Private Function PParsePostfix() As Integer
     Else
       PAdvance()
       PSkipNewlines()
-      If g_nodes(cur).kind = NdFieldAccess Then
-        Dim argBuf(64) As Integer
-        Dim argCnt As Integer = 0
-        If PPeekKind() <> TkRParen Then
-          Dim reading As Boolean = True
-          While reading Do
-            argBuf(argCnt) = ParseExpr()
-            argCnt = argCnt + 1
+      Dim argBuf(64) As Integer
+      Dim argCnt As Integer = 0
+      Dim hasByRef As Boolean = False
+      If PPeekKind() <> TkRParen Then
+        Dim reading As Boolean = True
+        While reading Do
+          Dim an As Integer = PParseCallArg()
+          If g_nodes(an).op = 1 Then
+            hasByRef = True
+          End If
+          argBuf(argCnt) = an
+          argCnt = argCnt + 1
+          PSkipNewlines()
+          If PPeekKind() = TkComma Then
+            PAdvance()
             PSkipNewlines()
-            If PPeekKind() = TkComma Then
-              PAdvance()
-              PSkipNewlines()
-            Else
-              reading = False
-            End If
-          End While
-        End If
-        PExpect(TkRParen)
+          Else
+            reading = False
+          End If
+        End While
+      End If
+      PExpect(TkRParen)
+      If g_nodes(cur).kind = NdFieldAccess Then
         Dim baseNode As Integer = g_nodes(cur).left
         Dim hasGenBase As Boolean = (baseNode >= 0) And (g_nodes(baseNode).tyArgCount > 0)
-        If (argCnt = 1) And (Not hasGenBase) Then
+        If (argCnt = 1) And (Not hasGenBase) And (Not hasByRef) Then
           Dim ia As Integer = NewNode(NdIndexAccess)
           g_nodes(ia).left = cur
-          g_nodes(ia).right = argBuf(0)
+          g_nodes(ia).right = g_nodes(argBuf(0)).left
           cur = ia
         Else
-          Dim ui As Integer = NewNode(NdUnionInit)
-          With g_nodes(ui)
-            .left = baseNode
-            .intVal = g_nodes(cur).intVal
-            .lenVal = g_nodes(cur).lenVal
+          If hasByRef Then
+            Dim ic As Integer = NewNode(NdIndirectCall)
+            With g_nodes(ic)
+              .left = cur
+              .firstChild = g_kidCount
+              .childCount = argCnt
+            End With
+            For ai = 0 To argCnt - 1 Do
+              PushKid(argBuf(ai))
+            End For
+            cur = ic
+          Else
+            Dim ui As Integer = NewNode(NdUnionInit)
+            With g_nodes(ui)
+              .left = baseNode
+              .intVal = g_nodes(cur).intVal
+              .lenVal = g_nodes(cur).lenVal
+              .firstChild = g_kidCount
+              .childCount = argCnt
+            End With
+            For ai = 0 To argCnt - 1 Do
+              PushKid(g_nodes(argBuf(ai)).left)
+            End For
+            cur = ui
+          End If
+        End If
+      Else
+        If (argCnt = 1) And (Not hasByRef) Then
+          Dim ia As Integer = NewNode(NdIndexAccess)
+          g_nodes(ia).left = cur
+          g_nodes(ia).right = g_nodes(argBuf(0)).left
+          cur = ia
+        Else
+          Dim ic As Integer = NewNode(NdIndirectCall)
+          With g_nodes(ic)
+            .left = cur
             .firstChild = g_kidCount
             .childCount = argCnt
           End With
           For ai = 0 To argCnt - 1 Do
             PushKid(argBuf(ai))
           End For
-          cur = ui
+          cur = ic
         End If
-      Else
-        Dim idxE As Integer = ParseExpr()
-        PSkipNewlines()
-        PExpect(TkRParen)
-        Dim ia As Integer = NewNode(NdIndexAccess)
-        g_nodes(ia).left = cur
-        g_nodes(ia).right = idxE
-        cur = ia
       End If
     End If
   End While
@@ -1193,6 +1428,35 @@ Public Function ParseStmt() As Integer
   If k = TkContinue Then
     PAdvance()
     Return NewNode(NdContinue)
+  End If
+
+  ' Defer <stmt> | Defer ... End Defer
+  If k = TkDefer Then
+    PAdvance()
+    Dim isInline As Integer = 0
+    Dim bStart = 0, bCount = 0 As Integer
+    If (PPeekKind() <> TkNewline) And (PPeekKind() <> TkEof) Then
+      isInline = 1
+      Dim sBuf(32) As Integer
+      Dim sCnt As Integer = 0
+      PParseStmtInto(sBuf, ByRef sCnt)
+      bStart = g_kidCount
+      bCount = sCnt
+      For si = 0 To sCnt - 1 Do
+        PushKid(sBuf(si))
+      End For
+    Else
+      PParseBlock(0, ByRef bStart, ByRef bCount)
+      PExpect(TkEnd)
+      PExpect(TkDefer)
+    End If
+    Dim id As Integer = NewNode(NdDefer)
+    With g_nodes(id)
+      .op = isInline
+      .firstChild = bStart
+      .childCount = bCount
+    End With
+    Return id
   End If
 
   ' Await expr (statement form for Async Sub / Task)

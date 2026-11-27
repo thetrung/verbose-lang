@@ -6,12 +6,12 @@ See also: [Wiki Tutorial](https://github.com/thetrung/verbose-lang/wiki/Tutorial
 
 ## Project Identity
 
-- **VerBose-Lang** (`v0.9.0`): brace-free, case-sensitive, Visual Basic–inspired systems language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**).
+- **VerBose-Lang** (`v0.10.0`): brace-free, case-sensitive, Visual Basic–inspired systems language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**).
 - **Zero external toolchain deps**: `clang` + `curl` only (no OCaml, no Python). The archival OCaml Stage 0 compiler lives on the `stage0` git branch.
 - **Targets** (`--target` / `VERBOSE_TARGET`): `linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`, and freestanding 32-bit `arm-m` (`thumbv7em-unknown-none-eabi`).
 - **Companion ecosystem repos** (sibling dirs in `../` when checked out): `verbose-raylib`, `verbose.nvim`, `verbose-pkg` (`vpm`), `verbose-tui`, `verbose-openSKP`, `verbose-viewSKP`, `verbose-sqlite3`, `verbose-curl`.
 
-## Architecture & Compiler Internals (`src/`, 10 modules, 16,606 LOC)
+## Architecture & Compiler Internals (`src/`, 10 modules, 18,713 LOC)
 
 Every compilation allocates a single **64 MiB deterministic `Arena`** in `RunSingleTarget` (`src/verbose.vb`) for source pools, tokens, AST nodes, and symbol tables:
 
@@ -36,7 +36,7 @@ All pure VerBose, zero-GC, Arena-backed:
 - `std/json.vb` — Strict RFC 8259 Arena-backed DOM parser (`JsonParse`, `JsonDoc`, `JsonNode`, `JsonGet`/`JsonAt`/`JsonFirst`/`JsonNext`, `JsonAs*`, `JsonStringify`) and streaming `JsonWriter` (`JwNew`, `JwBeginObj`/`JwBeginArr`, `JwField*`, `JwFinish` — zero libc, bare-metal safe).
 
 ### Tests (`tests/`)
-- 33 native pure-VerBose `Test`/`Assert` suites (`tests/test_*.vb`, 213 `Test` blocks) + `tests/bootstrap_suite.vb` + `tests/harness.vb` + `tests/raylib/` (Raylib 5.x bindings, demos & headless C shim).
+- 35 native pure-VerBose `Test`/`Assert` suites (`tests/test_*.vb`, 221 `Test` blocks) + `tests/bootstrap_suite.vb` + `tests/harness.vb` + `tests/raylib/` (Raylib 5.x bindings, demos & headless C shim).
 
 ## Build, Bootstrap & Test Commands
 

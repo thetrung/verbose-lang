@@ -110,6 +110,9 @@ Public Enum TokenKind
   TkOperator = 104
   TkOf = 105
   TkUnion = 106
+  TkDefer = 107
+  TkFuncPtr = 108
+  TkSubPtr = 109
 End Enum
 
 Public Structure Token

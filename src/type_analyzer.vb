@@ -45,11 +45,16 @@ Structure TaLocalSym
 End Structure
 
 Structure TaLabelInfo
-  Dim namePos, nameLen As Integer
+  Dim namePos, nameLen, scopeId, deferCnt, totalDefers As Integer
 End Structure
 
 Structure TaOpInfo
   Dim opTok, isPrivate, modId, paramStart, paramCount As Integer
+  Dim retTy As TypeInfo
+End Structure
+
+Structure TaFpSig
+  Dim isSub, paramStart, paramCount As Integer
   Dim retTy As TypeInfo
 End Structure
 
@@ -59,9 +64,11 @@ Private Static ta_unions() As TaUnionInfo, ta_unionVars() As TaUnionVar
 Private Static ta_globals() As TaGlobalInfo, ta_funcs() As TaFuncInfo
 Private Static ta_ops() As TaOpInfo
 Private Static ta_params() As TaParamInfo, ta_locals() As TaLocalSym
+Private Static ta_fpSigs() As TaFpSig, ta_fpParams() As TaParamInfo
+Private Static ta_scopeParent() As Integer, ta_scopeDeferCnt() As Integer
 Private Static ta_labels(128) As TaLabelInfo
 Private Static ta_withTys(16) As TypeInfo
-Private Static ta_enumCount, ta_enumMemCount, ta_structCount, ta_fieldCount, ta_unionCount, ta_unionVarCount, ta_globalCount, ta_funcCount, ta_opCount, ta_paramCount, ta_localCount, ta_labelCount, ta_withDepth, ta_loopDepth, ta_curModId, ta_errCount As Integer = 0
+Private Static ta_enumCount, ta_enumMemCount, ta_structCount, ta_fieldCount, ta_unionCount, ta_unionVarCount, ta_globalCount, ta_funcCount, ta_opCount, ta_paramCount, ta_fpSigCount, ta_fpParamCount, ta_localCount, ta_labelCount, ta_withDepth, ta_loopDepth, ta_deferDepth, ta_curScopeId, ta_nextScopeId, ta_curDeferTotal, ta_curModId, ta_errCount As Integer = 0
 Private Static ta_altModId = -1, ta_ptrSize = 8, ta_curFrameReported = 0 As Integer
 Private Static ta_maxStackBytes = 65536, ta_curFrameBytes = 0 As Long
 Private Static ta_curRetTy As TypeInfo
@@ -129,7 +136,7 @@ Private Function TaTypeAlign(ty As TypeInfo) As Integer
     Case TyShort Then Return 2
     Case TyInt, TySingle, TyEnum Then Return 4
     Case TyLong, TyDouble Then Return 8
-    Case TyPointer, TyTask Then Return ta_ptrSize
+    Case TyPointer, TyTask, TyFuncPtr Then Return ta_ptrSize
     Case TyArena Then Return 8
     Case TyStruct Then
       If (ty.typeIdx < 0) Or (ty.typeIdx >= ta_structCount) Then
@@ -168,7 +175,7 @@ Private Function TaTypeSize(ty As TypeInfo) As Long
     Case TyShort Then elemSz = 2
     Case TyInt, TySingle, TyEnum Then elemSz = 4
     Case TyLong, TyDouble Then elemSz = 8
-    Case TyPointer, TyTask Then elemSz = Long(ta_ptrSize)
+    Case TyPointer, TyTask, TyFuncPtr Then elemSz = Long(ta_ptrSize)
     Case TyArena Then elemSz = Long(ta_ptrSize) + 24
     Case TyStruct Then
       If (ty.typeIdx < 0) Or (ty.typeIdx >= ta_structCount) Then
@@ -295,6 +302,32 @@ Private Sub TaPrintType(ty As TypeInfo)
         Printf(")")
       End If
     Case TyStruct, TyEnum, TyUnion Then TaPrintSlice(ty.namePos, ty.nameLen)
+    Case TyFuncPtr Then
+      If (ty.typeIdx >= 0) And (ty.typeIdx < ta_fpSigCount) Then
+        Dim fs As TaFpSig = ta_fpSigs(ty.typeIdx)
+        If fs.isSub = 1 Then
+          Printf("SubPtr(")
+        Else
+          Printf("FuncPtr(")
+        End If
+        For fi = 0 To fs.paramCount - 1 Do
+          If fi > 0 Then
+            Printf(", ")
+          End If
+          Dim fp As TaParamInfo = ta_fpParams(fs.paramStart + fi)
+          If fp.isByRef = 1 Then
+            Printf("ByRef ")
+          End If
+          TaPrintType(fp.ty)
+        End For
+        Printf(")")
+        If fs.isSub = 0 Then
+          Printf(" As ")
+          TaPrintType(fs.retTy)
+        End If
+      Else
+        Printf("FuncPtr")
+      End If
     Case _ Then Printf("Unknown")
   End Match
   If ty.arrLen > 0 Then
@@ -513,6 +546,86 @@ Private Function TaLookupVar(pos, slen As Integer, ByRef outTy As TypeInfo) As B
   Return False
 End Function
 
+Private Function TaRegisterFpSigFromNode(sigNodeId As Integer) As Integer
+  If (sigNodeId < 0) Or (g_nodes(sigNodeId).kind <> NdFuncPtrType) Then
+    Return -1
+  End If
+  Dim pc As Integer = g_nodes(sigNodeId).childCount
+  Dim pBuf(64) As TaParamInfo
+  For i = 0 To pc - 1 Do
+    Dim pn As Integer = g_kids(g_nodes(sigNodeId).firstChild + i)
+    Dim pty As TypeInfo = TaResolveTypeEx(g_nodes(pn).tyKind, g_nodes(pn).tyInnerKind, g_nodes(pn).tyArrLen, g_nodes(pn).tyNamePos, g_nodes(pn).tyNameLen)
+    pBuf(i) = TaParamInfo With ( isByRef = g_nodes(pn).op, ty = pty )
+  End For
+  Dim rTy As TypeInfo = TaMakePrim(TyNothing)
+  If (g_nodes(sigNodeId).op = 0) And (g_nodes(sigNodeId).left >= 0) Then
+    Dim rn As Integer = g_nodes(sigNodeId).left
+    rTy = TaResolveTypeEx(g_nodes(rn).tyKind, g_nodes(rn).tyInnerKind, 0, g_nodes(rn).tyNamePos, g_nodes(rn).tyNameLen)
+  End If
+  Dim pStart As Integer = ta_fpParamCount
+  For i = 0 To pc - 1 Do
+    If ta_fpParamCount < 4096 Then
+      ta_fpParams(ta_fpParamCount) = pBuf(i)
+      ta_fpParamCount = ta_fpParamCount + 1
+    End If
+  End For
+  Dim idx As Integer = ta_fpSigCount
+  If idx < 1024 Then
+    ta_fpSigs(idx) = TaFpSig With ( isSub = g_nodes(sigNodeId).op, paramStart = pStart, paramCount = pc, retTy = rTy )
+    ta_fpSigCount = ta_fpSigCount + 1
+  End If
+  Return idx
+End Function
+
+Private Function TaRegisterFpSigFromFunc(fnIdx As Integer) As Integer
+  Dim fi As TaFuncInfo = ta_funcs(fnIdx)
+  Dim pStart As Integer = ta_fpParamCount
+  For i = 0 To fi.paramCount - 1 Do
+    If ta_fpParamCount < 4096 Then
+      ta_fpParams(ta_fpParamCount) = ta_params(fi.paramStart + i)
+      ta_fpParamCount = ta_fpParamCount + 1
+    End If
+  End For
+  Dim isSub As Integer = 0
+  If fi.retTy.kind = TyNothing Then
+    isSub = 1
+  End If
+  Dim idx As Integer = ta_fpSigCount
+  If idx < 1024 Then
+    ta_fpSigs(idx) = TaFpSig With ( isSub = isSub, paramStart = pStart, paramCount = fi.paramCount, retTy = fi.retTy )
+    ta_fpSigCount = ta_fpSigCount + 1
+  End If
+  Return idx
+End Function
+
+Private Function TaFpSigsEqual(s1, s2 As Integer) As Boolean
+  If s1 = s2 Then
+    Return True
+  End If
+  If (s1 < 0) Or (s2 < 0) Or (s1 >= ta_fpSigCount) Or (s2 >= ta_fpSigCount) Then
+    Return False
+  End If
+  Dim f1 As TaFpSig = ta_fpSigs(s1)
+  Dim f2 As TaFpSig = ta_fpSigs(s2)
+  If (f1.isSub <> f2.isSub) Or (f1.paramCount <> f2.paramCount) Then
+    Return False
+  End If
+  If Not TaTypesEqual(f1.retTy, f2.retTy) Then
+    Return False
+  End If
+  For i = 0 To f1.paramCount - 1 Do
+    Dim p1 As TaParamInfo = ta_fpParams(f1.paramStart + i)
+    Dim p2 As TaParamInfo = ta_fpParams(f2.paramStart + i)
+    If p1.isByRef <> p2.isByRef Then
+      Return False
+    End If
+    If Not TaTypesEqual(p1.ty, p2.ty) Then
+      Return False
+    End If
+  End For
+  Return True
+End Function
+
 Private Function TaResolveTypeEx(rawKind As Integer, rawInnerKind As Integer, arrLen As Integer, nPos As Integer, nLen As Integer) As TypeInfo
   Dim res As TypeInfo With (
     kind = rawKind,
@@ -522,6 +635,10 @@ Private Function TaResolveTypeEx(rawKind As Integer, rawInnerKind As Integer, ar
     nameLen = nLen,
     innerKind = rawInnerKind
   )
+  If rawKind = TyFuncPtr Then
+    res.typeIdx = TaRegisterFpSigFromNode(nPos)
+    Return res
+  End If
   If rawKind = TyStruct Then
     Dim eIdx As Integer = TaFindEnum(nPos, nLen)
     If eIdx >= 0 Then
@@ -538,19 +655,23 @@ Private Function TaResolveTypeEx(rawKind As Integer, rawInnerKind As Integer, ar
       End If
     End If
   Else
-    If (rawKind = TyTask) And (rawInnerKind = TyStruct) Then
-      Dim eIdx As Integer = TaFindEnum(nPos, nLen)
-      If eIdx >= 0 Then
-        res.innerKind = TyEnum
-        res.typeIdx = eIdx
-      Else
-        Dim uIdx As Integer = TaFindUnion(nPos, nLen)
-        If uIdx >= 0 Then
-          res.innerKind = TyUnion
-          res.typeIdx = uIdx
+    If (rawKind = TyTask) And (rawInnerKind = TyFuncPtr) Then
+      res.typeIdx = TaRegisterFpSigFromNode(nPos)
+    Else
+      If (rawKind = TyTask) And (rawInnerKind = TyStruct) Then
+        Dim eIdx As Integer = TaFindEnum(nPos, nLen)
+        If eIdx >= 0 Then
+          res.innerKind = TyEnum
+          res.typeIdx = eIdx
         Else
-          Dim sIdx As Integer = TaFindStruct(nPos, nLen)
-          res.typeIdx = sIdx
+          Dim uIdx As Integer = TaFindUnion(nPos, nLen)
+          If uIdx >= 0 Then
+            res.innerKind = TyUnion
+            res.typeIdx = uIdx
+          Else
+            Dim sIdx As Integer = TaFindStruct(nPos, nLen)
+            res.typeIdx = sIdx
+          End If
         End If
       End If
     End If
@@ -566,6 +687,16 @@ Private Sub TaValidateType(ty As TypeInfo)
   If ty.arrLen = -2 Then
     Printf(MSG_TA_ARRAY_SIZE_POS)
     ta_errCount = ta_errCount + 1
+  End If
+  If ((ty.kind = TyFuncPtr) Or ((ty.kind = TyTask) And (ty.innerKind = TyFuncPtr))) And (ty.typeIdx >= 0) And (ty.typeIdx < ta_fpSigCount) Then
+    Dim fs As TaFpSig = ta_fpSigs(ty.typeIdx)
+    For fi = 0 To fs.paramCount - 1 Do
+      TaValidateType(ta_fpParams(fs.paramStart + fi).ty)
+    End For
+    If fs.isSub = 0 Then
+      TaValidateType(fs.retTy)
+    End If
+    Return
   End If
   Dim badStruct As Boolean = (((ty.kind = TyStruct) Or (ty.kind = TyUnion)) And (ty.typeIdx < 0)) Or ((ty.kind = TyTask) And ((ty.innerKind = TyStruct) Or (ty.innerKind = TyUnion)) And (ty.typeIdx < 0))
   If badStruct Then
@@ -624,6 +755,9 @@ Private Function TaBaseTypesEqual(t1 As TypeInfo, t2 As TypeInfo) As Boolean
   If (k1 = TyStruct) Or (k1 = TyUnion) Then
     Return t1.typeIdx = t2.typeIdx
   End If
+  If k1 = TyFuncPtr Then
+    Return TaFpSigsEqual(t1.typeIdx, t2.typeIdx)
+  End If
   If k1 = TyTask Then
     Dim ik1 As Integer = TaNormKind(t1.innerKind)
     Dim ik2 As Integer = TaNormKind(t2.innerKind)
@@ -632,6 +766,9 @@ Private Function TaBaseTypesEqual(t1 As TypeInfo, t2 As TypeInfo) As Boolean
     End If
     If (ik1 = TyStruct) Or (ik1 = TyUnion) Then
       Return t1.typeIdx = t2.typeIdx
+    End If
+    If ik1 = TyFuncPtr Then
+      Return TaFpSigsEqual(t1.typeIdx, t2.typeIdx)
     End If
     Return True
   End If
@@ -655,9 +792,12 @@ Private Function TaIsAssignable(target As TypeInfo, actual As TypeInfo, rhsNode 
   If TaIsFloatType(target) And TaIsFloatType(actual) Then
     Return True
   End If
-  ' Pointer <- Array or Integer
+  ' Pointer <- Array, FuncPtr, or Integer
   If (target.arrLen = 0) And (target.kind = TyPointer) Then
     If actual.arrLen <> 0 Then
+      Return True
+    End If
+    If actual.kind = TyFuncPtr Then
       Return True
     End If
     If TaIsIntType(actual) Then
@@ -676,8 +816,8 @@ Private Function TaIsAssignable(target As TypeInfo, actual As TypeInfo, rhsNode 
       Return True
     End If
   End If
-  ' Task(T) <- literal 0 (null handle)
-  If (target.arrLen = 0) And (target.kind = TyTask) Then
+  ' Task(T) or FuncPtr <- literal 0 (null handle / null function pointer)
+  If (target.arrLen = 0) And ((target.kind = TyTask) Or (target.kind = TyFuncPtr)) Then
     If (rhsNode >= 0) And (g_nodes(rhsNode).kind = NdIntLit) And (g_nodes(rhsNode).longVal = 0) Then
       Return True
     End If
@@ -821,11 +961,67 @@ Private Function TaIsVarIndexCall(callId As Integer) As Boolean
   If Not TaLookupVar(nPos, nLen, ByRef vTy) Then
     Return False
   End If
+  If (vTy.arrLen = 0) And (vTy.kind = TyFuncPtr) Then
+    Return False
+  End If
   If (vTy.arrLen <> 0) Or (vTy.kind = TyPointer) Then
     Return True
   End If
   If (TaFindFunc(nPos, nLen) < 0) And (TaFindStruct(nPos, nLen) < 0) And (TaFindUnion(nPos, nLen) < 0) Then
     Return True
+  End If
+  Return False
+End Function
+
+Private Function TaPeekExprIsFuncPtr(id As Integer) As Boolean
+  If id < 0 Then
+    Return False
+  End If
+  Dim k As Integer = g_nodes(id).kind
+  If k = NdVar Then
+    Dim vTy As TypeInfo
+    If TaLookupVar(g_nodes(id).intVal, g_nodes(id).lenVal, ByRef vTy) Then
+      Return (vTy.arrLen = 0) And (vTy.kind = TyFuncPtr)
+    End If
+    Return False
+  End If
+  If k = NdFieldAccess Then
+    Dim baseId As Integer = g_nodes(id).left
+    If baseId < 0 Then
+      Return False
+    End If
+    Dim bTy As TypeInfo
+    Dim haveBase As Boolean = False
+    If g_nodes(baseId).kind = NdWithTarget Then
+      If ta_withDepth > 0 Then
+        bTy = ta_withTys(ta_withDepth - 1)
+        haveBase = True
+      End If
+    Else
+      If g_nodes(baseId).kind = NdVar Then
+        haveBase = TaLookupVar(g_nodes(baseId).intVal, g_nodes(baseId).lenVal, ByRef bTy)
+      End If
+    End If
+    If haveBase And (bTy.arrLen = 0) And (bTy.kind = TyStruct) And (bTy.typeIdx >= 0) Then
+      Dim fTy As TypeInfo
+      If TaFindStructField(bTy.typeIdx, g_nodes(id).intVal, g_nodes(id).lenVal, ByRef fTy) >= 0 Then
+        Return (fTy.arrLen = 0) And (fTy.kind = TyFuncPtr)
+      End If
+    End If
+    Return False
+  End If
+  If (k = NdCall) And TaIsVarIndexCall(id) Then
+    Dim vTy As TypeInfo
+    If TaLookupVar(g_nodes(id).intVal, g_nodes(id).lenVal, ByRef vTy) Then
+      Return (vTy.arrLen <> 0) And (vTy.kind = TyFuncPtr)
+    End If
+    Return False
+  End If
+  If k = NdCall Then
+    Dim fIdx As Integer = TaFindFunc(g_nodes(id).intVal, g_nodes(id).lenVal)
+    If fIdx >= 0 Then
+      Return (ta_funcs(fIdx).retTy.arrLen = 0) And (ta_funcs(fIdx).retTy.kind = TyFuncPtr)
+    End If
   End If
   Return False
 End Function
@@ -846,7 +1042,13 @@ Private Function TaIsLValue(id As Integer) As Boolean
     End If
     Return True
   End If
-  If (k = NdFieldAccess) Or (k = NdIndexAccess) Or (k = NdWithTarget) Then
+  If k = NdIndexAccess Then
+    If TaPeekExprIsFuncPtr(g_nodes(id).left) Then
+      Return False
+    End If
+    Return True
+  End If
+  If (k = NdFieldAccess) Or (k = NdWithTarget) Then
     Return True
   End If
   If k = NdCall Then
@@ -860,6 +1062,22 @@ Private Function TaIsConstExpr(ty As TypeInfo, exprId As Integer) As Boolean
     Return True
   End If
   Dim k As Integer = g_nodes(exprId).kind
+  ' Typed FuncPtr initialized to 0 (null) or AddressOf(non-Async function)
+  If (ty.arrLen = 0) And (ty.kind = TyFuncPtr) Then
+    If (k = NdIntLit) And (g_nodes(exprId).longVal = 0) Then
+      Return True
+    End If
+    If k = NdAddressOf Then
+      Dim tgt As Integer = g_nodes(exprId).left
+      If (tgt >= 0) And (g_nodes(tgt).kind = NdVar) Then
+        Dim fi As Integer = TaFindFunc(g_nodes(tgt).intVal, g_nodes(tgt).lenVal)
+        If (fi >= 0) And (ta_funcs(fi).isAsync = 0) Then
+          Return True
+        End If
+      End If
+    End If
+    Return False
+  End If
   ' Pointer or unsized slice initialized to integer address / 0, StringLit, or AddressOf(func/global)
   If ((ty.arrLen = 0) And (ty.kind = TyPointer)) Or (ty.arrLen = -1) Then
     If (k = NdIntLit) And ((g_nodes(exprId).longVal = 0) Or ((ty.arrLen = 0) And (ty.kind = TyPointer))) Then
@@ -1052,7 +1270,7 @@ Private Function TaTypeOfCall(id As Integer) As TypeInfo
       Return TaMakePrim(TyBoolean)
     End If
     Dim pt As TypeInfo = TaTypeOfExpr(g_nodes(a0).left)
-    If (pt.arrLen = 0) And (pt.kind <> TyPointer) And (pt.kind <> TyTask) Then
+    If (pt.arrLen = 0) And (pt.kind <> TyPointer) And (pt.kind <> TyTask) And (pt.kind <> TyFuncPtr) Then
       Printf("Semantic Type Error: IsNull expects a Pointer or slice argument\n")
       ta_errCount = ta_errCount + 1
     End If
@@ -1278,6 +1496,12 @@ Private Function TaTypeOfCall(id As Integer) As TypeInfo
     Return TaMakePrim(TyInt)
   End If
 
+  ' Function pointer variable call parsed as Call: fp(args...)
+  Dim fpVarTy As TypeInfo
+  If TaLookupVar(nPos, nLen, ByRef fpVarTy) And (fpVarTy.arrLen = 0) And (fpVarTy.kind = TyFuncPtr) Then
+    Return TaCheckIndirectCall(fpVarTy, aStart, aCount, 1)
+  End If
+
   ' Array / pointer variable indexing parsed as Call: var(idx)
   If TaIsVarIndexCall(id) Then
     Dim vTy As TypeInfo
@@ -1478,6 +1702,89 @@ Private Function TaTypeOfCall(id As Integer) As TypeInfo
   Printf("\n")
   ta_errCount = ta_errCount + 1
   Return TaMakePrim(TyInt)
+End Function
+
+Private Function TaCheckIndirectCall(fpTy As TypeInfo, aStart, aCount, argsAreNdArg As Integer) As TypeInfo
+  If (fpTy.arrLen <> 0) Or (fpTy.kind <> TyFuncPtr) Or (fpTy.typeIdx < 0) Or (fpTy.typeIdx >= ta_fpSigCount) Then
+    Printf(MSG_TA_FP_CALL_NON_FP)
+    ta_errCount = ta_errCount + 1
+    For ai = 0 To aCount - 1 Do
+      Dim kid As Integer = g_kids(aStart + ai)
+      If argsAreNdArg = 1 Then
+        TaTypeOfExpr(g_nodes(kid).left)
+      Else
+        TaTypeOfExpr(kid)
+      End If
+    End For
+    Return TaMakePrim(TyInt)
+  End If
+  Dim fs As TaFpSig = ta_fpSigs(fpTy.typeIdx)
+  If aCount <> fs.paramCount Then
+    Printf("Semantic Type Error: Function pointer call expects %d argument(s), got %d\n", fs.paramCount, aCount)
+    ta_errCount = ta_errCount + 1
+  End If
+  For ai = 0 To aCount - 1 Do
+    Dim kid As Integer = g_kids(aStart + ai)
+    Dim argMode As Integer = 0
+    Dim argExpr As Integer = kid
+    If argsAreNdArg = 1 Then
+      argMode = g_nodes(kid).op
+      argExpr = g_nodes(kid).left
+    End If
+    Dim actualTy As TypeInfo = TaTypeOfExpr(argExpr)
+    If ai < fs.paramCount Then
+      Dim pInfo As TaParamInfo = ta_fpParams(fs.paramStart + ai)
+      If pInfo.isByRef = 1 Then
+        If argMode <> 1 Then
+          Printf("Semantic Type Error: Argument %d of function pointer call expects ByRef at call site\n", ai + 1)
+          ta_errCount = ta_errCount + 1
+        Else
+          If Not TaIsLValue(argExpr) Then
+            Printf("Semantic Type Error: ByRef argument must be a variable, struct field, or array element\n")
+            ta_errCount = ta_errCount + 1
+          End If
+        End If
+      Else
+        If argMode = 1 Then
+          Printf("Semantic Type Error: Argument %d of function pointer call is ByVal and cannot be passed ByRef\n", ai + 1)
+          ta_errCount = ta_errCount + 1
+        End If
+      End If
+      If Not TaIsAssignable(pInfo.ty, actualTy, argExpr) Then
+        Printf("Semantic Type Error: Argument %d of function pointer call type mismatch: expected ", ai + 1)
+        TaPrintType(pInfo.ty)
+        Printf(", got ")
+        TaPrintType(actualTy)
+        Printf("\n")
+        ta_errCount = ta_errCount + 1
+      End If
+    End If
+  End For
+  Return fs.retTy
+End Function
+
+Private Function TaCheckIndirectCallOne(fpTy As TypeInfo, argExpr As Integer) As TypeInfo
+  Dim fs As TaFpSig = ta_fpSigs(fpTy.typeIdx)
+  Dim actualTy As TypeInfo = TaTypeOfExpr(argExpr)
+  If fs.paramCount <> 1 Then
+    Printf("Semantic Type Error: Function pointer call expects %d argument(s), got 1\n", fs.paramCount)
+    ta_errCount = ta_errCount + 1
+    Return fs.retTy
+  End If
+  Dim pInfo As TaParamInfo = ta_fpParams(fs.paramStart)
+  If pInfo.isByRef = 1 Then
+    Printf("Semantic Type Error: Argument 1 of function pointer call expects ByRef at call site\n")
+    ta_errCount = ta_errCount + 1
+  End If
+  If Not TaIsAssignable(pInfo.ty, actualTy, argExpr) Then
+    Printf("Semantic Type Error: Argument 1 of function pointer call type mismatch: expected ")
+    TaPrintType(pInfo.ty)
+    Printf(", got ")
+    TaPrintType(actualTy)
+    Printf("\n")
+    ta_errCount = ta_errCount + 1
+  End If
+  Return fs.retTy
 End Function
 
 Private Function TaCheckUnionConstruct(uIdx, vPos, vLen As Integer, argIds() As Integer, argCnt As Integer) As TypeInfo
@@ -1681,6 +1988,9 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
     End If
     Dim unified As TypeInfo = t1
     Dim okUnify As Boolean = False
+    If ((op = TkEq) Or (op = TkNeq)) And ((((t1.arrLen = 0) And (t1.kind = TyFuncPtr)) And (g_nodes(e2).kind = NdIntLit) And (g_nodes(e2).longVal = 0)) Or (((t2.arrLen = 0) And (t2.kind = TyFuncPtr)) And (g_nodes(e1).kind = NdIntLit) And (g_nodes(e1).longVal = 0))) Then
+      Return TaMakePrim(TyBoolean)
+    End If
     If TaTypesEqual(t1, t2) Then
       unified = t1
       okUnify = True
@@ -1715,6 +2025,18 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
       Return t1
     End If
     Dim isCmp As Boolean = (op = TkEq) Or (op = TkNeq) Or (op = TkLt) Or (op = TkGt) Or (op = TkLe) Or (op = TkGe)
+    If (unified.arrLen = 0) And (unified.kind = TyFuncPtr) Then
+      If (op = TkEq) Or (op = TkNeq) Then
+        Return TaMakePrim(TyBoolean)
+      End If
+      Printf(MSG_TA_BINOP_MISMATCH)
+      TaPrintType(t1)
+      Printf(" vs ")
+      TaPrintType(t2)
+      Printf("\n")
+      ta_errCount = ta_errCount + 1
+      Return TaMakePrim(TyBoolean)
+    End If
     If TaIsFloatType(unified) Then
       If (op = TkAnd) Or (op = TkOr) Or (op = TkXor) Or (op = TkShl) Or (op = TkShr) Then
         Printf(MSG_TA_FLOAT_BITWISE)
@@ -1798,35 +2120,61 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
       End If
     End If
     Dim baseTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
+    If (baseTy.arrLen = 0) And (baseTy.kind = TyFuncPtr) And (baseTy.typeIdx >= 0) Then
+      Return TaCheckIndirectCallOne(baseTy, g_nodes(id).right)
+    End If
     Return TaCheckIndex(baseTy, g_nodes(id).right)
+  End If
+
+  If k = NdIndirectCall Then
+    Dim calleeTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
+    Return TaCheckIndirectCall(calleeTy, g_nodes(id).firstChild, g_nodes(id).childCount, 1)
   End If
 
   If k = NdUnionInit Then
     Dim baseNode As Integer = g_nodes(id).left
     If (baseNode >= 0) And (g_nodes(baseNode).kind = NdVar) Then
-      Dim uIdx As Integer = TaFindUnion(g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal)
-      If uIdx >= 0 Then
-        Dim argIds(64) As Integer
-        Dim aCnt As Integer = g_nodes(id).childCount
-        For i = 0 To aCnt - 1 Do
-          argIds(i) = g_kids(g_nodes(id).firstChild + i)
-        End For
-        Return TaCheckUnionConstruct(uIdx, g_nodes(id).intVal, g_nodes(id).lenVal, argIds, aCnt)
-      End If
-      If TaHasPrivateUnionOther(g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal) Then
-        Printf(MSG_TA_PRIVATE_TYPE)
+      Dim dummyVarTy As TypeInfo
+      If Not TaLookupVar(g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal, ByRef dummyVarTy) Then
+        Dim uIdx As Integer = TaFindUnion(g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal)
+        If uIdx >= 0 Then
+          Dim argIds(64) As Integer
+          Dim aCnt As Integer = g_nodes(id).childCount
+          For i = 0 To aCnt - 1 Do
+            argIds(i) = g_kids(g_nodes(id).firstChild + i)
+          End For
+          Return TaCheckUnionConstruct(uIdx, g_nodes(id).intVal, g_nodes(id).lenVal, argIds, aCnt)
+        End If
+        If TaHasPrivateUnionOther(g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal) Then
+          Printf(MSG_TA_PRIVATE_TYPE)
+          TaPrintSlice(g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal)
+          Printf(MSG_TA_FROM_MOD_SUFFIX)
+          ta_errCount = ta_errCount + 1
+          Return TaMakePrim(TyInt)
+        End If
+        Printf("Semantic Type Error: Unknown Union type '")
         TaPrintSlice(g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal)
-        Printf(MSG_TA_FROM_MOD_SUFFIX)
+        Printf("'\n")
         ta_errCount = ta_errCount + 1
         Return TaMakePrim(TyInt)
       End If
-      Printf("Semantic Type Error: Unknown Union type '")
-      TaPrintSlice(g_nodes(baseNode).intVal, g_nodes(baseNode).lenVal)
+    End If
+    ' Indirect call on a struct field (e.g. obj.cb() or obj.cb(a, b) or .cb(a, b))
+    Dim baseTy As TypeInfo = TaTypeOfExpr(baseNode)
+    If (baseTy.arrLen = 0) And (baseTy.kind = TyStruct) And (baseTy.typeIdx >= 0) Then
+      Dim fTy As TypeInfo
+      If TaFindStructField(baseTy.typeIdx, g_nodes(id).intVal, g_nodes(id).lenVal, ByRef fTy) >= 0 Then
+        Return TaCheckIndirectCall(fTy, g_nodes(id).firstChild, g_nodes(id).childCount, 0)
+      End If
+      Printf("Semantic Type Error: Structure '")
+      TaPrintSlice(baseTy.namePos, baseTy.nameLen)
+      Printf("' has no field named '")
+      TaPrintSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
       Printf("'\n")
       ta_errCount = ta_errCount + 1
       Return TaMakePrim(TyInt)
     End If
-    Printf("Semantic Type Error: Invalid Union variant constructor target\n")
+    Printf(MSG_TA_FP_CALL_NON_FP)
     ta_errCount = ta_errCount + 1
     Return TaMakePrim(TyInt)
   End If
@@ -1913,7 +2261,7 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
     Dim dstTy As TypeInfo = TaMakePrim(dstKind)
     Dim srcNum As Boolean = TaIsIntType(srcTy) Or TaIsFloatType(srcTy)
     Dim srcBool As Boolean = (srcTy.arrLen = 0) And (srcTy.kind = TyBoolean)
-    Dim srcPtr As Boolean = ((srcTy.arrLen = 0) And (srcTy.kind = TyPointer)) Or (srcTy.arrLen <> 0)
+    Dim srcPtr As Boolean = ((srcTy.arrLen = 0) And ((srcTy.kind = TyPointer) Or (srcTy.kind = TyFuncPtr))) Or (srcTy.arrLen <> 0)
     Dim dstNum As Boolean = TaIsIntType(dstTy) Or TaIsFloatType(dstTy)
     Dim ok As Boolean = False
     If dstNum And (srcNum Or srcBool) Then
@@ -2023,7 +2371,28 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
       If tk = NdVar Then
         Dim vp = g_nodes(tgt).intVal, vl = g_nodes(tgt).lenVal As Integer
         Dim dummyTy As TypeInfo
-        If TaLookupVar(vp, vl, ByRef dummyTy) Or (TaFindFunc(vp, vl) >= 0) Then
+        If TaLookupVar(vp, vl, ByRef dummyTy) Then
+          Return TaMakePrim(TyPointer)
+        End If
+        Dim fIdx As Integer = TaFindFunc(vp, vl)
+        If fIdx >= 0 Then
+          If ta_funcs(fIdx).isAsync = 1 Then
+            Printf(MSG_TA_FP_ASYNC)
+            ta_errCount = ta_errCount + 1
+            Return TaMakePrim(TyPointer)
+          End If
+          If ta_funcs(fIdx).isVariadic = 1 Then
+            Return TaMakePrim(TyPointer)
+          End If
+          Dim sigIdx As Integer = TaRegisterFpSigFromFunc(fIdx)
+          Dim fpRes As TypeInfo With ( kind = TyFuncPtr, typeIdx = sigIdx, arrLen = 0, namePos = 0, nameLen = 0, innerKind = TyNothing )
+          Return fpRes
+        End If
+        If TaHasPrivateFuncOther(vp, vl) Then
+          Printf("Semantic Type Error: Cannot access Private function '")
+          TaPrintSlice(vp, vl)
+          Printf("' from included module\n")
+          ta_errCount = ta_errCount + 1
           Return TaMakePrim(TyPointer)
         End If
         Dim dummyEnumIdx = -1, dummyU = -1, dummyV = -1 As Integer
@@ -2154,6 +2523,29 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
   Return TaMakePrim(TyInt)
 End Function
 
+Private Sub TaResetScopes()
+  ta_curScopeId = 0
+  ta_nextScopeId = 1
+  ta_curDeferTotal = 0
+  ta_scopeParent(0) = -1
+  ta_scopeDeferCnt(0) = 0
+End Sub
+
+Private Function TaPushScope() As Integer
+  Dim prev As Integer = ta_curScopeId
+  If ta_deferDepth > 0 Then
+    Return prev
+  End If
+  Dim nid As Integer = ta_nextScopeId
+  If nid < 4096 Then
+    ta_nextScopeId = nid + 1
+    ta_scopeParent(nid) = prev
+    ta_scopeDeferCnt(nid) = 0
+    ta_curScopeId = nid
+  End If
+  Return prev
+End Function
+
 Private Function TaFindLabel(pos, slen As Integer) As Integer
   For i = 0 To ta_labelCount - 1 Do
     If SlicesEqual(ta_labels(i).namePos, ta_labels(i).nameLen, pos, slen) Then
@@ -2167,6 +2559,10 @@ Private Sub TaCollectLabels(startIdx, cnt As Integer)
   For i = 0 To cnt - 1 Do
     Dim sid As Integer = g_kids(startIdx + i)
     Dim sk As Integer = g_nodes(sid).kind
+    If sk = NdDefer Then
+      ta_scopeDeferCnt(ta_curScopeId) = ta_scopeDeferCnt(ta_curScopeId) + 1
+      ta_curDeferTotal = ta_curDeferTotal + 1
+    End If
     If sk = NdLabel Then
       If TaFindLabel(g_nodes(sid).intVal, g_nodes(sid).lenVal) >= 0 Then
         Printf(MSG_TA_DUP_LABEL)
@@ -2175,22 +2571,44 @@ Private Sub TaCollectLabels(startIdx, cnt As Integer)
         ta_errCount = ta_errCount + 1
       Else
         If ta_labelCount < 128 Then
-          ta_labels(ta_labelCount) = TaLabelInfo With ( namePos = g_nodes(sid).intVal, nameLen = g_nodes(sid).lenVal )
+          ta_labels(ta_labelCount) = TaLabelInfo With (
+            namePos = g_nodes(sid).intVal,
+            nameLen = g_nodes(sid).lenVal,
+            scopeId = ta_curScopeId,
+            deferCnt = ta_scopeDeferCnt(ta_curScopeId),
+            totalDefers = ta_curDeferTotal
+          )
           ta_labelCount = ta_labelCount + 1
         End If
       End If
     End If
     If sk = NdIf Then
+      Dim savedTot1 As Integer = ta_curDeferTotal
+      Dim p1 As Integer = TaPushScope()
       TaCollectLabels(g_nodes(sid).firstChild, g_nodes(sid).childCount)
+      ta_curScopeId = p1
+      ta_curDeferTotal = savedTot1
+      Dim savedTot2 As Integer = ta_curDeferTotal
+      Dim p2 As Integer = TaPushScope()
       TaCollectLabels(g_nodes(sid).extraStart, g_nodes(sid).extraCount)
+      ta_curScopeId = p2
+      ta_curDeferTotal = savedTot2
     End If
     If (sk = NdWhile) Or (sk = NdFor) Or (sk = NdWith) Then
+      Dim savedTot As Integer = ta_curDeferTotal
+      Dim p1 As Integer = TaPushScope()
       TaCollectLabels(g_nodes(sid).firstChild, g_nodes(sid).childCount)
+      ta_curScopeId = p1
+      ta_curDeferTotal = savedTot
     End If
     If sk = NdMatch Then
       For bi = 0 To g_nodes(sid).childCount - 1 Do
         Dim arm As Integer = g_kids(g_nodes(sid).firstChild + bi)
+        Dim savedTot As Integer = ta_curDeferTotal
+        Dim p1 As Integer = TaPushScope()
         TaCollectLabels(g_nodes(arm).firstChild, g_nodes(arm).childCount)
+        ta_curScopeId = p1
+        ta_curDeferTotal = savedTot
       End For
     End If
   End For
@@ -2200,22 +2618,59 @@ Private Sub TaCheckStmt(id As Integer)
   Dim k As Integer = g_nodes(id).kind
 
   If k = NdLabel Then
+    If ta_deferDepth > 0 Then
+      Printf(MSG_TA_DEFER_LABEL)
+      ta_errCount = ta_errCount + 1
+    End If
     Return
   End If
 
   If k = NdGoTo Then
-    If TaFindLabel(g_nodes(id).intVal, g_nodes(id).lenVal) < 0 Then
+    If ta_deferDepth > 0 Then
+      Printf(MSG_TA_DEFER_GOTO)
+      ta_errCount = ta_errCount + 1
+      Return
+    End If
+    Dim li As Integer = TaFindLabel(g_nodes(id).intVal, g_nodes(id).lenVal)
+    If li < 0 Then
       Printf(MSG_TA_UNDEF_LABEL)
       TaPrintSlice(g_nodes(id).intVal, g_nodes(id).lenVal)
       Printf("'\n")
       ta_errCount = ta_errCount + 1
+    Else
+      Dim targetScope As Integer = ta_labels(li).scopeId
+      Dim targetDefCnt As Integer = ta_labels(li).deferCnt
+      Dim walk As Integer = ta_curScopeId
+      Dim isAnc As Boolean = False
+      While walk >= 0 Do
+        If walk = targetScope Then
+          isAnc = True
+          Break
+        End If
+        walk = ta_scopeParent(walk)
+      End While
+      If isAnc Then
+        If ta_scopeDeferCnt(targetScope) <> targetDefCnt Then
+          Printf(MSG_TA_DEFER_GOTO_CROSS)
+          ta_errCount = ta_errCount + 1
+        End If
+      Else
+        If (ta_curDeferTotal > 0) Or (ta_labels(li).totalDefers > 0) Then
+          Printf(MSG_TA_DEFER_GOTO_CROSS)
+          ta_errCount = ta_errCount + 1
+        End If
+      End If
     End If
     Return
   End If
 
   If k = NdBreak Then
     If ta_loopDepth <= 0 Then
-      Printf(MSG_TA_BREAK_LOOP)
+      If ta_deferDepth > 0 Then
+        Printf(MSG_TA_DEFER_BREAK)
+      Else
+        Printf(MSG_TA_BREAK_LOOP)
+      End If
       ta_errCount = ta_errCount + 1
     End If
     Return
@@ -2223,9 +2678,30 @@ Private Sub TaCheckStmt(id As Integer)
 
   If k = NdContinue Then
     If ta_loopDepth <= 0 Then
-      Printf(MSG_TA_CONTINUE_LOOP)
+      If ta_deferDepth > 0 Then
+        Printf(MSG_TA_DEFER_CONTINUE)
+      Else
+        Printf(MSG_TA_CONTINUE_LOOP)
+      End If
       ta_errCount = ta_errCount + 1
     End If
+    Return
+  End If
+
+  If k = NdDefer Then
+    ta_scopeDeferCnt(ta_curScopeId) = ta_scopeDeferCnt(ta_curScopeId) + 1
+    ta_curDeferTotal = ta_curDeferTotal + 1
+    Dim savedLocals = ta_localCount, savedLoop = ta_loopDepth, savedScope = ta_curScopeId, savedTot = ta_curDeferTotal As Integer
+    ta_loopDepth = 0
+    ta_deferDepth = ta_deferDepth + 1
+    For di = 0 To g_nodes(id).childCount - 1 Do
+      TaCheckStmt(g_kids(g_nodes(id).firstChild + di))
+    End For
+    ta_deferDepth = ta_deferDepth - 1
+    ta_loopDepth = savedLoop
+    ta_localCount = savedLocals
+    ta_curScopeId = savedScope
+    ta_curDeferTotal = savedTot
     Return
   End If
 
@@ -2394,6 +2870,11 @@ Private Sub TaCheckStmt(id As Integer)
   End If
 
   If k = NdReturn Then
+    If ta_deferDepth > 0 Then
+      Printf(MSG_TA_DEFER_RETURN)
+      ta_errCount = ta_errCount + 1
+      Return
+    End If
     Dim exprId As Integer = g_nodes(id).left
     If exprId < 0 Then
       If ta_curRetTy.kind <> TyNothing Then
@@ -2450,17 +2931,25 @@ Private Sub TaCheckStmt(id As Integer)
       ta_errCount = ta_errCount + 1
     End If
     Dim savedLocals As Integer = ta_localCount
+    Dim savedTot1 As Integer = ta_curDeferTotal
+    Dim prevScope1 As Integer = TaPushScope()
     Dim i As Integer = 0
     While i < g_nodes(id).childCount Do
       TaCheckStmt(g_kids(g_nodes(id).firstChild + i))
       i = i + 1
     End While
+    ta_curScopeId = prevScope1
+    ta_curDeferTotal = savedTot1
     ta_localCount = savedLocals
+    Dim savedTot2 As Integer = ta_curDeferTotal
+    Dim prevScope2 As Integer = TaPushScope()
     i = 0
     While i < g_nodes(id).extraCount Do
       TaCheckStmt(g_kids(g_nodes(id).extraStart + i))
       i = i + 1
     End While
+    ta_curScopeId = prevScope2
+    ta_curDeferTotal = savedTot2
     ta_localCount = savedLocals
     Return
   End If
@@ -2474,6 +2963,8 @@ Private Sub TaCheckStmt(id As Integer)
       ta_errCount = ta_errCount + 1
     End If
     Dim savedLocals As Integer = ta_localCount
+    Dim savedTot As Integer = ta_curDeferTotal
+    Dim prevScope As Integer = TaPushScope()
     ta_loopDepth = ta_loopDepth + 1
     Dim i As Integer = 0
     While i < g_nodes(id).childCount Do
@@ -2481,6 +2972,8 @@ Private Sub TaCheckStmt(id As Integer)
       i = i + 1
     End While
     ta_loopDepth = ta_loopDepth - 1
+    ta_curScopeId = prevScope
+    ta_curDeferTotal = savedTot
     ta_localCount = savedLocals
     Return
   End If
@@ -2493,6 +2986,8 @@ Private Sub TaCheckStmt(id As Integer)
       ta_errCount = ta_errCount + 1
     End If
     Dim savedLocals As Integer = ta_localCount
+    Dim savedTot As Integer = ta_curDeferTotal
+    Dim prevScope As Integer = TaPushScope()
     ta_locals(ta_localCount) = TaLocalSym With ( namePos = g_nodes(id).intVal, nameLen = g_nodes(id).lenVal, ty = TaMakePrim(TyInt) )
     ta_localCount = ta_localCount + 1
     ta_loopDepth = ta_loopDepth + 1
@@ -2500,6 +2995,8 @@ Private Sub TaCheckStmt(id As Integer)
       TaCheckStmt(g_kids(g_nodes(id).firstChild + i))
     End For
     ta_loopDepth = ta_loopDepth - 1
+    ta_curScopeId = prevScope
+    ta_curDeferTotal = savedTot
     ta_localCount = savedLocals
     Return
   End If
@@ -2522,9 +3019,13 @@ Private Sub TaCheckStmt(id As Integer)
       ta_withTys(ta_withDepth) = tgtTy
       ta_withDepth = ta_withDepth + 1
       Dim savedLocals As Integer = ta_localCount
+      Dim savedTot As Integer = ta_curDeferTotal
+      Dim prevScope As Integer = TaPushScope()
       For wi = 0 To g_nodes(id).childCount - 1 Do
         TaCheckStmt(g_kids(g_nodes(id).firstChild + wi))
       End For
+      ta_curScopeId = prevScope
+      ta_curDeferTotal = savedTot
       ta_localCount = savedLocals
       ta_withDepth = ta_withDepth - 1
     End If
@@ -2714,9 +3215,13 @@ Private Sub TaCheckStmt(id As Integer)
             ta_errCount = ta_errCount + 1
           End If
         End If
+        Dim savedTot As Integer = ta_curDeferTotal
+        Dim prevScope As Integer = TaPushScope()
         For si = 0 To g_nodes(arm).childCount - 1 Do
           TaCheckStmt(g_kids(g_nodes(arm).firstChild + si))
         End For
+        ta_curScopeId = prevScope
+        ta_curDeferTotal = savedTot
         ta_localCount = savedLocals
       End For
 
@@ -2765,9 +3270,13 @@ Private Sub TaCheckStmt(id As Integer)
         End If
       End If
       Dim savedLocals As Integer = ta_localCount
+      Dim savedTot As Integer = ta_curDeferTotal
+      Dim prevScope As Integer = TaPushScope()
       For si = 0 To g_nodes(arm).childCount - 1 Do
         TaCheckStmt(g_kids(g_nodes(arm).firstChild + si))
       End For
+      ta_curScopeId = prevScope
+      ta_curDeferTotal = savedTot
       ta_localCount = savedLocals
     End For
     Return
@@ -2785,7 +3294,11 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
   ta_funcs = ArenaAlloc(ByRef arena, TaFuncInfo, 2048)
   ta_ops = ArenaAlloc(ByRef arena, TaOpInfo, 512)
   ta_params = ArenaAlloc(ByRef arena, TaParamInfo, 8192)
+  ta_fpSigs = ArenaAlloc(ByRef arena, TaFpSig, 1024)
+  ta_fpParams = ArenaAlloc(ByRef arena, TaParamInfo, 4096)
   ta_locals = ArenaAlloc(ByRef arena, TaLocalSym, 512)
+  ta_scopeParent = ArenaAlloc(ByRef arena, Integer, 4096)
+  ta_scopeDeferCnt = ArenaAlloc(ByRef arena, Integer, 4096)
 
   ta_enumCount = 0
   ta_enumMemCount = 0
@@ -2797,6 +3310,8 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
   ta_funcCount = 0
   ta_opCount = 0
   ta_paramCount = 0
+  ta_fpSigCount = 0
+  ta_fpParamCount = 0
   ta_localCount = 0
   ta_withDepth = 0
   ta_loopDepth = 0
@@ -3150,6 +3665,7 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       ta_localCount = 0
       ta_labelCount = 0
       ta_loopDepth = 0
+      ta_deferDepth = 0
       ta_curFrameBytes = 0
       ta_curFrameReported = 0
       Dim j As Integer = 0
@@ -3165,7 +3681,9 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
         ta_localCount = ta_localCount + 1
         j = j + 1
       End While
+      TaResetScopes()
       TaCollectLabels(g_nodes(d).firstChild, g_nodes(d).childCount)
+      TaResetScopes()
       j = 0
       While j < g_nodes(d).childCount Do
         TaCheckStmt(g_kids(g_nodes(d).firstChild + j))
@@ -3180,6 +3698,7 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       ta_localCount = 0
       ta_labelCount = 0
       ta_loopDepth = 0
+      ta_deferDepth = 0
       ta_curFrameBytes = 0
       ta_curFrameReported = 0
       For j = 0 To g_nodes(d).extraCount - 1 Do
@@ -3193,7 +3712,9 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
         ta_locals(ta_localCount) = TaLocalSym With ( namePos = g_nodes(pn).intVal, nameLen = g_nodes(pn).lenVal, ty = pty )
         ta_localCount = ta_localCount + 1
       End For
+      TaResetScopes()
       TaCollectLabels(g_nodes(d).firstChild, g_nodes(d).childCount)
+      TaResetScopes()
       For j = 0 To g_nodes(d).childCount - 1 Do
         TaCheckStmt(g_kids(g_nodes(d).firstChild + j))
       End For
@@ -3205,9 +3726,12 @@ Public Function AnalyzeProgram(ByRef arena As Arena, progRoot As Integer) As Int
       ta_localCount = 0
       ta_labelCount = 0
       ta_loopDepth = 0
+      ta_deferDepth = 0
       ta_curFrameBytes = 0
       ta_curFrameReported = 0
+      TaResetScopes()
       TaCollectLabels(g_nodes(d).firstChild, g_nodes(d).childCount)
+      TaResetScopes()
       For j = 0 To g_nodes(d).childCount - 1 Do
         TaCheckStmt(g_kids(g_nodes(d).firstChild + j))
       End For

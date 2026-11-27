@@ -15,6 +15,7 @@ Public Enum TypeKind
   TyDouble = 11
   TyTask = 12
   TyUnion = 13
+  TyFuncPtr = 14
 End Enum
 
 Public Structure TypeInfo
@@ -89,6 +90,9 @@ Public Enum NodeKind
   NdUnionDef = 69
   NdUnionVariant = 70
   NdUnionInit = 71
+  NdDefer = 72
+  NdFuncPtrType = 73
+  NdIndirectCall = 74
 End Enum
 
 Public Structure AstNode

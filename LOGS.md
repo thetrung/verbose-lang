@@ -17,6 +17,18 @@ Historical log of finished tasks and completed roadmap milestones for **VerBose-
 
 ---
 
+## Completed Tasks (`v0.10.0`)
+
+- [x] **Milestone 3 — Deterministic `Defer` Statement (`Defer <stmt>` / `Defer ... End Defer`)**:
+  - **Lexical-Scope LIFO Cleanup**: Added `TkDefer` and `NdDefer` across `src/token.vb`, `src/lexer.vb`, `src/ast.vb`, `src/parser.vb`, `src/printer.vb`, `src/generics.vb`, `src/type_analyzer.vb`, and `src/codegen.vb`, supporting both single-statement `Defer HeapFree(p)` and multi-statement `Defer ... End Defer` blocks (including nested `Defer`, loops inside `Defer`, `With` blocks, `Union` `Match` arms, generics, `Async` functions, `Operator` overloads, and `Test` blocks).
+  - **Exact Unwinding & Compile-Time Safety**: Evaluates `Return <expr>` (scalars and aggregate structs/unions) into a temporary before unwinding active defers in LIFO order across normal block exits, early `Return`, loop `Break`/`Continue`, and outward `GoTo`. Enforces hard Type Analyzer errors forbidding `Return`, escaping `Break`/`Continue`, `GoTo`, and `Label` inside a `Defer` body as well as any `GoTo` jumping across a `Defer` statement. Added `tests/test_defer.vb` (4/4 PASS under default & `--bounds-check`, freestanding `arm-m` verified).
+- [x] **Milestone 4 — Typed Function Pointers (`FuncPtr(...) As Ret` / `SubPtr(...)`)**:
+  - **First-Class Typed Signatures**: Added `TkFuncPtr`/`TkSubPtr`, `TyFuncPtr`, `NdFuncPtrType`, and `NdIndirectCall` across all compiler passes, supporting named, unnamed, grouped, `ByRef`, array/slice, struct, union, and nested `FuncPtr`/`SubPtr` parameter signatures, `SizeOf`, `ArenaAlloc`/`HeapAlloc`, `Static` constant initializers (`0` / `AddressOf(fn)`), `IsNull`/`=`/`<>`/`0` null checks, and `Boolean`/`Pointer` casts.
+  - **Type-Checked `AddressOf(fn)` & Generics/Async Integration**: Upgraded `AddressOf(fn)` to produce a strongly-typed `TyFuncPtr` (safely widening to `Pointer` for legacy C FFI while rejecting implicit `Pointer -> FuncPtr` and `AddressOf(Async)`), wired structural unification & mangling in `src/generics.vb` for call-site inference (`GenericApply(7, AddressOf(Square))`) and generic structs (`FpHandler(Of T)`), and supported `Task(FuncPtr(...))` with `Async`/`Await`.
+  - **Indirect Calls & Multi-Target C ABI Parity**: Lowered indirect calls through variables, `ByRef` params, struct fields, `With` blocks, arrays/slices, and returned rvalues (`GetOp()(a, b)`, `vt.onMakeVec(x, y).y`) in `src/codegen.vb`, plus automatic internal VerBose-ABI wrappers (`@__vb_fp_wrap_*`) when taking `AddressOf` of `Declare` C functions with ByVal structs across SysV x86-64, AAPCS64, Win64, and ARM-M. Added `tests/test_funcptr.vb` (4/4 PASS under default & `--bounds-check`, freestanding `arm-m` verified; **35/35** suites, **221/221** `Test` blocks, Stage 3 fixpoint & `verbose.ll` refreshed).
+
+---
+
 ## Completed Tasks (`v0.9.0`)
 
 - [x] **Milestone 2 — Tagged Unions / Sum Types & `Option`/`Result` (`Union`, Exhaustive `Match`, `std/result.vb`)**:
