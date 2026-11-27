@@ -9,7 +9,7 @@ See also: [Wiki Tutorial](https://github.com/thetrung/verbose-lang/wiki/Tutorial
 - **VerBose-Lang** (`v0.8.0`): brace-free, case-sensitive, Visual Basic–inspired systems language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**).
 - **Zero external toolchain deps**: `clang` + `curl` only (no OCaml, no Python). The archival OCaml Stage 0 compiler lives on the `stage0` git branch.
 - **Targets** (`--target` / `VERBOSE_TARGET`): `linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`, and freestanding 32-bit `arm-m` (`thumbv7em-unknown-none-eabi`).
-- **Companion ecosystem repos** (sibling dirs in `../` when checked out): `verbose-raylib`, `verbose.nvim`, `verbose-pkg` (`vpm`), `verbose-tui`, `verbose-openSKP`, `verbose-viewSKP`, `verbose-sqlite3`.
+- **Companion ecosystem repos** (sibling dirs in `../` when checked out): `verbose-raylib`, `verbose.nvim`, `verbose-pkg` (`vpm`), `verbose-tui`, `verbose-openSKP`, `verbose-viewSKP`, `verbose-sqlite3`, `verbose-curl`.
 
 ## Architecture & Compiler Internals (`src/`, 10 modules, 14,583 LOC)
 

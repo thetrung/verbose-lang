@@ -32,4 +32,4 @@ Active roadmap and future extensions for **VerBose-Lang**. Completed tasks and m
 
 ## Extensions
 
-_All completed ecosystem extensions (`verbose-raylib`, `verbose.nvim`, `verbose-pkg`, `verbose-tui`, `verbose-openSKP`, `verbose-viewSKP`, `verbose-sqlite3`) have been moved to **[LOGS.md](LOGS.md)**._
+_All completed ecosystem extensions (`verbose-raylib`, `verbose.nvim`, `verbose-pkg`, `verbose-tui`, `verbose-openSKP`, `verbose-viewSKP`, `verbose-sqlite3`, `verbose-curl`) have been moved to **[LOGS.md](LOGS.md)**._
