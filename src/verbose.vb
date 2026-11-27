@@ -24,6 +24,7 @@ Declare Function strstr(haystack, needle As Pointer) As Pointer
 Private Static cli_hostTarget As Integer = -1
 Private Static cli_maxStackOverride As Long = -1
 Private Static cli_boundsCheck As Integer = 0
+Private Static cli_debugInfo As Integer = 0
 
 Private Function CliParseNonNegLong(s As Pointer) As Long
   If IsNull(s) Or (s(0) = 0) Then
@@ -307,6 +308,7 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
 
   CgSetTestMode(testMode)
   CgSetBoundsCheck(cli_boundsCheck)
+  CgSetDebugInfo(cli_debugInfo)
   CgSetTarget(targetId)
 
   ' Cross-target execution/linking rules
@@ -387,10 +389,14 @@ Private Function RunSingleTarget(inPath As Pointer, testMode, showAst, showIr, s
     End If
   End If
 
-  ' Build clang -O2 command
+  ' Build clang command (-O0 -g when debug info enabled, else -O2)
   Dim cmdBuf(4096) As Byte
   Dim cmdPos As Integer = 0
-  CliAppendStr(cmdBuf, ByRef cmdPos, 4096, "clang -O2 ")
+  If cli_debugInfo = 1 Then
+    CliAppendStr(cmdBuf, ByRef cmdPos, 4096, "clang -O0 -g ")
+  Else
+    CliAppendStr(cmdBuf, ByRef cmdPos, 4096, "clang -O2 ")
+  End If
   If targetId <> hostTgt Then
     CliAppendStr(cmdBuf, ByRef cmdPos, 4096, "-target ")
     CliAppendStr(cmdBuf, ByRef cmdPos, 4096, CliTargetTriple(targetId))
@@ -598,6 +604,7 @@ Public Function main(argc As Integer, argv() As Pointer) As Integer
       Case "--ta" Then showTa = 1
       Case "--no-ta" Then skipTa = 1
       Case "--bounds-check" Then cli_boundsCheck = 1
+      Case "-g", "--debug" Then cli_debugInfo = 1
       Case "--max-stack" Then
         If (i + 1) >= argc Then
           Printf(MSG_CLI_ERR_STACK_ARG)

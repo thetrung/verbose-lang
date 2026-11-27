@@ -298,6 +298,33 @@ Private Sub PrExpr(id As Integer)
     Printf(")")
     Return
   End If
+  If k = NdAtomic Then
+    Dim aop As Integer = g_nodes(id).op
+    Match aop With
+      Case 0 Then Printf("AtomicLoad(")
+      Case 1 Then Printf("AtomicStore(")
+      Case 2 Then Printf("AtomicAdd(")
+      Case 3 Then Printf("AtomicSub(")
+      Case 4 Then Printf("AtomicExchange(")
+      Case 5 Then Printf("AtomicCas(")
+      Case 6 Then
+        Printf("AtomicFence()")
+        Return
+    End Match
+    PrExpr(g_nodes(id).left)
+    Printf(", ")
+    PrTypeGen(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen, g_nodes(id).tyArgStart, g_nodes(id).tyArgCount)
+    If g_nodes(id).right >= 0 Then
+      Printf(", ")
+      PrExpr(g_nodes(id).right)
+    End If
+    If g_nodes(id).third >= 0 Then
+      Printf(", ")
+      PrExpr(g_nodes(id).third)
+    End If
+    Printf(")")
+    Return
+  End If
   If k = NdCast Then
     PrType(g_nodes(id).tyKind, 0, 0, 0)
     Printf("(")

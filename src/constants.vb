@@ -1,7 +1,7 @@
 ' VerBose Self-Hosting Compiler (verbose) - Shared Diagnostics, Messages & LLVM IR Templates
 
 ' --- Compiler Version & CLI Driver Messages ---
-Public Static MSG_CLI_VERSION As Pointer = "verbose 0.10.0 (VerBose-Lang Self-Hosted Compiler)\n"
+Public Static MSG_CLI_VERSION As Pointer = "verbose 0.11.0 (VerBose-Lang Self-Hosted Compiler)\n"
 Public Static MSG_CLI_USAGE As Pointer = "Usage: verbose <filename>.vb [options]\n" &
   "       verbose test [file.vb | dir] [options]\n" &
   "  test         Run built-in Test/Assert blocks in a .vb file or directory (default: tests)\n" &
@@ -12,6 +12,7 @@ Public Static MSG_CLI_USAGE As Pointer = "Usage: verbose <filename>.vb [options]
   "  --no-ta      Skip semantic type-analyzer pass\n" &
   "  --bounds-check Enable runtime bounds checks on fixed-size arrays (default: off)\n" &
   "  --max-stack <N> Max stack frame bytes per function (default: 65536 hosted, 4096 arm-m; 0 disables)\n" &
+  "  -g, --debug  Emit LLVM DWARF debug info (file names & line numbers) and compile with clang -O0 -g\n" &
   "  --emit-only  Emit .ll only (skip clang & execution)\n" &
   "  -c, --emit-obj Compile to object file (.o) via clang -c (skip linking & run)\n" &
   "  --target <t> Target: linux-x86_64, linux-arm64, macos-arm64, windows-x86_64, arm-m\n" &
@@ -110,7 +111,10 @@ Public Static MSG_TA_BREAK_LOOP = "Semantic Type Error: 'Break' can only be used
   MSG_TA_DEFER_LABEL = "Semantic Type Error: 'Label' cannot be declared inside a Defer block\n",
   MSG_TA_DEFER_GOTO_CROSS = "Semantic Type Error: 'GoTo' cannot jump across a Defer statement\n",
   MSG_TA_FP_ASYNC = "Semantic Type Error: Cannot take AddressOf an Async function\n",
-  MSG_TA_FP_CALL_NON_FP = "Semantic Type Error: Cannot invoke expression that is not a function pointer\n" As Pointer
+  MSG_TA_FP_CALL_NON_FP = "Semantic Type Error: Cannot invoke expression that is not a function pointer\n",
+  MSG_TA_ATOMIC_ADDR = "Semantic Type Error: Atomic operation address must be a Pointer, array, or integer address\n",
+  MSG_TA_ATOMIC_TYPE = "Semantic Type Error: Atomic operation requires Integer, Long, or Pointer type (Integer or Long for Add/Sub/Exchange/Cas)\n",
+  MSG_TA_ATOMIC_VAL_MISMATCH = "Semantic Type Error: Atomic operation value type does not match target type\n" As Pointer
 
 ' --- Generics / Monomorphizer Diagnostics ---
 Public Static MSG_GM_MAX_DEPTH = "Generic Error: Maximum generic instantiation depth exceeded (possible infinite recursive instantiation)\n",

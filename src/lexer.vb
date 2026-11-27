@@ -29,6 +29,20 @@ Public Sub LexerAddIncludeDir(dirPtr As Pointer)
   End If
 End Sub
 
+Public Function LexerFileCount() As Integer
+  Return lx_loadedCount
+End Function
+
+Public Sub LexerGetFile(idx As Integer, ByRef outPos, outLen As Integer)
+  If (idx >= 0) And (idx < lx_loadedCount) Then
+    outPos = lx_loaded(idx).pathPos
+    outLen = lx_loaded(idx).pathLen
+  Else
+    outPos = 0
+    outLen = 0
+  End If
+End Sub
+
 Private Function LxIsAlpha(c As Integer) As Boolean
   Match With
     Case (c >= 65) And (c <= 90) Then Return True
@@ -156,6 +170,13 @@ Private Function LxClassifyKeyword(pos, slen As Integer) As Integer
     Case SliceEqualsStr(pos, slen, "Defer", 5) Then Return TkDefer
     Case SliceEqualsStr(pos, slen, "FuncPtr", 7) Then Return TkFuncPtr
     Case SliceEqualsStr(pos, slen, "SubPtr", 6) Then Return TkSubPtr
+    Case SliceEqualsStr(pos, slen, "AtomicLoad", 10) Then Return TkAtomicLoad
+    Case SliceEqualsStr(pos, slen, "AtomicStore", 11) Then Return TkAtomicStore
+    Case SliceEqualsStr(pos, slen, "AtomicAdd", 9) Then Return TkAtomicAdd
+    Case SliceEqualsStr(pos, slen, "AtomicSub", 9) Then Return TkAtomicSub
+    Case SliceEqualsStr(pos, slen, "AtomicExchange", 14) Then Return TkAtomicExchange
+    Case SliceEqualsStr(pos, slen, "AtomicCas", 9) Then Return TkAtomicCas
+    Case SliceEqualsStr(pos, slen, "AtomicFence", 11) Then Return TkAtomicFence
     Case SliceEqualsStr(pos, slen, "And", 3) Then Return TkAnd
     Case SliceEqualsStr(pos, slen, "Or", 2) Then Return TkOr
     Case SliceEqualsStr(pos, slen, "Not", 3) Then Return TkNot

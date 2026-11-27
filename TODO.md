@@ -17,9 +17,9 @@ Active roadmap and future extensions for **VerBose-Lang**. Completed tasks and m
 - [x] Completed in `v0.10.0` and archived in **[LOGS.md](LOGS.md)**.
 
 ### Milestone 5: Debug Info (`-g` DWARF) & Concurrency / String Ownership Ergonomics
-- [ ] Emit LLVM DWARF debug metadata (`!DICompileUnit`, `!DISubprogram`, `!DILocation`) behind `-g` / `--debug` so GDB/LLDB show `.vb` file names, line numbers, and readable stack traces.
-- [ ] Add pure-VerBose synchronization & concurrency primitives in `std/sync.vb` (mutexes, atomics, spinlocks/barriers) beyond 1:1 `Async`/`Await` tasks.
-- [ ] Clarify and improve string ownership ergonomics (arena-backed string formatting/concatenation helpers alongside existing `calloc`-backed `&`/`$"..."`).
+- [x] Completed in `v0.11.0` and archived in **[LOGS.md](LOGS.md)**.
+
+_All 5 core language milestones (`v0.8.0`–`v0.11.0`) are complete! Future roadmap items will be tracked here as they are scoped._
 
 ## Extensions
 

@@ -13,7 +13,8 @@ verbose-lang/
 │   ├── math.vb                 # Pure-VerBose math routines & constants (trig, exp/ln, sqrt, pow, abs, gcd)
 │   ├── result.vb               # Generic tagged-union Option(Of T) & Result(Of T, E) (zero libc)
 │   ├── span.vb                 # Generic Span(Of T) + ByteSpan, IntSpan, LongSpan, SingleSpan, PtrSpan
-│   └── strings.vb              # String manipulation, StrView, and StrBuilder utilities (Str*, Sb*)
+│   ├── strings.vb              # String manipulation, StrView, StrBuilder, and Arena-backed formatting (Str*, Sb*)
+│   └── sync.vb                 # Hardware atomics, SpinLock, RwSpinLock, Once, WaitGroup, SpinBarrier, Mutex, CondVar
 ├── tests/                      # Pure-VerBose Test/Assert suites, regression cases & Raylib 5.x demo (tests/raylib/)
 ├── packaging/arch/             # Arch Linux PKGBUILD & .SRCINFO (`make pkg-arch`)
 ├── install.sh                  # Cross-platform Linux/macOS one-line installer script
@@ -33,7 +34,7 @@ verbose-lang/
 
 ## Directory Descriptions
 
-- **`src/`**: The complete 10-module self-hosted compiler (`16,606 LOC`) written entirely in VerBose-Lang:
+- **`src/`**: The complete 10-module self-hosted compiler (`19,297 LOC`) written entirely in VerBose-Lang:
   - `verbose.vb`: CLI entry point, host target auto-detection, argument parsing, pipeline orchestration, test runner synthesis, and clang invocation.
   - `constants.vb`: Version metadata, global limits, token constants, target configurations (`linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`, `arm-m`), and diagnostics.
   - `token.vb`: Token types, keywords (`Of`, `Break`, `Continue`, `Operator`, `Match`, `When`, `String`, `Volatile`, `VolatileLoad`, `VolatileStore`, `Async`, `Await`, etc.; `ByVal` removed), string-interpolation tokens, and token structure.
@@ -51,11 +52,12 @@ verbose-lang/
   - `math.vb`: 100% pure-VerBose mathematical functions (zero `-lm` dependency) including trigonometric series, Newton-Raphson `MathSqrt`, logarithms, powers, and rounding.
   - `result.vb`: Zero-GC, zero-libc, bare-metal-safe tagged-union `Option(Of T)` (`OptNone`, `OptSome`, `OptIsSome`, `OptIsNone`, `OptUnwrap`, `OptUnwrapOr`) and `Result(Of T, E)` (`ResOk`, `ResErr`, `ResIsOk`, `ResIsErr`, `ResUnwrap`, `ResUnwrapOr`, `ResUnwrapErr`, `ResOkOpt`, `ResErrOpt`).
   - `span.vb`: Explicit length-carried, bounds-checked generic `Span(Of T)` plus concrete `ByteSpan`, `IntSpan`, `LongSpan`, `SingleSpan`, and `PtrSpan` with zero libc / bare-metal compatibility.
-  - `strings.vb`: String operations (`StrLen`, `StrCmp`, `StrConcat`, `StrSubstr`, etc.), zero-copy `StrView`, and efficient `StrBuilder`.
+  - `strings.vb`: String operations (`StrLen`, `StrCmp`, `StrConcat`/`StrConcat3`/`StrConcat4`, `StrJoin`, `StrRepeat`, `StrSubstr`, `StrFmt*`, `LongToStr`/`HexToStr`/`DoubleToStr`/`BoolToStr`), zero-copy `StrView`, and `StrBuilder`.
+  - `sync.vb`: Pure-VerBose synchronization & concurrency primitives: bare-metal-safe `AtomicInt`, `AtomicLong`, `SpinLock`, `RwSpinLock`, `Once`, `WaitGroup`, and reusable `SpinBarrier` (built on native LLVM `Atomic*` intrinsics), plus hosted POSIX/winpthreads `Mutex` & `CondVar`.
 - **`tests/`**: Native pure-VerBose test suites and regression tests run natively via `./verbose test`:
   - `harness.vb`: Shared cross-platform test runner helpers and assertion macros.
   - `bootstrap_suite.vb`: Comprehensive compiler self-hosting feature verification suite.
-  - `test_*.vb`: 33 domain-specific test suites (`test_arena`, `test_arrays`, `test_assert`, `test_bounds`, `test_break_continue`, `test_byref`, `test_c_interop`, `test_casts`, `test_cli`, `test_compress`, `test_core`, `test_ergonomics`, `test_expressions`, `test_generics`, `test_interp`, `test_lang_ext`, `test_literals`, `test_loop_alloca`, `test_match`, `test_modules`, `test_operators`, `test_raylib`, `test_stack_limit`, `test_static_heap`, `test_std_collections`, `test_std_io`, `test_std_json`, `test_std_math`, `test_std_strings`, `test_syntax`, `test_targets`, `test_type_analyzer`, `test_unions`).
+  - `test_*.vb`: 37 domain-specific test suites (`test_arena`, `test_arrays`, `test_assert`, `test_bounds`, `test_break_continue`, `test_byref`, `test_c_interop`, `test_casts`, `test_cli`, `test_compress`, `test_core`, `test_debug_info`, `test_defer`, `test_ergonomics`, `test_expressions`, `test_funcptr`, `test_generics`, `test_interp`, `test_lang_ext`, `test_literals`, `test_loop_alloca`, `test_match`, `test_modules`, `test_operators`, `test_raylib`, `test_stack_limit`, `test_static_heap`, `test_std_collections`, `test_std_io`, `test_std_json`, `test_std_math`, `test_std_strings`, `test_std_sync`, `test_syntax`, `test_targets`, `test_type_analyzer`, `test_unions`).
   - `raylib/`: Raylib 5.x C FFI bindings (`raylib.vb`), 2D/3D graphical demos (`bouncing_ball.vb`, `camera3d_demo.vb`), `README.md`, and headless test shim (`raylib_headless_shim.c`).
 
 > **Stage 0 archive**: The original OCaml bootstrap compiler (`stage0/`) has been moved off `main` into the [`stage0`](../../tree/stage0) branch.

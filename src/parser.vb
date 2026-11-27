@@ -830,6 +830,54 @@ Private Function PParsePrimary() As Integer
     Return id
   End If
 
+  If (k = TkAtomicLoad) Or (k = TkAtomicStore) Or (k = TkAtomicAdd) Or (k = TkAtomicSub) Or (k = TkAtomicExchange) Or (k = TkAtomicCas) Or (k = TkAtomicFence) Then
+    Dim aop As Integer = 0
+    Match k With
+      Case TkAtomicLoad Then aop = 0
+      Case TkAtomicStore Then aop = 1
+      Case TkAtomicAdd Then aop = 2
+      Case TkAtomicSub Then aop = 3
+      Case TkAtomicExchange Then aop = 4
+      Case TkAtomicCas Then aop = 5
+      Case TkAtomicFence Then aop = 6
+    End Match
+    PAdvance()
+    PExpect(TkLParen)
+    Dim id As Integer = NewNode(NdAtomic)
+    g_nodes(id).op = aop
+    If aop = 6 Then
+      PExpect(TkRParen)
+      Return id
+    End If
+    Dim addrExpr As Integer = ParseExpr()
+    PExpect(TkComma)
+    Dim tk, tik, tnPos, tnLen, taStart, taCount As Integer = 0
+    PParseTypeSpec(ByRef tk, ByRef tik, ByRef tnPos, ByRef tnLen, ByRef taStart, ByRef taCount)
+    Dim valExpr As Integer = -1
+    Dim desExpr As Integer = -1
+    If aop >= 1 Then
+      PExpect(TkComma)
+      valExpr = ParseExpr()
+    End If
+    If aop = 5 Then
+      PExpect(TkComma)
+      desExpr = ParseExpr()
+    End If
+    PExpect(TkRParen)
+    With g_nodes(id)
+      .left = addrExpr
+      .right = valExpr
+      .third = desExpr
+      .tyKind = tk
+      .tyInnerKind = tik
+      .tyNamePos = tnPos
+      .tyNameLen = tnLen
+      .tyArgStart = taStart
+      .tyArgCount = taCount
+    End With
+    Return id
+  End If
+
   If (k = TkDot) And (p_withDepth > 0) Then
     Return NewNode(NdWithTarget)
   End If
@@ -1357,6 +1405,8 @@ Private Sub PParseBlock(stopMode As Integer, ByRef outStart, outCount As Integer
 End Sub
 
 Private Sub PParseStmtInto(outBuf() As Integer, ByRef outCnt As Integer)
+  Dim stmtLine As Integer = g_tokens(p_pos).line
+  Dim startCnt As Integer = outCnt
   Dim k As Integer = PPeekKind()
 
   ' [Volatile] Dim / Static name[(N | )] [= init], ... As Type [At addr] [= expr | With ( ... ) | (args)], ...
@@ -1373,10 +1423,15 @@ Private Sub PParseStmtInto(outBuf() As Integer, ByRef outCnt As Integer)
     End If
     PAdvance()
     PParseVarDeclGroup(ndKind, 0, isVol, 0, outBuf, ByRef outCnt)
+    For si = startCnt To outCnt - 1 Do
+      g_nodes(outBuf(si)).line = stmtLine
+    End For
     Return
   End If
 
-  outBuf(outCnt) = ParseStmt()
+  Dim sid As Integer = ParseStmt()
+  g_nodes(sid).line = stmtLine
+  outBuf(outCnt) = sid
   outCnt = outCnt + 1
 End Sub
 
@@ -1896,6 +1951,7 @@ End Function
 
 Private Sub PParseDefInto(defBuf() As Integer, ByRef defCount As Integer)
   Dim defModId As Integer = g_tokens(p_pos).modId
+  Dim defLine As Integer = g_tokens(p_pos).line
   Dim vis As Integer = 0
   If PPeekKind() = TkPublic Then
     vis = 1
@@ -2189,6 +2245,7 @@ Private Sub PParseDefInto(defBuf() As Integer, ByRef defCount As Integer)
     Dim td As Integer = NewNode(NdTestDef)
     With g_nodes(td)
       .modId = defModId
+      .line = defLine
       .intVal = tPos
       .lenVal = tLen
       .firstChild = bodyStart
@@ -2228,6 +2285,7 @@ Private Sub PParseDefInto(defBuf() As Integer, ByRef defCount As Integer)
       .op = vis
       .intVal = opTok
       .modId = defModId
+      .line = defLine
       .tyKind = opRetKind
       .tyInnerKind = opRetInner
       .tyNamePos = opRetNPos
@@ -2297,6 +2355,7 @@ Private Sub PParseDefInto(defBuf() As Integer, ByRef defCount As Integer)
     .op = vis
     .flags = isAsync
     .modId = defModId
+    .line = defLine
     .intVal = namePos
     .lenVal = nameLen
     .tyKind = retKind

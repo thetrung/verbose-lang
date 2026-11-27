@@ -170,3 +170,45 @@ Test "StrBuilder append, int formatting, capacity truncation, and OOM"
   SbAppend(ByRef sbOom, "test")
   Assert IsNull(SbFinish(ByRef sbOom))
 End Test
+
+Test "Arena-backed formatting, Long/Hex/Double/Bool conversions, Join, Repeat, and StrFmt*"
+  Dim a As Arena = ArenaCreate(4096)
+  Defer ArenaDestroy(ByRef a)
+
+  Assert StrEq(BoolToStr(True), "True")
+  Assert StrEq(BoolToStr(False), "False")
+  Assert StrEq(LongToStr(ByRef a, 9223372036854775807), "9223372036854775807")
+  Assert StrEq(LongToStr(ByRef a, -9223372036854775808), "-9223372036854775808")
+  Assert StrEq(HexToStr(ByRef a, 0), "0x0")
+  Assert StrEq(HexToStr(ByRef a, 3735928559), "0xdeadbeef")
+  Assert StrEq(DoubleToStr(ByRef a, 3.14159, 2), "3.14")
+  Assert StrEq(DoubleToStr(ByRef a, -0.05, 2), "-0.05")
+  Assert StrEq(DoubleToStr(ByRef a, 42.0, 0), "42")
+
+  Assert StrEq(StrConcat3(ByRef a, "a", "-", "b"), "a-b")
+  Assert StrEq(StrConcat4(ByRef a, "v", "0.", "11.", "0"), "v0.11.0")
+  Assert StrEq(StrRepeat(ByRef a, "ab", 3), "ababab")
+  Assert StrEq(StrRepeat(ByRef a, "ab", 0), "")
+
+  Dim parts(3) As Pointer = ("alpha", "beta", "gamma")
+  Assert StrEq(StrJoin(ByRef a, parts, 3, ", "), "alpha, beta, gamma")
+  Assert StrEq(StrJoin(ByRef a, parts, 0, ", "), "")
+
+  Assert StrEq(StrFmt1(ByRef a, "Hello, {}!", "VerBose"), "Hello, VerBose!")
+  Assert StrEq(StrFmt2(ByRef a, "{} + {} = {{sum}}", IntToStr(ByRef a, 2), IntToStr(ByRef a, 3)), "2 + 3 = {sum}")
+  Assert StrEq(StrFmt3(ByRef a, "[{}] {}: {}", "INFO", "count", LongToStr(ByRef a, 123456789012)), "[INFO] count: 123456789012")
+
+  Dim sb As StrBuilder = SbNew(ByRef a, 128)
+  SbAppend(ByRef sb, "flag=")
+  SbAppendBool(ByRef sb, True)
+  SbAppend(ByRef sb, " hex=")
+  SbAppendHex(ByRef sb, 255)
+  SbAppend(ByRef sb, " pi=")
+  SbAppendDouble(ByRef sb, 3.14, 2)
+  Assert StrEq(SbFinish(ByRef sb), "flag=True hex=ff pi=3.14")
+
+  SbReset(ByRef sb)
+  SbAppendSlice(ByRef sb, "abcdef", 3)
+  SbAppendLine(ByRef sb, "!")
+  Assert StrEq(SbFinish(ByRef sb), "abc!\n")
+End Test

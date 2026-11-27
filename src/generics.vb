@@ -2222,6 +2222,33 @@ Private Function GmProcessExpr(srcId, doClone As Integer, ByRef outTy As GmType)
     Return id
   End If
 
+  If k = NdAtomic Then
+    Dim aop As Integer = g_nodes(id).op
+    If aop = 6 Then
+      outTy = GmMakePrim(TyNothing)
+      Return id
+    End If
+    Dim aTy = GmMakePrim(TyPointer), vTy = GmMakePrim(TyInt), dTy = GmMakePrim(TyInt) As GmType
+    g_nodes(id).left = GmProcessExpr(g_nodes(id).left, doClone, ByRef aTy)
+    If g_nodes(id).right >= 0 Then
+      g_nodes(id).right = GmProcessExpr(g_nodes(id).right, doClone, ByRef vTy)
+    End If
+    If g_nodes(id).third >= 0 Then
+      g_nodes(id).third = GmProcessExpr(g_nodes(id).third, doClone, ByRef dTy)
+    End If
+    Dim tRes As GmType = GmApplyResolvedType(id)
+    If aop = 1 Then
+      outTy = GmMakePrim(TyNothing)
+    Else
+      If aop = 5 Then
+        outTy = GmMakePrim(TyBoolean)
+      Else
+        outTy = tRes
+      End If
+    End If
+    Return id
+  End If
+
   If k = NdAddressOf Then
     Dim tTy As GmType
     g_nodes(id).left = GmProcessExpr(g_nodes(id).left, doClone, ByRef tTy)

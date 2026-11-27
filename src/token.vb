@@ -113,6 +113,13 @@ Public Enum TokenKind
   TkDefer = 107
   TkFuncPtr = 108
   TkSubPtr = 109
+  TkAtomicLoad = 110
+  TkAtomicStore = 111
+  TkAtomicAdd = 112
+  TkAtomicSub = 113
+  TkAtomicExchange = 114
+  TkAtomicCas = 115
+  TkAtomicFence = 116
 End Enum
 
 Public Structure Token

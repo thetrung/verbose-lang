@@ -6,12 +6,12 @@ See also: [Wiki Tutorial](https://github.com/thetrung/verbose-lang/wiki/Tutorial
 
 ## Project Identity
 
-- **VerBose-Lang** (`v0.10.0`): brace-free, case-sensitive, Visual Basic–inspired systems language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**).
+- **VerBose-Lang** (`v0.11.0`): brace-free, case-sensitive, Visual Basic–inspired systems language compiled directly to LLVM IR via `clang -O2` (zero GC, native C ABI, **100% self-hosted**).
 - **Zero external toolchain deps**: `clang` + `curl` only (no OCaml, no Python). The archival OCaml Stage 0 compiler lives on the `stage0` git branch.
 - **Targets** (`--target` / `VERBOSE_TARGET`): `linux-x86_64`, `linux-arm64`, `macos-arm64`, `windows-x86_64`, and freestanding 32-bit `arm-m` (`thumbv7em-unknown-none-eabi`).
 - **Companion ecosystem repos** (sibling dirs in `../` when checked out): `verbose-raylib`, `verbose.nvim`, `verbose-pkg` (`vpm`), `verbose-tui`, `verbose-openSKP`, `verbose-viewSKP`, `verbose-sqlite3`, `verbose-curl`.
 
-## Architecture & Compiler Internals (`src/`, 10 modules, 18,713 LOC)
+## Architecture & Compiler Internals (`src/`, 10 modules, 19,297 LOC)
 
 Every compilation allocates a single **64 MiB deterministic `Arena`** in `RunSingleTarget` (`src/verbose.vb`) for source pools, tokens, AST nodes, and symbol tables:
 
@@ -25,9 +25,10 @@ Every compilation allocates a single **64 MiB deterministic `Arena`** in `RunSin
 | `src/type_analyzer.vb` | Two-pass semantic checker (1a enums/struct headers → 1b struct fields → 1c globals/funcs/operators/externs → 2 bodies & const global inits). Enforces `Private` module isolation (with `ta_altModId` for cross-module generic type args), target-aware stack-frame budgets (`--max-stack`: `64 KB` hosted / `4 KB` `arm-m`, zero silent `malloc`), zero-cost compile-time constant fixed-array OOB errors (`TaTryEvalConstInt`), primitive cast legality, loop-depth `Break`/`Continue` validation, `Structure` operator overload resolution/uniqueness, unqualified enum fallback + ambiguity errors, `ByRef` lvalue rules, `Static` const initializers, `At` MMIO rules, `Label`/`GoTo`, `Async`/`Await`. |
 | `src/codegen.vb` | Direct LLVM IR emitter (opaque `ptr`). Hoists all static `alloca`s to LLVM `entry:` blocks (`CgBeginFuncBody`/`CgEndFuncBody`/`CgEmitHoistedAlloca`) for constant O(1) loop stack & `mem2reg` promotion. Supports explicit opt-in `--bounds-check` (`icmp ult i64` + `@__vb_bounds_fail` / `llvm.trap`). Mangles `Private` symbols from included modules (`modId > 0`) as `@__mod<id>_<name>` and `Operator` overloads as `@__vb_op_<op>_<ty>...`. Tracks innermost `While`/`For` label stacks for `Break`/`Continue`. Aliases `popen`/`pclose` → `_popen`/`_pclose` on Windows. Target-native C ABI struct lowering (`CgClassifyCStruct`: SysV x86-64, AAPCS64 HFA/packed/indirect, Win64, ARM AAPCS), C variadic promotions (`Single→Double`, `Boolean→zext i32`, `Byte/Short→sext i32`), short-circuit boolean `And`/`Or` via phi trampolines, freestanding `arm-m` (`cg_ptrSize = 4`, suppresses unused libc/`pthread` externs, lowers `Async` to synchronous deferred thunks). |
 
-### Standard Library (`std/`, 7 modules, ~3.7k LOC)
+### Standard Library (`std/`, 8 modules, ~4.3k LOC)
 All pure VerBose, zero-GC, Arena-backed:
-- `std/strings.vb` — `Str*`, `StrView`, `StrBuilder` (zero libc deps, bare-metal safe).
+- `std/strings.vb` — `Str*`, `StrView`, `StrBuilder`, and zero-libc Arena `{}` formatting (`StrFmt*`, `LongToStr`, `HexToStr`, `DoubleToStr`, `BoolToStr`, `StrJoin`, `StrRepeat`, bare-metal safe).
+- `std/sync.vb` — Bare-metal-safe `AtomicInt`, `AtomicLong`, `SpinLock`, `RwSpinLock`, `Once` (`SubPtr()`), `WaitGroup`, `SpinBarrier` (built on LLVM `Atomic*` builtins) + hosted POSIX/winpthreads `Mutex` & `CondVar`.
 - `std/math.vb` — `MATH_*`, `Math*` integer/long/double/trig/exp/ln/pow/sqrt (**100% pure VerBose, zero `-lm`**).
 - `std/result.vb` — Generic tagged-union `Option(Of T)` (`OptNone`/`OptSome`/`OptIsSome`/`OptIsNone`/`OptUnwrap`/`OptUnwrapOr`) & `Result(Of T, E)` (`ResOk`/`ResErr`/`ResIsOk`/`ResIsErr`/`ResUnwrap`/`ResUnwrapOr`/`ResUnwrapErr`/`ResOkOpt`/`ResErrOpt`, zero libc, bare-metal safe).
 - `std/collections.vb` — Generic `Vec(Of T)`, `Ring(Of T)` + concrete `IntVec`, `PtrVec`, `IntRing`, `IntMap`.
@@ -36,7 +37,7 @@ All pure VerBose, zero-GC, Arena-backed:
 - `std/json.vb` — Strict RFC 8259 Arena-backed DOM parser (`JsonParse`, `JsonDoc`, `JsonNode`, `JsonGet`/`JsonAt`/`JsonFirst`/`JsonNext`, `JsonAs*`, `JsonStringify`) and streaming `JsonWriter` (`JwNew`, `JwBeginObj`/`JwBeginArr`, `JwField*`, `JwFinish` — zero libc, bare-metal safe).
 
 ### Tests (`tests/`)
-- 35 native pure-VerBose `Test`/`Assert` suites (`tests/test_*.vb`, 221 `Test` blocks) + `tests/bootstrap_suite.vb` + `tests/harness.vb` + `tests/raylib/` (Raylib 5.x bindings, demos & headless C shim).
+- 37 native pure-VerBose `Test`/`Assert` suites (`tests/test_*.vb`, 226 `Test` blocks) + `tests/bootstrap_suite.vb` + `tests/harness.vb` + `tests/raylib/` (Raylib 5.x bindings, demos & headless C shim).
 
 ## Build, Bootstrap & Test Commands
 

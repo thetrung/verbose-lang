@@ -93,13 +93,14 @@ Public Enum NodeKind
   NdDefer = 72
   NdFuncPtrType = 73
   NdIndirectCall = 74
+  NdAtomic = 75
 End Enum
 
 Public Structure AstNode
   Dim kind, op, intVal, lenVal As Integer
   Dim longVal As Long
   Dim left, right, third, firstChild, childCount, extraStart, extraCount As Integer
-  Dim tyKind, tyArrLen, tyNamePos, tyNameLen, tyInnerKind, modId, flags As Integer
+  Dim tyKind, tyArrLen, tyNamePos, tyNameLen, tyInnerKind, modId, flags, line As Integer
   Dim genStart, genCount, tyArgStart, tyArgCount As Integer
 End Structure
 

@@ -81,8 +81,16 @@ Structure CgLabelScope
   Dim namePos, nameLen, scopeId As Integer
 End Structure
 
+Structure CgDbgSub
+  Dim metaId, fileId, line, isLocal, isOp, opIdx, testIdx, isAsyncBody, namePos, nameLen, modId, isPrivate, renameMain As Integer
+End Structure
+
+Structure CgDbgLoc
+  Dim metaId, line, scopeId As Integer
+End Structure
+
 Private Static cg_out, cg_saved_out, cg_alloca_fp, cg_body_fp As Pointer, cg_curRetTy As TypeInfo
-Private Static cg_reg = 1, cg_lbl = 1, cg_usesArena = 0, cg_usesAssert = 0, cg_usesStrConcat = 0, cg_usesStrInterp = 0, cg_usesStrEq = 0, cg_usesAsync = 0, cg_boundsCheck = 0, cg_usesBoundsCheck = 0, cg_emittedExit = 0, cg_emittedFflush = 0, cg_blockEnded = 0, cg_testMode = 0, cg_inTestFn = 0, cg_testCount = 0, cg_curModId = 0 As Integer
+Private Static cg_reg = 1, cg_lbl = 1, cg_usesArena = 0, cg_usesAssert = 0, cg_usesStrConcat = 0, cg_usesStrInterp = 0, cg_usesStrEq = 0, cg_usesAsync = 0, cg_boundsCheck = 0, cg_usesBoundsCheck = 0, cg_debugInfo = 0, cg_emittedExit = 0, cg_emittedFflush = 0, cg_blockEnded = 0, cg_testMode = 0, cg_inTestFn = 0, cg_testCount = 0, cg_curModId = 0 As Integer
 Private Static cg_target = 0, cg_ptrSize = 8, cg_ptrAlign = 8, cg_isFreestanding = 0 As Integer
 Private Static cg_usesPrintf = 0, cg_usesMalloc = 0, cg_usesCalloc = 0, cg_usesRealloc = 0, cg_usesFree = 0, cg_usesFopen = 0, cg_usesGetc = 0, cg_usesPutc = 0 As Integer
 
@@ -92,6 +100,10 @@ End Sub
 
 Public Sub CgSetBoundsCheck(enabled As Integer)
   cg_boundsCheck = enabled
+End Sub
+
+Public Sub CgSetDebugInfo(enabled As Integer)
+  cg_debugInfo = enabled
 End Sub
 
 Public Function CgUsesAsync() As Integer
@@ -124,6 +136,8 @@ Private Static cg_loopBreakLbls(64), cg_loopContLbls(64), cg_loopDeferBases(64) 
 Private Static cg_defers(256) As CgDeferEntry
 Private Static cg_lblScopes(128) As CgLabelScope
 Private Static cg_scopeIdStack(64), cg_scopeDeferBase(64) As Integer
+Private Static cg_dbgSubs() As CgDbgSub, cg_dbgLocs() As CgDbgLoc
+Private Static cg_dbgNextId = 0, cg_dbgEmptyTupleId = 0, cg_dbgSubTypeId = 0, cg_dbgSubCount = 0, cg_dbgLocCount = 0, cg_curDbgSub = -1, cg_curDbgFnLoc = -1 As Integer
 Private Static cg_enumCount, cg_enumMemCount, cg_structCount, cg_fieldCount, cg_unionCount, cg_unionVarCount, cg_globalCount, cg_funcCount, cg_opCount, cg_paramCount, cg_fpSigCount, cg_fpParamCount, cg_localCount, cg_savedLocalSp, cg_strCount, cg_staticLocalCount, cg_withDepth, cg_loopDepth, cg_deferCount, cg_lblScopeCount, cg_scopeDepth, cg_nextScopeId, cg_inDeferEmit, cg_deferInnerBase As Integer = 0
 Private Static cg_deferOuterTop As Integer = -1
 
@@ -166,6 +180,228 @@ Private Sub CgBeginFuncBody()
   cg_out = cg_body_fp
 End Sub
 
+Private Function CgDbgFileMetaId(modId As Integer) As Integer
+  Dim nFiles As Integer = LexerFileCount()
+  If (modId >= 0) And (modId < nFiles) Then
+    Return modId + 1
+  End If
+  Return 1
+End Function
+
+Private Function CgDbgAllocSub(namePos, nameLen, modId, isPrivate, isLocal, isOp, opIdx, testIdx, isAsyncBody, renameMain, line As Integer) As Integer
+  Dim ln As Integer = line
+  If ln <= 0 Then
+    ln = 1
+  End If
+  Dim mid As Integer = cg_dbgNextId
+  cg_dbgNextId = cg_dbgNextId + 1
+  If cg_dbgSubCount < 1024 Then
+    cg_dbgSubs(cg_dbgSubCount) = CgDbgSub With (
+      metaId = mid,
+      fileId = CgDbgFileMetaId(modId),
+      line = ln,
+      isLocal = isLocal,
+      isOp = isOp,
+      opIdx = opIdx,
+      testIdx = testIdx,
+      isAsyncBody = isAsyncBody,
+      namePos = namePos,
+      nameLen = nameLen,
+      modId = modId,
+      isPrivate = isPrivate,
+      renameMain = renameMain
+    )
+    cg_dbgSubCount = cg_dbgSubCount + 1
+  End If
+  Return mid
+End Function
+
+Private Function CgDbgAllocLoc(line, scopeMetaId As Integer) As Integer
+  Dim ln As Integer = line
+  If ln <= 0 Then
+    ln = 1
+  End If
+  If cg_dbgLocCount > 0 Then
+    Dim last As CgDbgLoc = cg_dbgLocs(cg_dbgLocCount - 1)
+    If (last.line = ln) And (last.scopeId = scopeMetaId) Then
+      Return last.metaId
+    End If
+  End If
+  Dim mid As Integer = cg_dbgNextId
+  cg_dbgNextId = cg_dbgNextId + 1
+  If cg_dbgLocCount < 16384 Then
+    cg_dbgLocs(cg_dbgLocCount) = CgDbgLoc With ( metaId = mid, line = ln, scopeId = scopeMetaId )
+    cg_dbgLocCount = cg_dbgLocCount + 1
+  End If
+  Return mid
+End Function
+
+Private Sub CgEmitDbgEscapedSlice(pos, slen As Integer)
+  For i = 0 To slen - 1 Do
+    Dim ch As Integer = Integer(g_srcPool(pos + i)) And 255
+    If (ch = 34) Or (ch = 92) Then
+      fputc(92, cg_out)
+    End If
+    fputc(ch, cg_out)
+  End For
+End Sub
+
+Private Sub CgEmitDebugMetadata()
+  Dim nFiles As Integer = LexerFileCount()
+  Dim fileCnt As Integer = nFiles
+  If fileCnt < 1 Then
+    fileCnt = 1
+  End If
+  Dim flagDwarfId As Integer = cg_dbgNextId
+  cg_dbgNextId = cg_dbgNextId + 1
+  Dim flagDbgVerId As Integer = cg_dbgNextId
+  cg_dbgNextId = cg_dbgNextId + 1
+
+  fprintf(cg_out, "!llvm.dbg.cu = !{!0}\n")
+  fprintf(cg_out, "!llvm.module.flags = !{!%d, !%d}\n", flagDwarfId, flagDbgVerId)
+  fprintf(cg_out, "!%d = !{i32 7, !\"Dwarf Version\", i32 4}\n", flagDwarfId)
+  fprintf(cg_out, "!%d = !{i32 2, !\"Debug Info Version\", i32 3}\n", flagDbgVerId)
+  fprintf(cg_out, "!0 = distinct !DICompileUnit(language: DW_LANG_C99, file: !1, producer: \"verbose\", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false)\n")
+
+  If nFiles < 1 Then
+    fprintf(cg_out, "!1 = !DIFile(filename: \"<unknown>.vb\", directory: \".\")\n")
+  Else
+    For fi = 0 To nFiles - 1 Do
+      Dim pPos = 0, pLen = 0 As Integer
+      LexerGetFile(fi, ByRef pPos, ByRef pLen)
+      Dim lastSep As Integer = -1
+      For ci = 0 To pLen - 1 Do
+        Dim ch As Integer = Integer(g_srcPool(pPos + ci)) And 255
+        If (ch = 47) Or (ch = 92) Then
+          lastSep = ci
+        End If
+      End For
+      fprintf(cg_out, "!%d = !DIFile(filename: \"", fi + 1)
+      If lastSep >= 0 Then
+        CgEmitDbgEscapedSlice(pPos + lastSep + 1, pLen - lastSep - 1)
+        fprintf(cg_out, "\", directory: \"")
+        If lastSep = 0 Then
+          fprintf(cg_out, "/")
+        Else
+          CgEmitDbgEscapedSlice(pPos, lastSep)
+        End If
+      Else
+        CgEmitDbgEscapedSlice(pPos, pLen)
+        fprintf(cg_out, "\", directory: \".")
+      End If
+      fprintf(cg_out, "\")\n")
+    End For
+  End If
+
+  fprintf(cg_out, "!%d = !{null}\n", cg_dbgEmptyTupleId)
+  fprintf(cg_out, "!%d = !DISubroutineType(types: !%d)\n", cg_dbgSubTypeId, cg_dbgEmptyTupleId)
+
+  For si = 0 To cg_dbgSubCount - 1 Do
+    Dim subInfo As CgDbgSub = cg_dbgSubs(si)
+    fprintf(cg_out, "!%d = distinct !DISubprogram(name: \"", subInfo.metaId)
+    If subInfo.testIdx >= 0 Then
+      fprintf(cg_out, "__vb_test_%d", subInfo.testIdx)
+    Else
+      If subInfo.isOp = 1 Then
+        CgEmitOpSymName(subInfo.opIdx)
+      Else
+        If subInfo.renameMain = 1 Then
+          fprintf(cg_out, "__vb_user_main")
+        Else
+          If subInfo.isAsyncBody = 1 Then
+            fprintf(cg_out, "__vb_async_body_")
+          End If
+          CgEmitDbgEscapedSlice(subInfo.namePos, subInfo.nameLen)
+        End If
+      End If
+    End If
+    fprintf(cg_out, "\", linkageName: \"")
+    If subInfo.testIdx >= 0 Then
+      fprintf(cg_out, "__vb_test_%d", subInfo.testIdx)
+    Else
+      If subInfo.isOp = 1 Then
+        CgEmitOpSymName(subInfo.opIdx)
+      Else
+        If subInfo.renameMain = 1 Then
+          fprintf(cg_out, "__vb_user_main")
+        Else
+          If subInfo.isAsyncBody = 1 Then
+            fprintf(cg_out, "__vb_async_body_")
+          End If
+          CgEmitSymName(subInfo.namePos, subInfo.nameLen, subInfo.modId, subInfo.isPrivate)
+        End If
+      End If
+    End If
+    fprintf(cg_out, "\", scope: !%d, file: !%d, line: %d, type: !%d, scopeLine: %d, spFlags: ", subInfo.fileId, subInfo.fileId, subInfo.line, cg_dbgSubTypeId, subInfo.line)
+    If subInfo.isLocal = 1 Then
+      fprintf(cg_out, "DISPFlagLocalToUnit | DISPFlagDefinition")
+    Else
+      fprintf(cg_out, "DISPFlagDefinition")
+    End If
+    fprintf(cg_out, ", unit: !0)\n")
+  End For
+
+  For li = 0 To cg_dbgLocCount - 1 Do
+    Dim loc As CgDbgLoc = cg_dbgLocs(li)
+    fprintf(cg_out, "!%d = !DILocation(line: %d, column: 1, scope: !%d)\n", loc.metaId, loc.line, loc.scopeId)
+  End For
+End Sub
+
+Private Sub CgCopyBodyWithDbg(srcFp, dstFp As Pointer, nBytes As Long, initLocId As Integer)
+  Dim rbuf(4096), lbuf(4096) As Byte
+  Dim lLen As Integer = 0
+  Dim curLoc As Integer = initLocId
+  Dim rem As Long = nBytes
+  While rem > 0 Do
+    Dim chunk As Long = rem
+    If chunk > 4096 Then
+      chunk = 4096
+    End If
+    Dim got As Long = fread(rbuf, 1, chunk, srcFp)
+    If got <= 0 Then
+      Break
+    End If
+    Dim gInt As Integer = Integer(got)
+    For i = 0 To gInt - 1 Do
+      Dim b As Integer = Integer(rbuf(i)) And 255
+      If b = 10 Then
+        If (lLen >= 7) And (lbuf(0) = 59) And (lbuf(1) = 64) And (lbuf(2) = 100) And (lbuf(3) = 98) And (lbuf(4) = 103) And (lbuf(5) = 58) Then
+          Dim parsed As Integer = 0
+          For pi = 6 To lLen - 1 Do
+            Dim d As Integer = Integer(lbuf(pi)) And 255
+            If (d >= 48) And (d <= 57) Then
+              parsed = parsed * 10 + (d - 48)
+            End If
+          End For
+          If parsed > 0 Then
+            curLoc = parsed
+          End If
+        Else
+          If (lLen >= 2) And (lbuf(0) = 32) And (lbuf(1) = 32) And (curLoc > 0) Then
+            fwrite(lbuf, 1, Long(lLen), dstFp)
+            fprintf(dstFp, ", !dbg !%d\n", curLoc)
+          Else
+            If lLen > 0 Then
+              fwrite(lbuf, 1, Long(lLen), dstFp)
+            End If
+            fputc(10, dstFp)
+          End If
+        End If
+        lLen = 0
+      Else
+        If lLen < 4095 Then
+          lbuf(lLen) = b
+          lLen = lLen + 1
+        End If
+      End If
+    End For
+    rem = rem - got
+  End While
+  If lLen > 0 Then
+    fwrite(lbuf, 1, Long(lLen), dstFp)
+  End If
+End Sub
+
 Private Sub CgEndFuncBody()
   If IsNull(cg_saved_out) Then
     Return
@@ -180,7 +416,11 @@ Private Sub CgEndFuncBody()
   End If
   If bodyLen > 0 Then
     rewind(cg_body_fp)
-    CgCopyFpRange(cg_body_fp, cg_out, bodyLen)
+    If (cg_debugInfo = 1) And (cg_curDbgSub >= 0) Then
+      CgCopyBodyWithDbg(cg_body_fp, cg_out, bodyLen, cg_curDbgFnLoc)
+    Else
+      CgCopyFpRange(cg_body_fp, cg_out, bodyLen)
+    End If
   End If
 End Sub
 
@@ -3119,6 +3359,74 @@ Private Function CgEmitExpr(id As Integer, ByRef outTy As TypeInfo) As Integer
     Return r
   End If
 
+  If k = NdAtomic Then
+    Dim aop As Integer = g_nodes(id).op
+    If aop = 6 Then
+      fprintf(cg_out, "  fence seq_cst\n")
+      outTy = TypeInfo With ( kind = TyNothing, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+      Return 0
+    End If
+    Dim addrTy As TypeInfo
+    Dim addrReg As Integer = CgEmitExpr(g_nodes(id).left, ByRef addrTy)
+    Dim ptrTy As TypeInfo With ( kind = TyPointer, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+    Dim addrPtr As Integer = CgCoerceScalar(addrReg, addrTy, ptrTy)
+    Dim valTy As TypeInfo = CgResolveTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    Dim align As Integer = CgTypeAlign(valTy)
+    If aop = 0 Then
+      Dim r As Integer = CgNextReg()
+      fprintf(cg_out, "  %%r%d = load atomic ", r)
+      CgEmitLlvmType(valTy)
+      fprintf(cg_out, ", ptr %%r%d seq_cst, align %d\n", addrPtr, align)
+      outTy = valTy
+      Return r
+    End If
+    Dim vTy As TypeInfo
+    Dim vReg As Integer = CgEmitExpr(g_nodes(id).right, ByRef vTy)
+    Dim vCoerced As Integer = CgCoerceScalar(vReg, vTy, valTy)
+    If aop = 1 Then
+      fprintf(cg_out, "  store atomic ")
+      CgEmitLlvmType(valTy)
+      fprintf(cg_out, " %%r%d, ptr %%r%d seq_cst, align %d\n", vCoerced, addrPtr, align)
+      outTy = TypeInfo With ( kind = TyNothing, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+      Return 0
+    End If
+    If (aop = 2) Or (aop = 3) Or (aop = 4) Then
+      Dim r As Integer = CgNextReg()
+      If aop = 2 Then
+        fprintf(cg_out, "  %%r%d = atomicrmw add ptr %%r%d, ", r, addrPtr)
+      Else
+        If aop = 3 Then
+          fprintf(cg_out, "  %%r%d = atomicrmw sub ptr %%r%d, ", r, addrPtr)
+        Else
+          fprintf(cg_out, "  %%r%d = atomicrmw xchg ptr %%r%d, ", r, addrPtr)
+        End If
+      End If
+      CgEmitLlvmType(valTy)
+      fprintf(cg_out, " %%r%d seq_cst, align %d\n", vCoerced, align)
+      outTy = valTy
+      Return r
+    End If
+    If aop = 5 Then
+      Dim dTy As TypeInfo
+      Dim dReg As Integer = CgEmitExpr(g_nodes(id).third, ByRef dTy)
+      Dim dCoerced As Integer = CgCoerceScalar(dReg, dTy, valTy)
+      Dim pairReg As Integer = CgNextReg()
+      fprintf(cg_out, "  %%r%d = cmpxchg ptr %%r%d, ", pairReg, addrPtr)
+      CgEmitLlvmType(valTy)
+      fprintf(cg_out, " %%r%d, ", vCoerced)
+      CgEmitLlvmType(valTy)
+      fprintf(cg_out, " %%r%d seq_cst seq_cst, align %d\n", dCoerced, align)
+      Dim okReg As Integer = CgNextReg()
+      fprintf(cg_out, "  %%r%d = extractvalue { ", okReg)
+      CgEmitLlvmType(valTy)
+      fprintf(cg_out, ", i1 } %%r%d, 1\n", pairReg)
+      outTy = TypeInfo With ( kind = TyBoolean, typeIdx = -1, arrLen = 0, namePos = 0, nameLen = 0 )
+      Return okReg
+    End If
+    outTy = valTy
+    Return 0
+  End If
+
   If k = NdAwait Then
     cg_usesAsync = 1
     cg_usesFree = 1
@@ -3743,6 +4051,9 @@ Private Function CgEmitCall(id As Integer, ByRef outTy As TypeInfo) As Integer
     End If
   End If
   Dim isExternFn As Boolean = (fnIdx >= 0) And (cg_funcs(fnIdx).isExtern = 1)
+  If isExternFn And (nLen >= 8) And SliceEqualsStr(nPos, 8, "pthread_", 8) Then
+    cg_usesAsync = 1
+  End If
   Dim argRegs(64) As Integer
   Dim argTys(64) As TypeInfo
   Dim argIsPtr(64) As Integer
@@ -4271,6 +4582,11 @@ Private Sub CgEmitStmt(id As Integer)
       cg_blockEnded = 0
     End If
     Return
+  End If
+
+  If (cg_debugInfo = 1) And (cg_curDbgSub >= 0) And (g_nodes(id).line > 0) Then
+    Dim dLoc As Integer = CgDbgAllocLoc(g_nodes(id).line, cg_curDbgSub)
+    fprintf(cg_out, ";@dbg:%d\n", dLoc)
   End If
 
   If k = NdLabel Then
@@ -5155,7 +5471,15 @@ Private Sub CgEmitAsyncFunc(fnNodeId As Integer, fnIdx As Integer)
     CgEmitParamLlvmType(cg_params(fi.paramStart + i))
     fprintf(cg_out, " %%p%d", i)
   End For
-  fprintf(cg_out, ") {\nentry:\n")
+  If cg_debugInfo = 1 Then
+    cg_curDbgSub = CgDbgAllocSub(fi.namePos, fi.nameLen, fi.modId, fi.isPrivate, 1, 0, -1, -1, 1, 0, g_nodes(fnNodeId).line)
+    cg_curDbgFnLoc = CgDbgAllocLoc(g_nodes(fnNodeId).line, cg_curDbgSub)
+    fprintf(cg_out, ") !dbg !%d {\nentry:\n", cg_curDbgSub)
+  Else
+    cg_curDbgSub = -1
+    cg_curDbgFnLoc = -1
+    fprintf(cg_out, ") {\nentry:\n")
+  End If
   CgBeginFuncBody()
 
   For j = 0 To fi.paramCount - 1 Do
@@ -5214,6 +5538,8 @@ Private Sub CgEmitAsyncFunc(fnNodeId As Integer, fnIdx As Integer)
   End If
   cg_deferCount = 0
   CgEndFuncBody()
+  cg_curDbgSub = -1
+  cg_curDbgFnLoc = -1
   fprintf(cg_out, "}\n\n")
 
   ' 2) Emit pthread/deferred thunk @__vb_async_thunk_<sym>(ptr %frame) -> ptr
@@ -5378,7 +5704,23 @@ Private Sub CgEmitFunc(fnNodeId As Integer, fnIdx As Integer)
     CgEmitParamLlvmType(cg_params(fi.paramStart + i))
     fprintf(cg_out, " %%p%d", i)
   End For
-  fprintf(cg_out, ") {\nentry:\n")
+  If cg_debugInfo = 1 Then
+    Dim isLoc As Integer = 1
+    If (fi.isPublic = 1) And (Not renameMain) Then
+      isLoc = 0
+    End If
+    Dim rMainInt As Integer = 0
+    If renameMain Then
+      rMainInt = 1
+    End If
+    cg_curDbgSub = CgDbgAllocSub(fi.namePos, fi.nameLen, fi.modId, fi.isPrivate, isLoc, 0, -1, -1, 0, rMainInt, g_nodes(fnNodeId).line)
+    cg_curDbgFnLoc = CgDbgAllocLoc(g_nodes(fnNodeId).line, cg_curDbgSub)
+    fprintf(cg_out, ") !dbg !%d {\nentry:\n", cg_curDbgSub)
+  Else
+    cg_curDbgSub = -1
+    cg_curDbgFnLoc = -1
+    fprintf(cg_out, ") {\nentry:\n")
+  End If
   CgBeginFuncBody()
 
   ' Bind parameters to local slots
@@ -5439,6 +5781,8 @@ Private Sub CgEmitFunc(fnNodeId As Integer, fnIdx As Integer)
   End If
   cg_deferCount = 0
   CgEndFuncBody()
+  cg_curDbgSub = -1
+  cg_curDbgFnLoc = -1
   fprintf(cg_out, "}\n\n")
 End Sub
 
@@ -5475,7 +5819,19 @@ Private Sub CgEmitOpDef(opNodeId As Integer, opIdx As Integer)
     CgEmitParamLlvmType(cg_params(oi.paramStart + i))
     fprintf(cg_out, " %%p%d", i)
   End For
-  fprintf(cg_out, ") {\nentry:\n")
+  If cg_debugInfo = 1 Then
+    Dim isLoc As Integer = 1
+    If oi.isPublic = 1 Then
+      isLoc = 0
+    End If
+    cg_curDbgSub = CgDbgAllocSub(0, 0, oi.modId, oi.isPrivate, isLoc, 1, opIdx, -1, 0, 0, g_nodes(opNodeId).line)
+    cg_curDbgFnLoc = CgDbgAllocLoc(g_nodes(opNodeId).line, cg_curDbgSub)
+    fprintf(cg_out, ") !dbg !%d {\nentry:\n", cg_curDbgSub)
+  Else
+    cg_curDbgSub = -1
+    cg_curDbgFnLoc = -1
+    fprintf(cg_out, ") {\nentry:\n")
+  End If
   CgBeginFuncBody()
 
   For j = 0 To oi.paramCount - 1 Do
@@ -5531,6 +5887,8 @@ Private Sub CgEmitOpDef(opNodeId As Integer, opIdx As Integer)
   End If
   cg_deferCount = 0
   CgEndFuncBody()
+  cg_curDbgSub = -1
+  cg_curDbgFnLoc = -1
   fprintf(cg_out, "}\n\n")
 End Sub
 
@@ -5551,7 +5909,15 @@ Private Sub CgEmitTestFn(tdNodeId As Integer, testIdx As Integer)
   CgCollectLabelScopes(g_nodes(tdNodeId).firstChild, g_nodes(tdNodeId).childCount)
   CgResetScopes()
 
-  fprintf(cg_out, "define internal void @__vb_test_%d() {\nentry:\n", testIdx)
+  If cg_debugInfo = 1 Then
+    cg_curDbgSub = CgDbgAllocSub(0, 0, g_nodes(tdNodeId).modId, 1, 1, 0, -1, testIdx, 0, 0, g_nodes(tdNodeId).line)
+    cg_curDbgFnLoc = CgDbgAllocLoc(g_nodes(tdNodeId).line, cg_curDbgSub)
+    fprintf(cg_out, "define internal void @__vb_test_%d() !dbg !%d {\nentry:\n", testIdx, cg_curDbgSub)
+  Else
+    cg_curDbgSub = -1
+    cg_curDbgFnLoc = -1
+    fprintf(cg_out, "define internal void @__vb_test_%d() {\nentry:\n", testIdx)
+  End If
   CgBeginFuncBody()
   Dim bStart As Integer = g_nodes(tdNodeId).firstChild
   Dim bCount As Integer = g_nodes(tdNodeId).childCount
@@ -5564,6 +5930,8 @@ Private Sub CgEmitTestFn(tdNodeId As Integer, testIdx As Integer)
   End If
   cg_deferCount = 0
   CgEndFuncBody()
+  cg_curDbgSub = -1
+  cg_curDbgFnLoc = -1
   fprintf(cg_out, "}\n\n")
   cg_inTestFn = 0
 End Sub
@@ -5680,6 +6048,20 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
   cg_savedLocals = ArenaAlloc(ByRef arena, CgLocalSym, 1024)
   cg_strs = ArenaAlloc(ByRef arena, CgStrConst, 4096)
   cg_staticLocals = ArenaAlloc(ByRef arena, CgStaticLocal, 512)
+  cg_dbgSubs = ArenaAlloc(ByRef arena, CgDbgSub, 1024)
+  cg_dbgLocs = ArenaAlloc(ByRef arena, CgDbgLoc, 16384)
+
+  cg_dbgSubCount = 0
+  cg_dbgLocCount = 0
+  cg_curDbgSub = -1
+  cg_curDbgFnLoc = -1
+  Dim dbgFileCnt As Integer = LexerFileCount()
+  If dbgFileCnt < 1 Then
+    dbgFileCnt = 1
+  End If
+  cg_dbgEmptyTupleId = dbgFileCnt + 1
+  cg_dbgSubTypeId = dbgFileCnt + 2
+  cg_dbgNextId = dbgFileCnt + 3
 
   cg_enumCount = 0
   cg_enumMemCount = 0
@@ -6236,6 +6618,11 @@ Public Function EmitProgramToFile(ByRef arena As Arena, progRoot As Integer, out
 
   If cg_usesBoundsCheck = 1 Then
     CgEmitBoundsRuntime()
+  End If
+
+  If cg_debugInfo = 1 Then
+    fprintf(cg_out, "\n")
+    CgEmitDebugMetadata()
   End If
 
   If Not IsNull(cg_alloca_fp) Then

@@ -17,6 +17,15 @@ Historical log of finished tasks and completed roadmap milestones for **VerBose-
 
 ---
 
+## Completed Tasks (`v0.11.0`)
+
+- [x] **Milestone 5 — DWARF Debug Info (`-g`/`--debug`), Hardware Atomics & `std/sync.vb`, and Arena String Ergonomics**:
+  - **LLVM DWARF Debug Info (`-g` / `--debug`)**: Exposed loaded module paths from `src/lexer.vb`, stamped source line numbers onto all statements and definitions in `src/ast.vb`/`src/parser.vb`, added `-g`/`--debug` CLI flag in `src/verbose.vb` (compiling with `clang -O0 -g`), and emitted full `!llvm.dbg.cu`, `!DICompileUnit`, per-module `!DIFile`, `!DISubprogram` (for functions, operators, async bodies, and tests), and `!DILocation` metadata attached to body instructions in `src/codegen.vb` (zero IR overhead when `-g` is omitted). Added `tests/test_debug_info.vb` (1/1 PASS, verified via `objdump --dwarf=decodedline` across entry + included `.vb` files and freestanding `--target arm-m -c -g`).
+  - **Hardware LLVM Atomics & Pure-VerBose `std/sync.vb`**: Added 7 first-class hardware atomic builtins (`AtomicLoad`, `AtomicStore`, `AtomicAdd`, `AtomicSub`, `AtomicExchange`, `AtomicCas`, `AtomicFence` via `NdAtomic`, lowering to `load atomic`/`store atomic`/`atomicrmw`/`cmpxchg`/`fence seq_cst`) across all compiler passes, plus auto-`-lpthread` linking for `pthread_*` FFI calls. Created `std/sync.vb` (`275 LOC`) providing bare-metal-safe `AtomicInt`, `AtomicLong`, `SpinLock`, `RwSpinLock`, `Once` (using `SubPtr()`), `WaitGroup`, and reusable `SpinBarrier`, plus hosted POSIX/winpthreads `Mutex` and `CondVar`. Added `tests/test_std_sync.vb` (3/3 PASS under default & `--bounds-check`, freestanding `arm-m` verified).
+  - **Arena-Backed String Formatting & Concatenation Ergonomics (`std/strings.vb`)**: Extended zero-libc `std/strings.vb` with `StrConcat3`/`StrConcat4`, `StrJoin`, `StrRepeat`, `LongToStr`, `HexToStr`, `DoubleToStr`, `BoolToStr`, Arena-backed `{}` template formatting (`StrFmt1`/`StrFmt2`/`StrFmt3`/`StrFmtArgs` with `{{`/`}}` escaping), and `SbReset`/`SbAppendSlice`/`SbAppendLine`/`SbAppendBool`/`SbAppendLong`/`SbAppendHex`/`SbAppendDouble`, enabling zero-leak Arena string formatting alongside heap-allocated `&`/`$"..."`. Expanded `tests/test_std_strings.vb` to 7/7 PASS (**37/37** suites, **226/226** `Test` blocks, Stage 3 fixpoint & `verbose.ll` refreshed).
+
+---
+
 ## Completed Tasks (`v0.10.0`)
 
 - [x] **Milestone 3 — Deterministic `Defer` Statement (`Defer <stmt>` / `Defer ... End Defer`)**:

@@ -2478,6 +2478,50 @@ Private Function TaTypeOfExpr(id As Integer) As TypeInfo
     Return TaMakePrim(TyPointer)
   End If
 
+  If k = NdAtomic Then
+    Dim aop As Integer = g_nodes(id).op
+    If aop = 6 Then
+      Return TaMakePrim(TyNothing)
+    End If
+    Dim addrTy As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
+    Dim addrOk As Boolean = ((addrTy.arrLen = 0) And (addrTy.kind = TyPointer)) Or (addrTy.arrLen <> 0) Or TaIsIntType(addrTy)
+    If Not addrOk Then
+      Printf(MSG_TA_ATOMIC_ADDR)
+      ta_errCount = ta_errCount + 1
+    End If
+    Dim targetTy As TypeInfo = TaResolveTypeEx(g_nodes(id).tyKind, g_nodes(id).tyInnerKind, 0, g_nodes(id).tyNamePos, g_nodes(id).tyNameLen)
+    TaValidateType(targetTy)
+    Dim tyOk As Boolean = (targetTy.arrLen = 0) And ((targetTy.kind = TyInt) Or (targetTy.kind = TyLong))
+    If (aop = 0) Or (aop = 1) Then
+      tyOk = tyOk Or ((targetTy.arrLen = 0) And (targetTy.kind = TyPointer))
+    End If
+    If Not tyOk Then
+      Printf(MSG_TA_ATOMIC_TYPE)
+      ta_errCount = ta_errCount + 1
+    End If
+    If g_nodes(id).right >= 0 Then
+      Dim vTy As TypeInfo = TaTypeOfExpr(g_nodes(id).right)
+      If tyOk And (Not TaIsAssignable(targetTy, vTy, g_nodes(id).right)) Then
+        Printf(MSG_TA_ATOMIC_VAL_MISMATCH)
+        ta_errCount = ta_errCount + 1
+      End If
+    End If
+    If g_nodes(id).third >= 0 Then
+      Dim dTy As TypeInfo = TaTypeOfExpr(g_nodes(id).third)
+      If tyOk And (Not TaIsAssignable(targetTy, dTy, g_nodes(id).third)) Then
+        Printf(MSG_TA_ATOMIC_VAL_MISMATCH)
+        ta_errCount = ta_errCount + 1
+      End If
+    End If
+    If aop = 1 Then
+      Return TaMakePrim(TyNothing)
+    End If
+    If aop = 5 Then
+      Return TaMakePrim(TyBoolean)
+    End If
+    Return targetTy
+  End If
+
   If k = NdAwait Then
     Dim t As TypeInfo = TaTypeOfExpr(g_nodes(id).left)
     If (t.arrLen <> 0) Or (t.kind <> TyTask) Then

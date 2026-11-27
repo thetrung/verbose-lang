@@ -509,3 +509,262 @@ Public Function SbFinish(ByRef sb As StrBuilder) As Pointer
   sb.buf(sb.length) = 0
   Return sb.buf
 End Function
+
+Public Sub SbReset(ByRef sb As StrBuilder)
+  sb.length = 0
+  If Not IsNull(sb.buf) Then
+    sb.buf(0) = 0
+  End If
+End Sub
+
+Public Sub SbAppendSlice(ByRef sb As StrBuilder, s As Pointer, length As Integer)
+  If IsNull(sb.buf) Or IsNull(s) Or (length <= 0) Then
+    Return
+  End If
+  For i = 0 To length - 1 Do
+    If (sb.length + 1) >= sb.cap Then
+      Break
+    End If
+    sb.buf(sb.length) = ByteAt(s, i)
+    sb.length = sb.length + 1
+  End For
+  sb.buf(sb.length) = 0
+End Sub
+
+Public Sub SbAppendLine(ByRef sb As StrBuilder, s As Pointer)
+  SbAppend(ByRef sb, s)
+  SbAppendChar(ByRef sb, 10)
+End Sub
+
+Public Sub SbAppendBool(ByRef sb As StrBuilder, b As Boolean)
+  If b Then
+    SbAppend(ByRef sb, "True")
+  Else
+    SbAppend(ByRef sb, "False")
+  End If
+End Sub
+
+Public Sub SbAppendLong(ByRef sb As StrBuilder, n As Long)
+  If IsNull(sb.buf) Then
+    Return
+  End If
+  If n = 0 Then
+    SbAppendChar(ByRef sb, 48)
+    Return
+  End If
+  Dim v As Long = n
+  If v < 0 Then
+    SbAppendChar(ByRef sb, 45)
+  Else
+    v = 0 - v
+  End If
+  Dim rev(32) As Byte
+  Dim count As Integer = 0
+  While v < 0 Do
+    Dim digit As Long = 0 - (v Mod 10)
+    rev(count) = 48 + Integer(digit)
+    count = count + 1
+    v = v / 10
+  End While
+  For i = 0 To count - 1 Do
+    SbAppendChar(ByRef sb, rev(count - 1 - i) And 255)
+  End For
+End Sub
+
+Public Sub SbAppendHex(ByRef sb As StrBuilder, n As Long)
+  If IsNull(sb.buf) Then
+    Return
+  End If
+  If n = 0 Then
+    SbAppendChar(ByRef sb, 48)
+    Return
+  End If
+  Dim rev(20) As Byte
+  Dim count As Integer = 0
+  Dim v As Long = n
+  While v <> 0 Do
+    Dim nib As Integer = Integer(v And 15)
+    If nib < 10 Then
+      rev(count) = 48 + nib
+    Else
+      rev(count) = 87 + nib
+    End If
+    count = count + 1
+    v = v Shr 4
+  End While
+  For i = 0 To count - 1 Do
+    SbAppendChar(ByRef sb, rev(count - 1 - i) And 255)
+  End For
+End Sub
+
+Public Sub SbAppendDouble(ByRef sb As StrBuilder, v As Double, decimals As Integer)
+  If IsNull(sb.buf) Then
+    Return
+  End If
+  If v <> v Then
+    SbAppend(ByRef sb, "NaN")
+    Return
+  End If
+  Dim prec As Integer = decimals
+  If prec < 0 Then
+    prec = 0
+  End If
+  If prec > 9 Then
+    prec = 9
+  End If
+  Dim val As Double = v
+  If val < 0.0 Then
+    SbAppendChar(ByRef sb, 45)
+    val = 0.0 - val
+  End If
+  Dim scale As Long = 1
+  For pi = 0 To prec - 1 Do
+    scale = scale * 10
+  End For
+  Dim rounded As Long = Long(val * Double(scale) + 0.5)
+  Dim intPart As Long = rounded / scale
+  Dim fracPart As Long = rounded Mod scale
+  SbAppendLong(ByRef sb, intPart)
+  If prec > 0 Then
+    SbAppendChar(ByRef sb, 46)
+    Dim div As Long = scale / 10
+    While div > 0 Do
+      Dim d As Long = (fracPart / div) Mod 10
+      SbAppendChar(ByRef sb, 48 + Integer(d))
+      div = div / 10
+    End While
+  End If
+End Sub
+
+Public Function BoolToStr(b As Boolean) As Pointer
+  If b Then
+    Return "True"
+  End If
+  Return "False"
+End Function
+
+Public Function LongToStr(ByRef a As Arena, n As Long) As Pointer
+  Dim sb As StrBuilder = SbNew(ByRef a, 32)
+  SbAppendLong(ByRef sb, n)
+  Return SbFinish(ByRef sb)
+End Function
+
+Public Function HexToStr(ByRef a As Arena, n As Long) As Pointer
+  Dim sb As StrBuilder = SbNew(ByRef a, 24)
+  SbAppend(ByRef sb, "0x")
+  SbAppendHex(ByRef sb, n)
+  Return SbFinish(ByRef sb)
+End Function
+
+Public Function DoubleToStr(ByRef a As Arena, v As Double, decimals As Integer) As Pointer
+  Dim sb As StrBuilder = SbNew(ByRef a, 48)
+  SbAppendDouble(ByRef sb, v, decimals)
+  Return SbFinish(ByRef sb)
+End Function
+
+Public Function StrConcat3(ByRef a As Arena, s1, s2, s3 As Pointer) As Pointer
+  Dim total As Integer = StrLen(s1) + StrLen(s2) + StrLen(s3)
+  Dim sb As StrBuilder = SbNew(ByRef a, total + 1)
+  SbAppend(ByRef sb, s1)
+  SbAppend(ByRef sb, s2)
+  SbAppend(ByRef sb, s3)
+  Return SbFinish(ByRef sb)
+End Function
+
+Public Function StrConcat4(ByRef a As Arena, s1, s2, s3, s4 As Pointer) As Pointer
+  Dim total As Integer = StrLen(s1) + StrLen(s2) + StrLen(s3) + StrLen(s4)
+  Dim sb As StrBuilder = SbNew(ByRef a, total + 1)
+  SbAppend(ByRef sb, s1)
+  SbAppend(ByRef sb, s2)
+  SbAppend(ByRef sb, s3)
+  SbAppend(ByRef sb, s4)
+  Return SbFinish(ByRef sb)
+End Function
+
+Public Function StrJoin(ByRef a As Arena, parts() As Pointer, count As Integer, sep As Pointer) As Pointer
+  If count <= 0 Then
+    Return StrCopy(ByRef a, "")
+  End If
+  Dim sepLen As Integer = StrLen(sep)
+  Dim total As Integer = 0
+  For i = 0 To count - 1 Do
+    If i > 0 Then
+      total = total + sepLen
+    End If
+    total = total + StrLen(parts(i))
+  End For
+  Dim sb As StrBuilder = SbNew(ByRef a, total + 1)
+  For i = 0 To count - 1 Do
+    If i > 0 Then
+      SbAppend(ByRef sb, sep)
+    End If
+    SbAppend(ByRef sb, parts(i))
+  End For
+  Return SbFinish(ByRef sb)
+End Function
+
+Public Function StrRepeat(ByRef a As Arena, s As Pointer, times As Integer) As Pointer
+  If (times <= 0) Or IsNull(s) Then
+    Return StrCopy(ByRef a, "")
+  End If
+  Dim sLen As Integer = StrLen(s)
+  Dim sb As StrBuilder = SbNew(ByRef a, sLen * times + 1)
+  For i = 0 To times - 1 Do
+    SbAppend(ByRef sb, s)
+  End For
+  Return SbFinish(ByRef sb)
+End Function
+
+' Arena-backed zero-libc {} template formatting (escape literal braces with {{ / }})
+Public Function StrFmtArgs(ByRef a As Arena, fmt As Pointer, args() As Pointer, argCount As Integer) As Pointer
+  If IsNull(fmt) Then
+    Return StrCopy(ByRef a, "")
+  End If
+  Dim fLen As Integer = StrLen(fmt)
+  Dim cap As Integer = fLen + 1
+  For i = 0 To argCount - 1 Do
+    cap = cap + StrLen(args(i))
+  End For
+  Dim sb As StrBuilder = SbNew(ByRef a, cap)
+  Dim i As Integer = 0
+  Dim ai As Integer = 0
+  While i < fLen Do
+    Dim c As Integer = ByteAt(fmt, i)
+    If (c = 123) And ((i + 1) < fLen) And (ByteAt(fmt, i + 1) = 123) Then
+      SbAppendChar(ByRef sb, 123)
+      i = i + 2
+    Else
+      If (c = 125) And ((i + 1) < fLen) And (ByteAt(fmt, i + 1) = 125) Then
+        SbAppendChar(ByRef sb, 125)
+        i = i + 2
+      Else
+        If (c = 123) And ((i + 1) < fLen) And (ByteAt(fmt, i + 1) = 125) Then
+          If ai < argCount Then
+            SbAppend(ByRef sb, args(ai))
+            ai = ai + 1
+          End If
+          i = i + 2
+        Else
+          SbAppendChar(ByRef sb, c)
+          i = i + 1
+        End If
+      End If
+    End If
+  End While
+  Return SbFinish(ByRef sb)
+End Function
+
+Public Function StrFmt1(ByRef a As Arena, fmt, a1 As Pointer) As Pointer
+  Dim args(1) As Pointer = (a1)
+  Return StrFmtArgs(ByRef a, fmt, args, 1)
+End Function
+
+Public Function StrFmt2(ByRef a As Arena, fmt, a1, a2 As Pointer) As Pointer
+  Dim args(2) As Pointer = (a1, a2)
+  Return StrFmtArgs(ByRef a, fmt, args, 2)
+End Function
+
+Public Function StrFmt3(ByRef a As Arena, fmt, a1, a2, a3 As Pointer) As Pointer
+  Dim args(3) As Pointer = (a1, a2, a3)
+  Return StrFmtArgs(ByRef a, fmt, args, 3)
+End Function

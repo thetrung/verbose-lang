@@ -1,6 +1,6 @@
 # Maintainer: thetrung <deulamco@gmail.com>
 pkgname=verbose-lang
-pkgver=0.10.0
+pkgver=0.11.0
 pkgrel=1
 pkgdesc="Brace-free, Visual Basic-inspired systems programming language compiled directly to LLVM IR"
 arch=('x86_64' 'aarch64')
